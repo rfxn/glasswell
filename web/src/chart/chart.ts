@@ -11,6 +11,7 @@ import {
   formatMonth,
   formatValue,
   nullSemantics,
+  restatement,
   shareDetail,
 } from "../card/format.ts";
 import { explainHandle } from "../chrome/handle.ts";
@@ -85,6 +86,9 @@ export function renderChart(
   let span = served ? null : defaultSpan(chart.months);
   const hidden = new Set<string>();
   let log = false;
+  // The table is an alternative view most readers never open, so it is fetched on the press
+  // rather than carried by every reader who lands on Explore: the chart chunk is on that route.
+  let table: typeof import("../card/table.ts").seriesTable | null = null;
   let brush: { from: string; to: string } | null = null;
   const setBrush = (next: { from: string; to: string } | null): void => {
     brush = next;
@@ -152,7 +156,33 @@ export function renderChart(
       }),
     );
     if (options.normalization) axes.appendChild(normalizationControl(options.normalization));
+    axes.appendChild(
+      tableControl(table !== null, (next) => {
+        if (!next) {
+          table = null;
+          draw();
+          return;
+        }
+        void import("../card/table.ts").then(({ seriesTable }) => {
+          table = seriesTable;
+          draw();
+        });
+      }),
+    );
     container.appendChild(axes);
+
+    if (table) {
+      // The same points the plot would draw, as rows: §9 makes a data-table alternative a
+      // shipping requirement, and a readout that answers one month at a time is not one.
+      container.appendChild(
+        table(visible, {
+          onExplain: callbacks.onExplain,
+          labelTermFor: callbacks.labelTermFor,
+        }),
+      );
+      container.append(stateKey(visible, callbacks));
+      return;
+    }
 
     const plot = document.createElement("div");
     plot.className = "gw-chart-plot";
@@ -475,6 +505,18 @@ function legend(
   return wrapper;
 }
 
+/** The plot or the same points as rows, so the chart has one alternative and not a second UI. */
+function tableControl(on: boolean, onTable: (on: boolean) => void): HTMLElement {
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "gw-table-toggle";
+  toggle.setAttribute("aria-pressed", String(on));
+  toggle.textContent = "Table";
+  toggle.title = on ? "Draw the plot." : "Read the same months as a table.";
+  toggle.addEventListener("click", () => onTable(!on));
+  return toggle;
+}
+
 /** Linear or log, beside the axes it rescales. Log is off by default, and the 33.2 % is why. */
 function scaleControl(
   chart: ChartSeries,
@@ -637,10 +679,21 @@ function vintageDisclosure(chart: ChartSeries): HTMLElement | null {
     .filter((row) => row.drawn.length > 0);
   if (rows.length === 0) return null;
 
+  const drawn = [...new Set(rows.flatMap((row) => row.drawn))].sort();
   const details = document.createElement("details");
   details.className = "gw-vintages";
   const summary = document.createElement("summary");
-  summary.textContent = "Report vintages";
+  // The count and the range at a glance: one vintage means no restatement was ever captured,
+  // and the earliest is when glasswell started capturing rather than when the operator filed.
+  summary.textContent =
+    drawn.length === 1
+      ? `Report vintages · one, ${drawn[0]} · no restatement captured`
+      : `Report vintages · ${drawn.length}, ${drawn[0]} to ${drawn[drawn.length - 1]}`;
+  const capture = document.createElement("p");
+  capture.className = "gw-note gw-vintage-capture";
+  capture.textContent =
+    `The earliest vintage here is when glasswell first captured this month, not when the` +
+    " operator filed it.";
   details.appendChild(summary);
 
   const list = document.createElement("dl");
@@ -653,7 +706,7 @@ function vintageDisclosure(chart: ChartSeries): HTMLElement | null {
     value.textContent = column.mixedVintages ? drawn.join(", ") : (column.vintage ?? drawn[0] ?? "");
     list.append(term, value);
   }
-  details.appendChild(list);
+  details.append(list, capture);
   return details;
 }
 
@@ -699,6 +752,37 @@ function stateKey(chart: ChartSeries, callbacks: ChartCallbacks): HTMLElement {
  * The four null-semantics states as one band per stream, aligned under the plot: a gap in the
  * line could be any of them, and the band says which without collapsing them into each other.
  */
+/** One row per stream that carries a restated month, and none where nothing was restated. */
+function restatementRows(chart: ChartSeries): HTMLElement[] {
+  return chart.columns
+    .filter((column) => column.mixedVintages)
+    .map((column) => {
+      const row = document.createElement("div");
+      row.className = "gw-state-row gw-restate-row";
+      const name = document.createElement("span");
+      name.className = "gw-state-name";
+      name.textContent = `${column.label} · filed`;
+      const cells = document.createElement("div");
+      cells.className = "gw-state-cells gw-restate-cells";
+      cells.setAttribute("role", "img");
+      cells.setAttribute(
+        "aria-label",
+        `Which months of ${column.label.toLowerCase()} were filed more than once`,
+      );
+      const first = column.vintages.find(Boolean) ?? null;
+      column.vintages.forEach((vintage, index) => {
+        const mark = restatement(vintage && vintage !== first ? "restated" : "as_filed");
+        const cell = document.createElement("span");
+        cell.className = `gw-state-mark ${mark.className}`;
+        cell.setAttribute("data-index", String(index));
+        cell.title = `${chart.months[index] ?? ""} · ${mark.label}. ${mark.title}`;
+        cells.appendChild(cell);
+      });
+      row.append(name, cells);
+      return row;
+    });
+}
+
 function stateBand(chart: ChartSeries): HTMLElement {
   const wrapper = document.createElement("div");
   wrapper.className = "gw-state-strip";
@@ -734,6 +818,9 @@ function stateBand(chart: ChartSeries): HTMLElement {
   // is a band drawn to a different width from the plot it sits under, and which was exactly
   // what the first shot showed.
   for (const row of allocationRows(chart)) wrapper.appendChild(row);
+  // The third vocabulary, and only where it has something to say: a well nobody restated
+  // carries no row at all rather than a row of "as filed" marks.
+  for (const row of restatementRows(chart)) wrapper.appendChild(row);
   return wrapper;
 }
 

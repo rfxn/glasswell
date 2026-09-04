@@ -115,6 +115,47 @@ const ALLOCATION_MARKS: Record<string, AllocationMark> = {
   },
 };
 
+export interface RestatementMark {
+  label: string;
+  className: string;
+  title: string;
+}
+
+/**
+ * The third vocabulary, with the third record, the third lookup and the third CSS prefix.
+ *
+ * `gw-state-*` is the null semantics, `gw-alloc-*` is the allocation class, and this is
+ * whether the month was restated. Not merged into either: one string-keyed record for two
+ * vocabularies collides on the first shared token. And not `gw-vintage-*`, which the chart
+ * already ships for the disclosure and its list in the same subtree.
+ */
+const RESTATEMENT_MARKS: Record<string, RestatementMark> = {
+  as_filed: {
+    label: "as filed",
+    className: "gw-restate-as-filed",
+    title: "One report vintage for this month: no restatement has been captured.",
+  },
+  restated: {
+    label: "restated",
+    className: "gw-restate-restated",
+    title:
+      "This month was filed more than once and the later filing is drawn. The earlier one is" +
+      " still served: read it with as_of, and the point resolves to a different promotion and" +
+      " a different workbook.",
+  },
+};
+
+/** Whether a month was restated, as its own mark, defaulting to the honest majority case. */
+export function restatement(state: string): RestatementMark {
+  return (
+    RESTATEMENT_MARKS[state] ?? {
+      label: state,
+      className: "gw-restate-unknown",
+      title: state,
+    }
+  );
+}
+
 /** The six classes the allocation serves, in the order the legend lists them. */
 export const ALLOCATION_CLASSES = [
   "observed_gas_well",

@@ -731,3 +731,105 @@ describe("the per-lateral-foot control", () => {
     expect(host.querySelector(".gw-normalize-toggle")).toBeNull();
   });
 });
+
+describe("as filed versus as restated, stated rather than toggled", () => {
+  const restated = (): ReturnType<typeof toChartSeries> => {
+    const pm = months("2026-01", 4);
+    const data = production(pm);
+    return toChartSeries({
+      ...data,
+      series: {
+        ...data.series,
+        oil_bbl_report_vintage: pm.map((_, index) => (index === 0 ? "2026-07-01" : "2026-08-20")),
+      },
+    });
+  };
+
+  it("says how many vintages the window holds and over what range", () => {
+    renderChart(host, restated(), callbacks);
+    const summary = host.querySelector("details.gw-vintages summary")?.textContent ?? "";
+
+    expect(summary).toContain("2");
+    expect(summary).toContain("2026-07-01");
+    expect(summary).toContain("2026-08-20");
+  });
+
+  it("says one vintage means no restatement was captured, not that none happened", () => {
+    renderChart(host, sparse, callbacks);
+    const summary = host.querySelector("details.gw-vintages summary")?.textContent ?? "";
+
+    expect(summary).toContain("one");
+    expect(summary).toContain("no restatement captured");
+  });
+
+  it("names the earliest vintage as glasswell's own capture rather than the filing", () => {
+    renderChart(host, restated(), callbacks);
+    const details = host.querySelector("details.gw-vintages")?.textContent ?? "";
+
+    expect(details).toContain("when glasswell first captured this month");
+    expect(details).not.toContain("as first filed");
+  });
+
+  it("marks a restated month in its own row, with its own prefix", () => {
+    renderChart(host, restated(), callbacks);
+    const row = host.querySelector(".gw-restate-row");
+
+    // Three vocabularies, three records, three prefixes: `gw-state-*`, `gw-alloc-*` and this.
+    expect(row).not.toBeNull();
+    expect(row?.querySelectorAll(".gw-restate-restated").length).toBeGreaterThan(0);
+    expect(row?.querySelectorAll(".gw-vintage-restated").length).toBe(0);
+    expect(host.querySelector(".gw-restate-row .gw-restate-as-filed")).not.toBeNull();
+  });
+
+  it("draws no restatement row where nothing was restated", () => {
+    renderChart(host, sparse, callbacks);
+
+    expect(host.querySelector(".gw-restate-row")).toBeNull();
+  });
+});
+
+describe("the table alternative", () => {
+  // Fetched on the press: the chart chunk rides the explorer route, and a table nobody opened
+  // is not something every Explore reader should download.
+  const press = async (): Promise<void> => {
+    const before = host.querySelector(".gw-table-toggle")?.getAttribute("aria-pressed");
+    host.querySelector<HTMLButtonElement>(".gw-table-toggle")?.click();
+    for (let tick = 0; tick < 20; tick += 1) {
+      if (host.querySelector(".gw-table-toggle")?.getAttribute("aria-pressed") !== before) return;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+  };
+
+  beforeEach(() => renderChart(host, sparse, callbacks));
+
+  it("offers the same months as rows, and says which view is on", async () => {
+    expect(host.querySelector(".gw-table-toggle")?.getAttribute("aria-pressed")).toBe("false");
+
+    await press();
+
+    expect(host.querySelector(".gw-table-toggle")?.getAttribute("aria-pressed")).toBe("true");
+    expect(host.querySelectorAll(".gw-series-table tbody tr").length).toBe(6);
+    expect(host.querySelector(".gw-chart-plot")).toBeNull();
+  });
+
+  it("keeps the state key beside the table, because the words are the same words", async () => {
+    await press();
+
+    expect(host.querySelector(".gw-state-key")).not.toBeNull();
+  });
+
+  it("goes back to the plot", async () => {
+    await press();
+    await press();
+
+    expect(host.querySelector(".gw-chart-plot")).not.toBeNull();
+    expect(host.querySelector(".gw-series-table")).toBeNull();
+  });
+
+  it("carries the window's own months, not the whole record", async () => {
+    renderChart(host, dense, callbacks);
+    await press();
+
+    expect(host.querySelectorAll(".gw-series-table tbody tr").length).toBe(60);
+  });
+});

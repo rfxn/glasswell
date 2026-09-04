@@ -127,3 +127,73 @@
   opacity: 0.5;
   cursor: default;
 }
+
+/* The third vocabulary's own prefix: `gw-state-*` is the null semantics, `gw-alloc-*` the
+   allocation class, and these say whether the month was filed more than once. */
+.gw-restate-as-filed {
+  background: var(--hairline-strong);
+}
+
+.gw-restate-restated {
+  background: var(--amber);
+}
+
+.gw-restate-unknown {
+  background: var(--muted);
+}
+
+.gw-vintage-capture {
+  margin: 0.3rem 0 0;
+}
+
+.gw-table-toggle {
+  flex: none;
+  padding: 0 var(--gw-space-2);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--gw-radius-pill);
+  background: none;
+  color: var(--slate);
+  font: inherit;
+  font-size: var(--gw-fs-micro);
+  cursor: pointer;
+}
+
+.gw-table-toggle[aria-pressed="true"] {
+  color: var(--paper);
+  border-color: var(--cyan);
+}
+
+/* The table is the plot's alternative, so it takes the plot's width and scrolls rather than
+   pushing the card wider than the rail. */
+.gw-series-table {
+  overflow-x: auto;
+  margin: 0 0 0.4rem;
+}
+
+.gw-series-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--gw-fs-micro);
+}
+
+.gw-series-table caption {
+  text-align: left;
+  color: var(--slate);
+  padding-bottom: 0.2rem;
+}
+
+.gw-series-table th,
+.gw-series-table td {
+  border-bottom: 1px solid var(--hairline);
+  padding: 0.15rem 0.4rem 0.15rem 0;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.gw-table-value {
+  font-family: var(--gw-font-mono);
+}
+
+.gw-table-state {
+  color: var(--slate);
+}

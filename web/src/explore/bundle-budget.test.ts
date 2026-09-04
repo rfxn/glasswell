@@ -163,6 +163,11 @@ describe("what the explorer's shell costs the reader", () => {
     // The bottom sheet's gesture is cut on the map-only ruling, not the drawer's: the card
     // never renders over Explore, so the branch that sizes it never runs here.
     const sheet = named("sheet");
+    // The chart's table alternative, cut on the drawer's own ruling: it is fetched when a
+    // reader presses `Table` and by nobody who lands. Left uncut the walked total rises by
+    // about 500 B while what a reader downloads on landing falls, which is the split artifact
+    // the paragraph above describes.
+    const table = named("table");
     const route = reach(
       [...entryChunks(), named("shell")],
       (name) =>
@@ -172,7 +177,8 @@ describe("what the explorer's shell costs the reader", () => {
         name === statusChip ||
         name === card ||
         name === drawer ||
-        name === sheet,
+        name === sheet ||
+        name === table,
     );
     const measured = route.reduce((sum, name) => sum + gzip(name), 0);
 
