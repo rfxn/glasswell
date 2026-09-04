@@ -13,6 +13,8 @@ base="${GLASSWELL_BASE_URL:-https://glasswell.lab.rpx.sh}"
 api10=3305310451
 # The New Mexico spine check reads a header, not a row count: the gate opens on the spine.
 nm_api10=3002540209
+# One of the 378 servable Montana API-10s that carry a summed row, measured 2026-09-03.
+mt_api10=2500322058
 key_file=""
 
 usage() {
@@ -22,6 +24,7 @@ usage: smoke.sh [options]
   --base URL        API root; $GLASSWELL_BASE_URL, else https://glasswell.lab.rpx.sh
   --api10 API10     the well every well-level assertion reads (default 3305310451)
   --nm-api10 API10  the New Mexico well the spine assertion reads (default 3002540209)
+  --mt-api10 API10  the Montana well the aggregation assertion reads (default 2500322058)
   --key-file FILE   read GLASSWELL_OWNER_KEY=... from FILE (default /etc/glasswell/app.env)
 
 $GLASSWELL_BASE_URL is the one name every tier reads: this script, tests/e2e and the docs.
@@ -36,6 +39,7 @@ while [[ $# -gt 0 ]]; do
         --base) base="$2"; shift 2 ;;
         --api10) api10="$2"; shift 2 ;;
         --nm-api10) nm_api10="$2"; shift 2 ;;
+        --mt-api10) mt_api10="$2"; shift 2 ;;
         --key-file) key_file="$2"; shift 2 ;;
         -h|--help) usage; exit 0 ;;
         *) printf 'unknown argument: %s\n' "$1" >&2; exit 2 ;;
@@ -292,6 +296,104 @@ fi
 # Check 15 above is a fetch-freshness signal: freshness_state is a pure function of
 # max(manifests.fetch_vintage) and consults no canonical table, so it flips when a manifest is
 # registered and says nothing about whether anything was promoted.
+
+printf 'the status vocabulary, and the class every well now carries\n'
+# S-1. The domain is served once in meta and each jurisdiction's own vocabulary is a subset of
+# it. Read across every registration in one response, because the failure this replaces was
+# five copies agreeing by coincidence: a class in a jurisdiction's vocabulary that the domain
+# does not hold is the sixth copy arriving.
+keyed "$base/v1/jurisdictions?limit=100" > "$work_dir/body.json"
+assert_true "the class domain is served once, with exactly one absence class" \
+    "a domain with no absence row, or two, is a domain no serving path can coalesce onto" \
+    python3 -c '
+import json, sys
+meta = json.load(open(sys.argv[1]))["meta"]["status_classes"]
+absence = [row for row in meta if row["is_absence"]]
+sys.exit(0 if len(meta) > 1 and len(absence) == 1 else 1)
+' "$work_dir/body.json"
+assert_true "every jurisdiction's vocabulary is drawn from that domain" \
+    "a class in a registration's vocabulary that the domain does not hold is a sixth copy" \
+    python3 -c '
+import json, sys
+served = json.load(open(sys.argv[1]))
+domain = {row["status_canonical"] for row in served["meta"]["status_classes"]}
+classes = {name for row in served["data"] for name in row.get("vocabulary", {}).get("classes", [])}
+sys.exit(0 if classes and classes <= domain else 1)
+' "$work_dir/body.json"
+# S-2. The 68,186 Texas wells that filed no status code: they carry a class now and the filed
+# code beside it is what says why. Drawn through the filter rather than by api10, because the
+# filter matching them at all is half of what this asserts.
+absence_class="$(python3 -c '
+import json, sys
+meta = json.load(open(sys.argv[1]))["meta"]["status_classes"]
+print(next((row["status_canonical"] for row in meta if row["is_absence"]), ""))
+' "$work_dir/body.json")"
+tx_wells="$(keyed "$base/v1/status" | python3 -c '
+import json, sys
+data = json.load(sys.stdin)["data"]
+rows = {d["dataset_id"]: d for d in data["datasets"]}.get("canonical.wells_latest/tx")
+metric = next((m["value"] for m in rows["metrics"] if m["metric_id"] == "rows"), 0) if rows else 0
+print(int(metric))
+' 2>/dev/null || echo 0)"
+if [[ -z $absence_class ]]; then
+    bad "a Texas well with no filed code serves the absence class" \
+        "/v1/jurisdictions serves no absence class to filter on"
+elif [[ ${tx_wells:-0} -eq 0 ]]; then
+    printf '  skip    the absence class over Texas: /v1/status reports 0 TX headers, so the gate is not open here\n'
+else
+    keyed "$base/v1/wells?state=42&status=$absence_class&limit=1" > "$work_dir/body.json"
+    assert_true "a Texas well with no filed code serves the absence class and no filed code" \
+        "the class and the filed code answer two questions, and null answered neither" \
+        python3 -c '
+import json, sys
+served = json.load(open(sys.argv[1]))["data"]
+row = served[0] if served else {}
+sys.exit(0 if row.get("status_canonical") == sys.argv[2] and row.get("status_reported") is None
+         else 1)
+' "$work_dir/body.json" "$absence_class"
+fi
+# S-3. The two grain decisions, read from the wells they are about. New Mexico's series is a
+# sum glasswell performs and says it performs; Montana's is a sum its regulator's promotion
+# performed and that nothing named until this train registered the rule.
+if [[ ${nm_headers:-0} -gt 0 ]]; then
+    body "/v1/wells/$nm_api10/production"
+    assert_true "a New Mexico series says it is a sum over pool filings, and links to them" \
+        "a per-well figure with no rule beside it is the naked number this rule exists to close" \
+        python3 -c '
+import json, sys
+envelope = json.load(open(sys.argv[1]))
+warnings = {item["code"]: item for item in envelope["meta"]["warnings"]}
+summed = warnings.get("production_summed_over_pools", {})
+sys.exit(0 if envelope["data"]["series"]["pm"]
+         and summed.get("rule_id")
+         and envelope["links"].get("pools") else 1)
+' "$work_dir/body.json"
+    nm_rollup_rule="$(python3 -c '
+import json, sys
+warnings = json.load(open(sys.argv[1]))["meta"]["warnings"]
+print(next((item.get("rule_id", "") for item in warnings
+            if item["code"] == "production_summed_over_pools"), ""))
+' "$work_dir/body.json")"
+    assert "the rule the sum names resolves" 200 \
+        "$(keyed_status "$base/v1/conformance/${nm_rollup_rule:-none}")"
+else
+    printf '  skip    the New Mexico rollup: /v1/status reports 0 NM headers, so the gate is not open here\n'
+fi
+mt_status="$(keyed_status "$base/v1/wells/$mt_api10/production")"
+if [[ $mt_status == 200 ]]; then
+    body "/v1/wells/$mt_api10/production"
+    assert_true "a Montana well that sums names the rule that says so" \
+        "389 Montana API-10s served a summed figure with no rule, no link and no warning" \
+        python3 -c '
+import json, sys
+envelope = json.load(open(sys.argv[1]))
+codes = {item["code"] for item in envelope["meta"]["warnings"]}
+sys.exit(0 if envelope["links"].get("aggregation_rule") and "pools_aggregated" in codes else 1)
+' "$work_dir/body.json"
+else
+    printf '  skip    the Montana aggregation: /v1/wells/%s/production is %s here\n' \
+        "$mt_api10" "$mt_status"
+fi
 
 printf 'tiles and the contract\n'
 tile_path="$(python3 -c '
