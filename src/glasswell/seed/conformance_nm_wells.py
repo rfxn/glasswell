@@ -27,6 +27,22 @@ EFFECTIVE_FROM = date(2026, 8, 20)
 # The status supersession describes a codebook, not the artifact, and dates from the day
 # that codebook entered evidence.
 STATUS_EFFECTIVE_FROM = date(2026, 9, 1)
+# The rollup supersession describes what glasswell serves rather than what the OCD filed, and
+# dates from the day the sum was measured against the filings it is a sum of.
+ROLLUP_EFFECTIVE_FROM = date(2026, 9, 3)
+
+# The rollup, measured read-only on the deployed spine on 2026-09-04 over
+# canonical.production_monthly's New Mexico well_completion_pool rows. Named here rather than
+# spelled inside the rationale, so the rule and the mart's own exit read one set of numbers.
+POOL_FILINGS = 17597960
+POOL_ENTITY_KEYS = 80623
+ROLLUP_ROWS = 15387002
+ROLLUP_API10S = 70024
+ROLLUP_FIRST_MONTH = "2015-01"
+ROLLUP_LAST_MONTH = "2026-07"
+ROLLUP_SINGLE_POOL_ROWS = 13442637
+ROLLUP_MULTI_POOL_ROWS = 1944365
+ROLLUP_INPUT_DERIVATIONS = 139
 
 OCD_FTP_PAGE_URL = "https://wwwapps.emnrd.nm.gov/OCD/OCDPermitting/Data/Download.aspx"
 OCD_FTP_DESCRIPTIONS_URL = (
@@ -673,6 +689,92 @@ NM_WELLS_RULES: tuple[dict[str, object], ...] = (
     },
 )
 
+# The rollup this train registers. It supersedes _1 and contradicts nothing it said:
+# rolls_up_to_the_well stays false, because that is a fact about the OCD's filings and about
+# canonical, and neither moved. What is added is that glasswell now performs the sum in the
+# mart layer and discloses it as one.
+POOL_ROLLUP_2: dict[str, object] = {
+    "rule_id": "cr_nm_wcproduction_pool_rollup_2",
+    "supersedes_rule_id": "cr_nm_wcproduction_pool_rollup_1",
+    "source_id": "nm_ocd_wcproduction",
+    "stage": "conform",
+    "rule_kind": "code_ref",
+    "applies_to_fields": ["volume", "days_produced", "null_semantics"],
+    "effective_from": ROLLUP_EFFECTIVE_FROM,
+    "spec": {
+        "state_code": "30",
+        "entity_type": "well_completion_pool",
+        "reporting_level": "well_completion_pool",
+        # Unchanged from _1, and the reason this is not a contradiction: canonical still holds
+        # no per-well New Mexico filing, because the OCD made none.
+        "rolls_up_to_the_well": False,
+        "promotes_to_canonical": False,
+        "served_rollup": "sum_over_pools",
+        "served_from": "marts.well_pool_rollup",
+        "module_function": "glasswell.marts.well_pool_rollup:refresh_well_pool_rollup",
+        "source_is_filing_anchor": False,
+        "volume": "exact sum over the pool filings of the well-month-stream",
+        "days_produced": "maximum over the pool filings, never the sum",
+        "null_semantics": "reported and reported_zero are summed; a withheld or absent filing"
+        " is not a number to add, and a well-month-stream with none of the first two carries no"
+        " mart row rather than a zero",
+        "streams_summed": {"oil": "liquid", "gas": "gas", "water": "water"},
+        "liquids_basis_rule_id": "cr_nm_wcproduction_liquids_1",
+        "contract_note": "the sum is performed in the mart layer and disclosed as a sum;"
+        " canonical holds no per-well New Mexico filing and this rule promotes none, and the"
+        " pool filings stay the record the series says it is summed from",
+        "handle_granularity": "one derivation per refresh, not one per month",
+        "selector": "col, api10 and pm, so a point addresses itself under a shared derivation",
+        "well_series_endpoint": "/v1/wells/{api10}/production",
+        "pool_series_endpoint": "/v1/wells/{api10}/production/pools",
+        "contrasts_rule_id": "cr_nd_pool_rollup_1",
+        "measured": {
+            "pool_filings": POOL_FILINGS,
+            "distinct_entity_key": POOL_ENTITY_KEYS,
+            "entity_type_well_rows": 0,
+            "rollup_rows": ROLLUP_ROWS,
+            "distinct_api10": ROLLUP_API10S,
+            "first_month": ROLLUP_FIRST_MONTH,
+            "last_month": ROLLUP_LAST_MONTH,
+            "rows_restating_one_filing": ROLLUP_SINGLE_POOL_ROWS,
+            "rows_summing_two_or_more": ROLLUP_MULTI_POOL_ROWS,
+            "input_derivations": ROLLUP_INPUT_DERIVATIONS,
+            "filings_not_admitted": 0,
+        },
+    },
+    "rule": (
+        "A New Mexico well's served monthly series is the exact sum of its completion-pool"
+        " filings, read from marts.well_pool_rollup and disclosed as a sum. The OCD filed no"
+        " per-well number and canonical holds none."
+    ),
+    "rationale": (
+        "cr_nm_wcproduction_pool_rollup_1 recorded that New Mexico files below the well and"
+        " that glasswell performs no rollup, and the second half of that is what changes here:"
+        " the filings are the same, canonical is the same, and what is added is a sum glasswell"
+        " performs and says it performs. It is not promoted into canonical, because a well row"
+        " glasswell computed would have to invent a valid time the regulator never filed at;"
+        " it is not summed in the client, which would be a served-looking figure with no"
+        " derivation; and it is not a view, because a sum over rows carrying different"
+        " derivation ids has no single handle for a point to resolve. A mart reads canonical"
+        " and writes marts, carries its own derivation, and is the only layer this can sit in."
+        " Measured read-only on the deployed spine on 2026-09-04: 17,597,960 pool filings over"
+        " 80,623 completion pools and 70,024 API-10s sum to 15,387,002 well-month-stream rows"
+        " over the same 70,024 wells, months 2015-01 to 2026-07, of which 13,442,637 (87.4 per"
+        " cent) restate a single pool filing and 1,944,365 sum two or more. Volume sums exactly"
+        " because the pool filings are disjoint observations of the same wellbore-month; days"
+        " do not sum, for the reason cr_nd_pool_rollup_1 gives, because the filings are"
+        " concurrent and a well cannot produce more days than the month holds. The handle is"
+        " one per refresh rather than one per month, which is coarser than North Dakota's and"
+        " is stated wherever the series is served; the refresh cites all 139 input derivations"
+        " rather than an opaque scope, and the selector carries col, api10 and pm so a point"
+        " still addresses itself. Every derivation that cites _1 goes on citing it, and the"
+        " pool surface is unchanged: the filings stay the record, and the series says it is"
+        " their sum."
+    ),
+    "evidence_url": OCD_FTP_DESCRIPTIONS_URL,
+    "code_ref": "src/glasswell/marts/well_pool_rollup.py",
+}
+
 PROMOTE_MODULE = "glasswell.ingest.nm_wells"
 
 # The correction this train appends. `promote` has never been the name of anything in that
@@ -681,6 +783,7 @@ PROMOTE_MODULE = "glasswell.ingest.nm_wells"
 # nothing about which code runs.
 NM_WELLS_RULES = (
     *NM_WELLS_RULES,
+    POOL_ROLLUP_2,
     correcting_module_function(
         next(
             rule

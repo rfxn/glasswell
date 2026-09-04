@@ -21,7 +21,10 @@ from fastapi.testclient import TestClient
 from psycopg.types.json import Jsonb
 
 from glasswell.api.examples import EXAMPLE_API10
+from glasswell.lineage.capture import lineage_session
 from glasswell.lineage.jurisdictions import clear_jurisdiction_cache, load_jurisdictions
+from glasswell.lineage.store import PostgresRecorder
+from glasswell.marts.well_pool_rollup import refresh_well_pool_rollup
 from tests.contract.conftest import TX_API10
 from tests.support.jurisdictions import (
     declared_rule,
@@ -115,6 +118,22 @@ def with_new_mexico(seeded: psycopg.Connection, client: TestClient) -> TestClien
     return client
 
 
+@pytest.fixture
+def with_the_rollup(
+    with_new_mexico: TestClient, seeded: psycopg.Connection, lineage_env
+) -> TestClient:
+    """The same well, after the rollup mart has been built from its pool filings.
+
+    The mart is built here rather than assumed, because a served sum with no mart behind it is
+    the state an instance is in between `make deploy` and the refresh, and that state has its
+    own answer: the panel, which the case below still asserts.
+    """
+    with lineage_session(recorder=PostgresRecorder(seeded), environment=lineage_env):
+        refresh_well_pool_rollup(seeded)
+    seeded.commit()
+    return with_new_mexico
+
+
 def body(client: TestClient, path: str, **params) -> dict:
     response = client.get(path, params=params)
     assert response.status_code == 200, response.text
@@ -193,7 +212,7 @@ def test_the_pool_series_cites_new_mexicos_grain_rule_not_north_dakotas(
 
     assert (
         envelope["links"]["aggregation_rule"]
-        == "/v1/conformance/cr_nm_wcproduction_pool_rollup_1"
+        == "/v1/conformance/cr_nm_wcproduction_pool_rollup_2"
     )
     assert "cr_nd_pool_rollup_1" not in envelope["links"]["aggregation_rule"]
 
@@ -228,18 +247,88 @@ def test_the_liquids_basis_on_a_new_mexico_oil_figure_is_new_mexicos(
     assert data["pools"][0]["series"]["oil_bbl"]
 
 
-def test_an_empty_well_level_series_says_why_rather_than_reading_as_no_production(
-    with_new_mexico: TestClient,
+def test_a_new_mexico_well_is_served_the_sum_of_its_pool_filings_and_says_it_is_one(
+    with_the_rollup: TestClient,
 ) -> None:
-    """New Mexico promotes only pool rows and rolls nothing up, so the well-level series is
-    absent, not zero. An empty chart would say the opposite of what is true (DIR-3)."""
-    envelope = body(with_new_mexico, f"/v1/wells/{NM_API10}/production")
+    """The card-track case for the pool-grain panel, amended where this track falsifies it.
+
+    It asserted that a New Mexico well shows a titled panel naming
+    cr_nm_wcproduction_pool_rollup_1 and linking down to the Pools section. After the rollup
+    mart the well has a series, so what it must say instead is that the series is a sum: the
+    warning names the successor, the chart is drawn rather than replaced, and the link down to
+    the filings is still there. The panel keeps its own arm, asserted below on a rule that
+    registers no rollup, which is the state a sixth pool-grain jurisdiction arrives in.
+    """
+    envelope = body(with_the_rollup, f"/v1/wells/{NM_API10}/production")
     warnings = {item["code"]: item for item in envelope["meta"].get("warnings", [])}
 
-    assert "production_reported_at_pool_grain" in warnings
-    detail = warnings["production_reported_at_pool_grain"]["detail"]
-    assert "cr_nm_wcproduction_pool_rollup_1" in detail
-    assert f"/v1/wells/{NM_API10}/production/pools" in detail
+    assert envelope["data"]["series"]["pm"] == ["2026-05", "2026-06"]
+    assert "production_reported_at_pool_grain" not in warnings
+    summed = warnings["production_summed_over_pools"]
+    assert summed["rule_id"] == "cr_nm_wcproduction_pool_rollup_2"
+    assert "cr_nm_wcproduction_pool_rollup_2" in summed["detail"]
+    assert f"/v1/wells/{NM_API10}/production/pools" in summed["detail"]
+    assert envelope["links"]["pools"] == f"/v1/wells/{NM_API10}/production/pools"
+    assert (
+        envelope["links"]["aggregation_rule"]
+        == "/v1/conformance/cr_nm_wcproduction_pool_rollup_2"
+    )
+    assert envelope["data"]["reporting_level"] == "well_completion_pool"
+    assert envelope["data"]["series"]["oil_bbl_aggregation"] == ["sum_over_pools"] * 2
+
+
+def test_every_point_of_the_summed_series_resolves_to_the_refresh_that_produced_it(
+    with_the_rollup: TestClient, seeded: psycopg.Connection
+) -> None:
+    """One derivation for the series is coarser than one per month, which is why the address is
+    not: each point carries col, api10 and pm, and every one of them resolves."""
+    envelope = body(with_the_rollup, f"/v1/wells/{NM_API10}/production")
+    handles = [
+        value for key, value in envelope["data"]["_lineage"].items()
+        if key.startswith("series.oil_bbl")
+    ]
+
+    assert len(handles) == 2
+    with seeded.cursor() as cursor:
+        cursor.execute("select distinct derivation_id from marts.well_pool_rollup")
+        refreshes = {row[0] for row in cursor.fetchall()}
+    assert {handle.split("#")[0] for handle in handles} == refreshes
+    for index, month in enumerate(("2026-05", "2026-06")):
+        assert handles[index].endswith(f"api10={NM_API10}&col=oil_bbl&pm={month}")
+
+
+def test_the_panel_is_still_what_a_pool_grain_jurisdiction_with_no_rollup_is_served(
+) -> None:
+    """The other arm, asserted where it is decided rather than through a planted registration:
+    no resident jurisdiction files at pool grain and registers no rollup any more, and the body
+    a sixth one would get is the panel, with its own words intact."""
+    from glasswell.api.routers.wells import reported_at_pool_grain
+
+    unrolled = reported_at_pool_grain(
+        {
+            "rule_id": "cr_xx_pool_grain_1",
+            "rule": "files per completion pool",
+            "reporting_level": "well_completion_pool",
+            "effective_from": date(2026, 1, 1),
+            "published_vintage": date(2026, 1, 1),
+            "served_rollup": None,
+        }
+    )
+    rolled = reported_at_pool_grain(
+        {
+            "rule_id": "cr_nm_wcproduction_pool_rollup_2",
+            "rule": "files per completion pool, summed in the mart layer",
+            "reporting_level": "well_completion_pool",
+            "effective_from": date(2026, 9, 3),
+            "published_vintage": date(2026, 9, 3),
+            "served_rollup": "sum_over_pools",
+        }
+    )
+
+    assert unrolled["code"] == "production_reported_at_pool_grain"
+    assert "glasswell performs no rollup to the well" in unrolled["detail"]
+    assert rolled["code"] == "production_summed_over_pools"
+    assert "performs no rollup" not in rolled["detail"]
 
 
 def test_a_new_mexico_well_is_producing_unknown_and_the_reason_is_disclosed(
@@ -256,9 +345,12 @@ def test_a_new_mexico_well_is_producing_unknown_and_the_reason_is_disclosed(
     warnings = {item["code"]: item for item in envelope["meta"].get("warnings", [])}
 
     assert envelope["data"]["producing"] == "unknown"
-    assert "production_reported_at_pool_grain" in warnings
-    disclosure = warnings["production_reported_at_pool_grain"]
-    assert "cr_nm_wcproduction_pool_rollup_1" in disclosure["detail"]
+    # The reason moved with the mart and the code moved with it: `card.ts:428` replaces the
+    # chart with a panel for the pool-grain code, and a New Mexico well now has a chart to draw.
+    assert "production_reported_at_pool_grain" not in warnings
+    disclosure = warnings["production_summed_over_pools"]
+    assert "cr_nm_wcproduction_pool_rollup_2" in disclosure["detail"]
+    assert "canonical holds no well-grain row" in disclosure["detail"]
     assert disclosure["pointer"] == "/producing"
 
 
@@ -368,7 +460,7 @@ def test_a_state_with_no_registered_policy_gets_no_other_states_policy(
     # own rule and not North Dakota's, which is the property the assertion was written for.
     assert rollup_rule("25", registry=registry) == "cr_mt_bogc_pool_rollup_1"
     assert rollup_rule("35", registry=registry) is None
-    assert rollup_rule("30", registry=registry) == "cr_nm_wcproduction_pool_rollup_1"
+    assert rollup_rule("30", registry=registry) == "cr_nm_wcproduction_pool_rollup_2"
     # Texas's own, and its own rule id: the same basis string as North Dakota's is not the
     # same decision, and this is the assertion that tells them apart.
     assert stream_basis("oil", "42", registry=registry) == "oil+condensate"

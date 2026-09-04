@@ -723,7 +723,7 @@ def apply_registry_rules(
 
 _LEASE_REPORTING = """
 select rule_id, rule, spec ->> 'reporting_level' as reporting_level, effective_from,
-       published_vintage
+       published_vintage, spec ->> 'served_rollup' as served_rollup
   from lineage.conformance_rules r
  where spec ->> 'state_code' = %(state_code)s
    and spec ->> 'reporting_level' = 'lease'
@@ -798,6 +798,9 @@ class LeaseReportingRule(TypedDict):
     reporting_level: str
     effective_from: date
     published_vintage: date
+    # Null on every rule that registers no rollup, which is what tells a served absence apart
+    # from a served sum: a jurisdiction filing below the well may or may not have one.
+    served_rollup: str | None
 
 
 def pool_grain_rule(

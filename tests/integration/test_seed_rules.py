@@ -67,6 +67,10 @@ POLICY_RULES = tuple(sorted((
     # Montana's production grain: a decision the promotion has carried out since Montana
     # landed and the registry never recorded, so the serving path had nothing to name.
     "cr_mt_bogc_pool_rollup_1",
+    # New Mexico's, one train later and one grain the other way: the successor that admits a
+    # sum glasswell performs in the mart layer. Its executor is the refresh its spec names,
+    # and there is no stage for it to run at because no frame is transformed.
+    "cr_nm_wcproduction_pool_rollup_2",
     "cr_status_class_domain_1",
     "cr_status_absence_basis_1",
     "cr_status_absence_share_1",

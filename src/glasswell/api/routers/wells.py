@@ -870,10 +870,28 @@ def pending_allocation(rule: LeaseReportingRule) -> dict[str, Any]:
 def reported_at_pool_grain(rule: LeaseReportingRule) -> dict[str, Any]:
     """DIR-3 one grain the other way from `pending_allocation`.
 
-    A well whose regulator files per completion pool and rolls nothing up has no well-level
-    series to be absent from, so `producing` is `unknown` — but it filed, and the three causes
-    the field enumerated before this did not include the one that applies. The rule is named so
-    a reader can resolve it at /v1/conformance."""
+    A well whose regulator files per completion pool has no well-level filing to be absent
+    from, so `producing` is `unknown`, and it filed, which is not one of the three causes the
+    field enumerated before this. Which of two sentences it gets is the
+    jurisdiction's own grain decision: a registration that registers a served rollup has one
+    performed, so saying none is would be false the day the mart lands, and the code changes
+    with the sentence because `card.ts:428` replaces the chart with a panel for the first of
+    them and draws the chart for the second.
+    """
+    if rule["served_rollup"]:
+        return {
+            "code": "production_summed_over_pools",
+            "detail": (
+                f"This well's regulator files production at the {rule['reporting_level']} and"
+                " filed no per-well number, so `producing` is unknown because canonical holds"
+                " no well-grain row for it rather than because nothing was filed. The served"
+                f" well series is glasswell's sum of those filings ({rule['rule_id']}), which"
+                " is a mart figure carrying its own derivation and not a filing the regulator"
+                " made. The pool filings are served separately."
+            ),
+            "pointer": "/producing",
+            "rule_id": rule["rule_id"],
+        }
     return {
         "code": "production_reported_at_pool_grain",
         "detail": (

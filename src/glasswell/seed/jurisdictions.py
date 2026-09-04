@@ -541,11 +541,25 @@ GRAIN_RESTATEMENTS: tuple[dict[str, object], ...] = tuple(
     if str(row["jurisdiction_code"]) in GRAIN_RESTATED_CODES
 )
 
+# New Mexico's production_grain decision repoints to the successor at the grain instant and at
+# no earlier one: a restatement declares what was known when it was published, and the rollup
+# rule was not published at the presentation instant. The migration writes the same repoint,
+# guarded on the successor being resident, so the two writers cannot disagree.
+GRAIN_RULE_REPOINTS: dict[tuple[str, str], str] = {
+    ("NM", "production_grain"): "cr_nm_wcproduction_pool_rollup_2",
+}
+
 # Every rule row those two registrations declare at their new instant. A restatement states what
 # was known when it was published, so its rule rows travel with it or the registration claims
 # fewer decisions than it has.
 GRAIN_JURISDICTION_RULES: tuple[dict[str, object], ...] = tuple(
-    row for row in JURISDICTION_RULES
+    {
+        **row,
+        "rule_id": GRAIN_RULE_REPOINTS.get(
+            (str(row["jurisdiction_code"]), str(row["decision"])), row["rule_id"]
+        ),
+    }
+    for row in JURISDICTION_RULES
     if str(row["jurisdiction_code"]) in GRAIN_RESTATED_CODES
 )
 
@@ -577,10 +591,20 @@ TX_SUPERSEDED_RULES: tuple[dict[str, object], ...] = (
 # supersedes another carries the whole of what it supersedes, so it is one row and not two.
 SUPERSESSIONS: tuple[dict[str, object], ...] = (TEXAS_SUPERSESSION,)
 
-# Which rule rows are serving after this train. JURISDICTION_RULES is what the restatement
-# declared; a jurisdiction superseded since then declares its own set, and a reader with no
-# database resolves the pair here rather than the answer being spelled in two places.
-SUPERSEDED_RULE_SETS: dict[str, tuple[dict[str, object], ...]] = {"TX": TX_SUPERSEDED_RULES}
+# Which rule rows are serving after this train, keyed by the code whose latest registration is
+# not the presentation restatement. JURISDICTION_RULES is what that restatement declared; Texas
+# has been superseded since and Montana and New Mexico restated at the grain instant, so each
+# declares its own set and a reader with no database resolves them here rather than the answer
+# being spelled in three places.
+SUPERSEDED_RULE_SETS: dict[str, tuple[dict[str, object], ...]] = {
+    "TX": TX_SUPERSEDED_RULES,
+    **{
+        code: tuple(
+            row for row in GRAIN_JURISDICTION_RULES if str(row["jurisdiction_code"]) == code
+        )
+        for code in GRAIN_RESTATED_CODES
+    },
+}
 
 SERVING_JURISDICTION_RULES: tuple[dict[str, object], ...] = (
     *(
