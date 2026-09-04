@@ -30,6 +30,7 @@ from glasswell.api.examples import (
     EXAMPLE_VINTAGE_ID,
     KEY_HEADER,
 )
+from glasswell.api.routers.validators import EXAMPLE_JURISDICTION
 from tests.contract.conftest import (
     OWNER_PASSWORD,
     SESSION_BASE_URL,
@@ -138,6 +139,16 @@ MATRIX: tuple[tuple, ...] = (
     ("GET", f"/v1/modeling/publications/{EXAMPLE_PUBLICATION_ID}?explain=true", READ),
     ("GET", "/v1/conformance", READ),
     ("GET", f"/v1/conformance/{EXAMPLE_RULE_ID}", READ),
+    # `read`, matched to `GET /v1/wells/{api10}/cumulatives` and decided rather than
+    # inherited: this route serves a mart's published residuals as figures with handles, the
+    # same class of content and the same read path. It returns no credential, no raw archive
+    # byte and no account, which is what the two narrower classes are for -- `owner` is held
+    # by `/v1/manifests/{id}/bytes` and the key and user routes, `session` by routes that act
+    # on the caller's own session. A jurisdiction's conservation ledger is a published
+    # measurement about served figures, and withholding it from a reader who may read those
+    # figures would state that the number is more public than its own residual.
+    ("GET", f"/v1/validators/allocation?jurisdiction={EXAMPLE_JURISDICTION}", READ),
+    ("GET", f"/v1/validators/allocation?jurisdiction={EXAMPLE_JURISDICTION}&explain=true", READ),
     ("GET", "/v1/schedules", READ),
     ("GET", f"/v1/schedules/{EXAMPLE_JOB_ID}", READ),
     ("GET", "/v1/quarantine", READ),

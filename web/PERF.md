@@ -111,7 +111,7 @@ explorer's shell chunk and into the entry. Verified rather than inferred — `gw
 | budget | B gzipped | headroom over measured |
 |---|---:|---|
 | entry chunk | 14,000 | +0.4% over 13,950 (v0.78; was +0.5% over 13,928 in v0.76) |
-| explorer route, map excluded | 75,000 | +4.9% over 71,511 |
+| explorer route, map excluded | 79,700 | +4.3% over 76,412 (v0.80, re-measured; see below) |
 | map chunk | 330,000 | +5.2% over 313,823 |
 
 The entry was re-measured again when the well card moved to a dynamic import. `card/card.ts`
@@ -121,6 +121,39 @@ panel that renders only after a well is clicked, and a reader who opens the expl
 clicks one. The card became its own 4.5 kB chunk and the entry fell 21,340 → 12,750 B. The
 explorer route is measured with the card cut, on the same ruling its neighbour and status-chip
 branches were already cut under: it only ever renders over the map.
+
+**Re-measured at v0.80's own head** (`feat/tx-lease-production`, the Texas fix round), because
+the figure the raise was argued from was not this tree's. The v0.79 note cited 71,511 B
+as the route before the band; the well-card track's P0 measured the same route at **74,838 B**
+at its own base and **76,438 B** uncut, so 71,511 was a stale before-figure and the 4,447 B the
+note attributes to the band is not the band's cost. What the route measures on this branch,
+by the test's own walk over `bridge`, `chart`, `gw-count`, `index`, `jurisdictions.generated`,
+`load`, `notes`, `series`, `shell` and `wells-by`, with the map, Status, card, neighbour and
+status-chip branches cut:
+
+| tree | explorer route, gzipped |
+|---|---:|
+| v0.79 note's cited before-figure (stale) | 71,511 |
+| `feat/well-card-2` P0, same walk at its base | 74,838 (76,438 uncut) |
+| **`feat/tx-lease-production` @ this head** | **76,412** |
+
+The budget stays at **79,700**, which is this measurement plus 4.3%. It is not re-derived
+upward to 76,412 + 4.9% = 80,156: a ratchet moves as far as a measurement forces it and no
+further, and the number above already fits with headroom in the band the other two budgets
+carry. `BUDGET_BYTES` will conflict with `feat/well-card-2` at the v0.81 train; the arithmetic
+here is what the integrator resolves it against.
+
+**Why the band is on the route at all**, which is the part of the v0.79 note that still
+stands: the chart chunk carries a second state band with its own six-class vocabulary, its own
+key, and the per-month class, divisor and completeness arrays behind them, and it sits on the
+route rather than behind a second dynamic import on purpose — it renders inside the plot, so a
+chart that had to fetch another chunk before it could say whether a point was observed or
+allocated would draw the number first and the label after it. That ordering is the one thing
+the band exists to prevent.
+
+*(The v0.79 note's figures — "71,511 → 75,958 B" and "measured + 4.9%" — are superseded by the
+table above and have been removed rather than left below their own correction: a reader who
+scrolled here first got the number the block above exists to retire.)*
 
 The budget was set from 12,750 B, measured before the review round that followed it. The
 stale-selection guard, the rejection handler and the per-detail warning grouping put the

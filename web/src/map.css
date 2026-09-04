@@ -387,8 +387,14 @@
   color: var(--cyan-text);
 }
 
+/* gate-v078 N8: at 0.45 the row's own served count composited to 2.60:1 and its derivation
+   handle to 2.66:1 on the key's #111920 -- the count is what makes the classes sum to the
+   extent at a zoom where four of them are not drawn, so the load-bearing figure was the least
+   legible thing in the panel. 0.72 puts the count at 4.72:1 and the handle at 4.88:1 and still
+   reads as receded beside a full row's 7.95:1. 0.70 clears 4.5:1 by 0.03, which is inside what
+   the measurement itself varies by; web/src/map/legend-contrast.test.ts is the arithmetic. */
 .gw-lg-row[data-out-of-scale] {
-  opacity: 0.45;
+  opacity: 0.72;
 }
 
 /* Listed, switchable, and carrying no measurement from the registry census: the class recedes

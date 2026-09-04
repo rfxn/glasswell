@@ -28,9 +28,15 @@ def register_response_figures(
     input_derivations: Sequence[str],
     correlation_id: str,
     rule_ids: Sequence[str] = (),
+    point_outputs: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> Any:
-    """Persist exact selector/value evidence, then bind every response figure to it."""
-    outputs = _selector_outputs(data)
+    """Persist exact selector/value evidence, then bind every response figure to it.
+
+    `point_outputs` records evidence for figures the response computes but does not carry as
+    its own leaf -- a month of a series, addressed the way the chart addresses it. Without a
+    row per point the handle a reader clicks names an output nobody recorded.
+    """
+    outputs = _merged_outputs(_selector_outputs(data), point_outputs)
     if not outputs:
         return data
     output_partition = (
@@ -88,6 +94,20 @@ def register_response_figures(
         connection.rollback()
         raise
     return _bind_derivation(data, context.derivation_id)
+
+
+def _merged_outputs(
+    figures: dict[str, dict[str, Any]],
+    points: Mapping[str, Mapping[str, Any]] | None,
+) -> dict[str, dict[str, Any]]:
+    merged = dict(figures)
+    for selector, evidence in (points or {}).items():
+        normal = _normal_selector(selector)
+        ready = json_ready(dict(evidence))
+        prior = merged.setdefault(normal, ready)
+        if prior != ready:
+            raise ValueError(f"selector {normal!r} names conflicting response figures")
+    return dict(sorted(merged.items()))
 
 
 def _record_response_outputs(

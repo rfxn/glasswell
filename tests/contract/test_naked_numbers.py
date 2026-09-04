@@ -17,6 +17,7 @@ import yaml
 from fastapi.testclient import TestClient
 
 from glasswell.api.examples import DATASET_KEY, REQUEST_EXAMPLE_KEY
+from glasswell.api.routers import validators
 from glasswell.lineage.ids import parse_handle
 from tests.contract.conftest import TX_API10
 
@@ -247,6 +248,19 @@ def test_every_documented_example_is_callable(client: TestClient) -> None:
     assert {name: code for name, code in failures.items() if code != 200} == {}
 
 
+def test_the_example_heuristic_cites_the_gate_that_holds_it_to_answering() -> None:
+    """`_example_jurisdiction()` picks the served example by a structural heuristic and cites a
+    gate as its justification, so the citation is load-bearing rather than decorative. It named
+    `test_openapi_examples.py`, whose eight tests all read `/openapi.json` and call no route;
+    the net that would redden on a wrongly-picked jurisdiction is the test above (gate-tx D-2).
+    """
+    source = Path(validators.__file__).read_text(encoding="utf-8")
+    justification = source[: source.index("def _example_jurisdiction")]
+
+    assert Path(__file__).name in justification
+    assert "test_every_documented_example_is_callable" in justification
+
+
 def payload(response: Any) -> Any:
     """`data` for an enveloped response, the whole body for /healthz, None for a tile."""
     if not response.headers["content-type"].startswith("application/json"):
@@ -348,8 +362,9 @@ def test_every_handle_resolves_to_a_terminal_manifest(client: TestClient) -> Non
 
     assert found, "no response carried a handle, so the walker proves nothing"
     for handle in sorted(found):
-        chain = client.get("/v1/explain", params={"h": handle, "depth": "full"}).json()
-        resolved = chain["data"]["chains"][0]
+        response = client.get("/v1/explain", params={"h": handle, "depth": "full"})
+        assert response.status_code == 200, f"{handle} does not resolve: {response.text}"
+        resolved = response.json()["data"]["chains"][0]
         node_types = {node["id"]: node["type"] for node in resolved["nodes"]}
         assert resolved["truncated"] is False
         assert resolved["terminals"], f"{handle} resolves to no terminal"

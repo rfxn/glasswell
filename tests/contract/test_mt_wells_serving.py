@@ -196,10 +196,13 @@ def test_the_other_states_lookups_are_unchanged(client: TestClient) -> None:
     assert declared_rule("42", "status_vocabulary") == "cr_tx_status_vocab_1"
     assert declared_rule("30", "status_vocabulary") == "cr_nm_wellhistory_status_vocab_2"
     assert declared_rule("33", "geometry_provenance") == "cr_nd_geometry_provenance_1"
-    # No longer North Dakota's. Texas registers no geometry_provenance decision, so it cites
-    # none rather than inheriting a rule about ND geometry (R-4 is still open; the inheritance
-    # is not).
-    assert declared_rule("42", "geometry_provenance") is None
+    # No longer North Dakota's, and no longer absent either: R-4 asked Texas for its own and
+    # the v0.80 supersession registers it. The property this line holds is the one it always
+    # held -- a rule Texas cites is a rule about Texas (gate-tx H-4).
+    assert declared_rule("42", "geometry_provenance") == "cr_tx_geometry_provenance_1"
+    assert declared_rule("42", "geometry_provenance") != declared_rule(
+        "33", "geometry_provenance"
+    )
     assert (
         declared_rule("30", "geometry_provenance")
         == "cr_nm_wellhistory_geometry_provenance_1"

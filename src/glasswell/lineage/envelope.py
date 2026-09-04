@@ -129,6 +129,9 @@ class Series(Frozen):
     selector: str | None = None
     granularity: str | None = None
     basis: str | None = None
+    # Mandatory whenever the granularity is lease_allocated, for the same reason it is on a
+    # scalar figure: the versioned artifact that produced the number is part of the number.
+    allocation_model_id: str | None = None
     point_handles: Sequence[str | None] | None = None
 
     @property
@@ -223,10 +226,11 @@ def series(
     selector: str | None = None,
     granularity: str | None = None,
     basis: str | None = None,
+    allocation_model_id: str | None = None,
     point_handles: Sequence[str | None] | None = None,
 ) -> Series:
     """A dense series: one handle for the column, per-point vintages ride alongside it."""
-    _validate(unit, granularity, basis, None)
+    _validate(unit, granularity, basis, allocation_model_id)
     if selector is not None:
         parse_selector(selector)
     if point_handles is not None:
@@ -242,6 +246,7 @@ def series(
         selector=selector,
         granularity=granularity,
         basis=basis,
+        allocation_model_id=allocation_model_id,
         point_handles=None if point_handles is None else list(point_handles),
     )
 

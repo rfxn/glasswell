@@ -27,7 +27,6 @@ from glasswell.api.examples import (
 )
 from glasswell.api.provenance import register_response_figures
 from glasswell.api.responses import EnvelopeModel, FigureModel, enveloped, inline_for, iso
-from glasswell.api.routers.health import source_health_data
 from glasswell.api.routers.wells import (
     API10_PATTERN,
     LENGTH_SCOPE,
@@ -38,6 +37,7 @@ from glasswell.lengths import LengthRuleUnregistered, resolve_length_method
 from glasswell.lineage.conformance import load_rules, rule_for_family
 from glasswell.lineage.envelope import figure
 from glasswell.lineage.ids import format_handle
+from glasswell.status.source_health import source_health_data
 from glasswell.units import metres_to_feet
 
 router = APIRouter(tags=["wells"])

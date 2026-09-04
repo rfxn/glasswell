@@ -11,6 +11,9 @@ the deployed one -- this migration is what lands them. Both paths are exercised 
 
 from __future__ import annotations
 
+import ast
+import inspect
+import textwrap
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import date, timedelta
@@ -20,7 +23,7 @@ import pytest
 from psycopg.rows import dict_row
 
 from glasswell.db.migrate import discover_migrations
-from glasswell.seed import seed_all
+from glasswell.seed import jurisdictions, seed_all
 from glasswell.seed.jurisdictions import (
     FOUNDING_JURISDICTIONS,
     JURISDICTION_RESTATEMENTS,
@@ -28,6 +31,7 @@ from glasswell.seed.jurisdictions import (
     JURISDICTIONS,
     REGISTERED_ON,
     RESTATED_ON,
+    SUPERSESSIONS,
     seed_jurisdictions,
 )
 from tests.support.seed import seed_derivation
@@ -91,6 +95,44 @@ def resolved(connection: psycopg.Connection, knowledge: date, valid: date) -> li
         return cursor.fetchall()
 
 
+def rule_row_sources() -> tuple[str, ...]:
+    """Every module-level tuple `seed_jurisdictions` feeds to the rule insert, read out of the
+    seeder itself.
+
+    Listing the names here is what broke: the fixture patched two of them, the Texas track
+    added `TX_SUPERSEDED_RULES` as a third writer, and eight tests stopped running rather than
+    failing (gate-tx H-5). Derived, a fourth writer is patched without an edit, and one this
+    cannot resolve fails the assertion below rather than leaving the fixture half-applied.
+    """
+    tree = ast.parse(textwrap.dedent(inspect.getsource(seed_jurisdictions)))
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if getattr(node.func, "attr", "") != "executemany" or len(node.args) != 2:
+            continue
+        first = node.args[0]
+        if not isinstance(first, ast.Name) or first.id != "_INSERT_RULE":
+            continue
+        names.update(
+            child.id
+            for child in ast.walk(node.args[1])
+            if isinstance(child, ast.Name)
+            and isinstance(getattr(jurisdictions, child.id, None), tuple)
+        )
+    return tuple(sorted(names))
+
+
+RULE_ROW_SOURCES = rule_row_sources()
+
+# Three families write a registration row, not two: the founding set, the restatement, and a
+# supersession that carries one jurisdiction's registration forward at a new clock pair. An
+# equality that knows two of them fails the day a track appends the third (gate-tx H-4).
+REGISTRATION_ROWS = (
+    len(JURISDICTIONS) + len(JURISDICTION_RESTATEMENTS) + len(SUPERSESSIONS)
+)
+
+
 @pytest.fixture
 def seeded_without_the_registry_rules(db: psycopg.Connection) -> psycopg.Connection:
     """The deployed database's state: every conformance rule resident, no jurisdiction rule.
@@ -98,14 +140,23 @@ def seeded_without_the_registry_rules(db: psycopg.Connection) -> psycopg.Connect
     The patch is scoped to the seeding, not to the test: what follows it calls the real seeder.
     """
     with pytest.MonkeyPatch.context() as patch:
-        patch.setattr("glasswell.seed.jurisdictions.JURISDICTION_RULES", ())
-        patch.setattr("glasswell.seed.jurisdictions.JURISDICTION_RULES_AS_FOUNDED", ())
+        for name in RULE_ROW_SOURCES:
+            patch.setattr(f"glasswell.seed.jurisdictions.{name}", ())
         seed_all(db)
     db.commit()
     with db.cursor() as cursor:
         cursor.execute("select count(*) from lineage.jurisdiction_rules")
         assert cursor.fetchone()[0] == 0
     return db
+
+
+def test_the_fixture_finds_every_writer_the_seeder_feeds_the_rule_insert() -> None:
+    """The discovery, asserted rather than assumed: a walk that found nothing would leave the
+    fixture patching nothing and every test using it silently seeding the whole registry."""
+    assert len(RULE_ROW_SOURCES) >= 3, RULE_ROW_SOURCES
+    assert "TX_SUPERSEDED_RULES" in RULE_ROW_SOURCES
+    for name in RULE_ROW_SOURCES:
+        assert isinstance(getattr(jurisdictions, name), tuple)
 
 
 @pytest.fixture
@@ -196,7 +247,7 @@ def test_running_the_migration_twice_changes_nothing(
         cursor.execute(migration_sql(MIGRATION))
         cursor.execute(migration_sql(MIGRATION))
         cursor.execute("select count(*) from lineage.jurisdictions")
-        assert cursor.fetchone()[0] == len(JURISDICTIONS) + len(JURISDICTION_RESTATEMENTS)
+        assert cursor.fetchone()[0] == REGISTRATION_ROWS
         cursor.execute("select count(*) from lineage.jurisdiction_rules")
         assert cursor.fetchone()[0] == len(JURISDICTION_RULES_AS_FOUNDED)
 
@@ -393,7 +444,7 @@ def test_the_api_role_reads_every_object_and_the_resolver(db: psycopg.Connection
         )
         assert cursor.fetchone()[0] == len(JURISDICTIONS)
         cursor.execute("select count(*) from lineage.jurisdictions")
-        assert cursor.fetchone()[0] == len(JURISDICTIONS) + len(JURISDICTION_RESTATEMENTS)
+        assert cursor.fetchone()[0] == REGISTRATION_ROWS
 
 
 def test_only_the_pipeline_role_appends_a_measurement(db: psycopg.Connection) -> None:
@@ -439,10 +490,15 @@ def test_a_thousand_distinct_as_of_values_leave_one_cache_entry(
         registry = load_jurisdictions(db, REGISTERED_ON + timedelta(days=offset))
         assert sorted(row.jurisdiction_code for row in registry) == codes
 
-    # One entry per publication instant the registry actually has, which is now two: the
-    # founding day and the restatement. The property is that the key space is the registry's
-    # own history, not that the history has one entry in it.
-    assert len(_CACHE) == 2, sorted(_CACHE)
+    # One entry per publication instant the registry actually has. Read from the registry
+    # rather than counted here: the property is that the key space is the registry's own
+    # history, and a literal makes every appended supersession look like a cache leak.
+    with db.cursor() as cursor:
+        cursor.execute("select count(distinct published_at) from lineage.jurisdictions")
+        instants = int(cursor.fetchone()[0])
+
+    assert instants >= 3, "the registry has too little history for this to prove anything"
+    assert len(_CACHE) == instants, sorted(_CACHE)
     clear_jurisdiction_cache()
 
 

@@ -1314,3 +1314,61 @@
   domain_tags: [data-model, quality]
   related_terms: ["Well status", "Facil_Stat", "Quarantine"]
   source_refs: ["cr_co_wells_status_vocab_1", "cr_nm_wellhistory_status_vocab_2"]
+
+- term: Lease (TX)
+  aliases: ["Lease key", "RRC lease"]
+  short_definition: >-
+    The unit the Railroad Commission of Texas files production against: one or more wells
+    under one operator, keyed by district and lease number.
+  expanded_definition: >-
+    Texas reports production by lease rather than by well, so a Texas lease is the grain the
+    regulator's number is true at. The key is the oil-gas code, the district number and the
+    lease number together, because a bare lease number collides across districts and one
+    wellbore can be completed on an oil lease and a gas lease at once. An oil lease may hold
+    many wells; a gas lease holds exactly one.
+  domain_tags: [production, data-model]
+  related_terms: ["Allocation / allocation v0", "Allocated share", "Granularity"]
+  source_refs: ["cr_tx_lease_key_1", "cr_tx_production_grain_1"]
+
+- term: Allocated share
+  aliases: ["Share", "Per-well share"]
+  short_definition: >-
+    One well's estimated part of a lease-level volume, computed rather than reported.
+  expanded_definition: >-
+    Where a lease held more than one eligible well in a month, the lease volume is divided
+    equally among them and each part is that well's allocated share. It carries the class it
+    was arrived at under, the count of wells it was divided among, and the id of the model
+    that computed it. It is an estimate: the lease total is the fact, and the share is what
+    this system is prepared to say about one well within it.
+  domain_tags: [production, data-model]
+  related_terms: ["Allocation / allocation v0", "Lease (TX)", "Naked number"]
+  source_refs: ["cr_tx_allocation_v0_1", "cr_alloc_v0_error_bounds_1"]
+
+- term: Casinghead gas
+  aliases: ["Associated gas"]
+  short_definition: >-
+    Gas produced with oil from an oil well, as distinct from gas produced from a gas well.
+  expanded_definition: >-
+    The Railroad Commission files it in its own column, separately from gas-well gas, and the
+    two are disjoint populations keyed by whether the lease is an oil or a gas lease. A Texas
+    gas figure is the sum of both, because omitting casinghead gas would under-report the
+    Permian's associated gas, which is most of it. Gas put back down the hole for lift is
+    injection and is never summed in.
+  domain_tags: [production]
+  related_terms: ["Stream", "Lease (TX)"]
+  source_refs: ["cr_tx_gas_basis_1"]
+
+- term: Production completeness lag
+  aliases: ["Completeness lag", "Incomplete window"]
+  short_definition: >-
+    The months at the end of a series that are systematically under-filed because reports are
+    still arriving.
+  expanded_definition: >-
+    The Railroad Commission states that production records are substantially complete after
+    about six months, so the last six months of a Texas chart are not a decline: they are a
+    filing window that has not closed. Those months are shaded and the series carries a warning
+    naming the first of them, because distinguishing a filed zero from an unfiled month is
+    necessary and not sufficient - a reader sees a shape, not a count.
+  domain_tags: [production, quality]
+  related_terms: ["Report vintage", "Allocation / allocation v0"]
+  source_refs: ["cr_tx_production_grain_1"]

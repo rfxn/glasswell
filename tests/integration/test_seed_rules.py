@@ -130,6 +130,17 @@ POLICY_RULES = tuple(sorted((
     "cr_tx_identity_collapse_1",
     "cr_tx_lateral_bounds_1",
     "cr_tx_multi_wellbore_1",
+    # The allocation's own declarations. The method is a versioned artifact rather than a
+    # frame transformation, so each names the module that carries it out and none has an
+    # executor stage: what grain Texas files at and what the well-grain row therefore is, the
+    # split itself, the liquids and casinghead-gas bases the two streams are read under, where
+    # a Texas geometry came from, and that no transferable error bound has been measured.
+    "cr_alloc_v0_error_bounds_1",
+    "cr_tx_allocation_v0_1",
+    "cr_tx_gas_basis_1",
+    "cr_tx_geometry_provenance_1",
+    "cr_tx_liquids_basis_1",
+    "cr_tx_production_grain_1",
     # One cadence declaration per scheduled job, taken from the seed tuple rather than retyped.
     # Each id is already pinned twice -- the migration's publication insert names every one by
     # hand, and no rule can be seeded without a publication row -- so a third hand-kept copy

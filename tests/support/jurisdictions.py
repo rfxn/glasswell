@@ -16,7 +16,12 @@ from psycopg.rows import dict_row
 
 from glasswell.lineage.clock import utc_today
 from glasswell.lineage.jurisdictions import clear_jurisdiction_cache
-from glasswell.seed.jurisdictions import JURISDICTION_RULES, JURISDICTIONS, rule_parameters
+from glasswell.seed.jurisdictions import (
+    JURISDICTION_RULES,
+    JURISDICTIONS,
+    SUPERSEDED_RULE_SETS,
+    rule_parameters,
+)
 
 _PREFIX_OF = {str(row["jurisdiction_code"]): str(row["identity_prefix"]) for row in JURISDICTIONS}
 _BY_PREFIX = {str(row["identity_prefix"]): row for row in JURISDICTIONS}
@@ -26,12 +31,33 @@ def registration(prefix: str) -> dict[str, object] | None:
     return _BY_PREFIX.get(prefix)
 
 
+def serving_rules() -> list[dict[str, object]]:
+    """The rule rows in force: the restatement, with any supersession over the top.
+
+    A supersession is a third family of registration row, and a helper that reads two of them
+    answers for a registry that no longer exists -- which is how a gate went on asserting that
+    Texas registers no liquids policy after the day it registered one (gate-tx H-4).
+    """
+    rows = [
+        row
+        for row in (rule_parameters(rule) for rule in JURISDICTION_RULES)
+        if str(row["jurisdiction_code"]) not in SUPERSEDED_RULE_SETS
+    ]
+    for code, rules in sorted(SUPERSEDED_RULE_SETS.items()):
+        rows += [
+            row
+            for row in (rule_parameters(rule) for rule in rules)
+            if str(row["jurisdiction_code"]) == code
+        ]
+    return rows
+
+
 def declared_rule(prefix: str, decision: str) -> str | None:
     """The serving rule id a jurisdiction registers for one decision, or None."""
     return next(
         (
             str(row["rule_id"])
-            for row in (rule_parameters(rule) for rule in JURISDICTION_RULES)
+            for row in serving_rules()
             if _PREFIX_OF.get(str(row["jurisdiction_code"])) == prefix
             and row["decision"] == decision
             and row["serving"]
@@ -44,7 +70,7 @@ def declared_rule_ids(decision: str) -> set[str]:
     """Every serving rule id registered for one decision, across all jurisdictions."""
     return {
         str(row["rule_id"])
-        for row in (rule_parameters(rule) for rule in JURISDICTION_RULES)
+        for row in serving_rules()
         if row["decision"] == decision and row["serving"]
     }
 
@@ -52,7 +78,7 @@ def declared_rule_ids(decision: str) -> set[str]:
 def prefixes_registering(decision: str) -> set[str]:
     return {
         _PREFIX_OF[str(row["jurisdiction_code"])]
-        for row in (rule_parameters(rule) for rule in JURISDICTION_RULES)
+        for row in serving_rules()
         if row["decision"] == decision and row["serving"]
     }
 

@@ -26,6 +26,7 @@ from glasswell.seed.jurisdictions import (
     RESTATED_EVIDENCE_COMMIT,
     RESTATED_EVIDENCE_TAG,
     RESTATED_ON,
+    SUPERSESSIONS,
     TRACK_RULE_IDS,
 )
 
@@ -95,14 +96,18 @@ def test_the_restatement_is_published_strictly_later_than_every_founding_row(
     db: psycopg.Connection,
 ) -> None:
     with db.cursor() as cursor:
+        cursor.execute("select min(published_at) from lineage.jurisdictions")
+        (earliest,) = cursor.fetchone()
         cursor.execute(
-            "select min(published_at), max(published_at) from lineage.jurisdictions"
+            "select count(*) from lineage.jurisdictions where published_at = %s", (RESTATED_ON,)
         )
-        earliest, latest = cursor.fetchone()
+        (restated,) = cursor.fetchone()
 
     assert earliest == REGISTERED_ON
-    assert latest == RESTATED_ON
     assert RESTATED_ON > REGISTERED_ON
+    # Counted rather than read off max(published_at): a later track appending its own
+    # supersession is not this restatement failing to be the newest thing in the table.
+    assert restated == len(FOUNDING_JURISDICTIONS)
 
 
 def test_a_second_apply_on_the_same_day_raises_instead_of_being_absorbed(
@@ -232,7 +237,9 @@ def test_the_migration_and_the_seed_write_the_same_restatements(
         from_seed = cursor.fetchall()
 
     assert from_migration == from_seed
-    assert len(from_seed) == len(JURISDICTIONS) + len(JURISDICTION_RESTATEMENTS)
+    assert len(from_seed) == (
+        len(JURISDICTIONS) + len(JURISDICTION_RESTATEMENTS) + len(SUPERSESSIONS)
+    )
 
 
 def test_two_registrations_cannot_claim_one_draw_order_at_one_instant(

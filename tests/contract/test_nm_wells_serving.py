@@ -324,17 +324,22 @@ def test_the_north_dakota_equivalents_are_unchanged(client: TestClient) -> None:
     assert declared_rule("33", "geometry_provenance") == "cr_nd_geometry_provenance_1"
 
 
-def test_the_texas_equivalents_are_unchanged(client: TestClient) -> None:
+def test_texas_now_registers_its_own_three_and_still_borrows_none(client: TestClient) -> None:
+    """Inverted at v0.80, which is when Texas registered them (gate-tx H-4).
+
+    The property is unchanged and is the point of the file: a rule Texas cites is a rule about
+    Texas. It used to cite North Dakota's geometry provenance -- a rule about ND geometry
+    served on a Texas well -- and R-4 asked for its own; the supersession registers it, along
+    with the grain decision and the liquids policy the allocation needs.
+    """
     data = body(client, f"/v1/wells/{TX_API10}")["data"]
 
     assert data["state_code"] == "42"
     assert declared_rule("42", "status_vocabulary") == "cr_tx_status_vocab_1"
-    # No cr_tx_geometry_provenance_1 exists, so Texas registers no geometry_provenance decision
-    # and cites none. It used to inherit North Dakota's, which was a rule about ND geometry
-    # served on a Texas well; authoring a real Texas rule is R-4 and still open.
-    assert declared_rule("42", "geometry_provenance") is None
-    assert declared_rule("42", "production_grain") is None
-    assert declared_rule("42", "liquids") is None
+    assert declared_rule("42", "geometry_provenance") == "cr_tx_geometry_provenance_1"
+    assert declared_rule("42", "production_grain") == "cr_tx_production_grain_1"
+    assert declared_rule("42", "liquids") == "cr_tx_liquids_basis_1"
+    assert declared_rule("33", "geometry_provenance") == "cr_nd_geometry_provenance_1"
 
 
 def test_a_state_with_no_registered_policy_gets_no_other_states_policy(
@@ -342,23 +347,32 @@ def test_a_state_with_no_registered_policy_gets_no_other_states_policy(
 ) -> None:
     """The failure mode this phase exists to close, stated as a property of the resolvers.
 
-    Texas registers no liquids decision and no production_grain decision, so both resolvers
-    answer None for it — and an unregistered prefix is not an unregistered *registry*, which
-    is why this is a null and not a refusal.
+    Re-targeted at v0.80: Texas registered both decisions, so the state that registers nothing
+    is Montana for the grain, and `35` for the policy -- a prefix no registration claims at
+    all. An unregistered prefix is not an unregistered *registry*, which is why this is a null
+    and not a refusal (gate-tx H-4).
     """
     from glasswell.api.routers.production import rollup_rule, stream_basis
 
     clear_jurisdiction_cache()
     registry = load_jurisdictions(seeded)
 
-    assert stream_basis("oil", "42", registry=registry) is None
+    assert registry.at_prefix("35") is None, "35 is claimed; pick a prefix that is not"
+    assert stream_basis("oil", "35", registry=registry) is None
     assert stream_basis("oil", None, registry=registry) is None
-    assert stream_basis("water", "42", registry=registry) == "water"
+    assert stream_basis("water", "35", registry=registry) == "water"
     assert stream_basis("gas", "33", registry=registry) is None
     assert stream_basis("oil", "33", registry=registry) == "oil+condensate"
     assert stream_basis("oil", "30", registry=registry) == "oil"
-    assert rollup_rule("42", registry=registry) is None
+    # Montana registers a liquids policy and no grain decision, so the grain resolver answers
+    # None for a registration that exists rather than only for one that does not.
+    assert rollup_rule("25", registry=registry) is None
+    assert rollup_rule("35", registry=registry) is None
     assert rollup_rule("30", registry=registry) == "cr_nm_wcproduction_pool_rollup_1"
+    # Texas's own, and its own rule id: the same basis string as North Dakota's is not the
+    # same decision, and this is the assertion that tells them apart.
+    assert stream_basis("oil", "42", registry=registry) == "oil+condensate"
+    assert rollup_rule("42", registry=registry) == "cr_tx_production_grain_1"
 
 
 def test_the_new_mexico_quarantine_reason_is_servable_with_its_rule(

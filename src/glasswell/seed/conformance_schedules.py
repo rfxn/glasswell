@@ -7,6 +7,10 @@ thing R8 forbids. Each job carries one `cr_job_cadence_<job_id>_1` rule, publish
 cadence lives in their own unit's `OnCalendar=`, a tree artefact under review, and minting a
 rule for it would duplicate the record rather than create one.
 
+A cadence decision is never edited. Where one is corrected the `_1` row stands and a `_2` row
+supersedes it at a later effective date, which is what `OBSERVE_DECISIONS` below carries for
+the six Colorado rows the launch-posture ruling restated.
+
 `stage` is `schedule` and `rule_kind` is `code_ref` -- the kind the glossary calls the honest
 exception, where the decision is a row and named code carries it out.
 """
@@ -28,8 +32,19 @@ from glasswell.seed.conformance_nd import GIS_WELLS_URL as ND_GIS_URL
 from glasswell.seed.conformance_nd import MPR_INDEX_URL
 from glasswell.seed.conformance_nm import OCD_FTP_PAGE_URL
 from glasswell.seed.conformance_nm_wells import GIS_LAYER_URL as NM_GIS_LAYER_URL
-from glasswell.seed.conformance_tx import EWA_LINK, GIS_LINK
-from glasswell.seed.schedules import JOB_SOURCES, SCHEDULES, anchors, cadence_rule_id
+from glasswell.seed.conformance_tx import (
+    EWA_LINK,
+    GIS_LINK,
+    TX_CADENCE_DECISIONS,
+    TX_CADENCE_EVIDENCE,
+)
+from glasswell.seed.schedules import (
+    JOB_SOURCES,
+    SCHEDULES,
+    anchors,
+    cadence_rule_id,
+    observe_rule_id,
+)
 
 EFFECTIVE_FROM = date(2026, 9, 2)
 # The symbol the planner really exports. `due_jobs` was a name nobody wrote, which is a
@@ -238,14 +253,69 @@ _DECISIONS: dict[str, dict[str, str]] = {
     },
 }
 
+# What a launching row would have started unattended, one clause per job, so each successor
+# argues its own cost rather than sharing a verdict.
+_OBSERVE_CONSEQUENCE: dict[str, str] = {
+    "co_ecmc_gis": "a pull of the three ECMC archives",
+    "co_ecmc_production": "a pull of the rolling ECMC production file",
+    "co_wells": "a promotion of the staged Colorado header table",
+    "co_production": "a promotion of the staged rolling production file",
+    "co_tiles": "a rebuild of the Colorado tile mart",
+    "co_counts": "a re-measure of every jurisdiction's served well counts",
+}
+
+_OBSERVE_RULE = (
+    "Compute this job's plan on every tick and record what would run, and launch nothing,"
+    " until the launch flip lands."
+)
+
+_OBSERVE_RATIONALE = (
+    "{predecessor} registered this row launch on the reasoning that Colorado installs no"
+    " systemd unit, so no second runner could collide with it. That is true, and it is not the"
+    " whole decision. plan.py:363 rewrites a due would_run entry to run for any row whose"
+    " launch_mode is launch, runner.py:306 then starts it, and the deploy re-arms"
+    " glasswell-scheduler.timer on every run, so this row turned the first unattended tick"
+    " after a deploy into {consequence}. launch is the launch flip's own act rather than a"
+    " per-jurisdiction registration choice, and the flip's preconditions are unmet: the two"
+    " legacy pipeline timers are not retired, the deploy's Colorado mart steps 6c and 6d do not"
+    " yet wait on scheduler runs instead of running the marts themselves, verify.sh does not"
+    " yet assert the schedule a tick resolved, and no day of armed observe-mode ticks has been"
+    " compared against what the legacy timers ran. This row observes until all four are met."
+    " The flip is what appends the successor to this rule; nothing else may."
+)
+
+# Keyed by the successor's own rule id, because a job now carries more than one cadence
+# decision and the builder has to know which of them it is writing.
+OBSERVE_DECISIONS: dict[str, dict[str, object]] = {
+    observe_rule_id(job_id): {
+        "rule": _OBSERVE_RULE,
+        "rationale": _OBSERVE_RATIONALE.format(
+            predecessor=cadence_rule_id(job_id), consequence=consequence
+        ),
+        # The founding rule decided what drives the job; this one decides only the posture.
+        "applies_to": ["job_schedules.launch_mode"],
+    }
+    for job_id, consequence in _OBSERVE_CONSEQUENCE.items()
+}
+
 SCHEDULE_RULES: tuple[dict[str, object], ...] = ()
 
 
 # A later jurisdiction track declares its own cadence decisions beside its other rules and
 # they are merged here, so one builder writes every cr_job_cadence_<job>_1 row and the grammar
 # cannot fork.
-EVIDENCE: dict[str, str] = {**_EVIDENCE, **CO_CADENCE_EVIDENCE}
-DECISIONS: dict[str, dict[str, str]] = {**_DECISIONS, **CO_CADENCE_DECISIONS}
+EVIDENCE: dict[str, str] = {**_EVIDENCE, **CO_CADENCE_EVIDENCE, **TX_CADENCE_EVIDENCE}
+DECISIONS: dict[str, dict[str, str]] = {
+    **_DECISIONS,
+    **CO_CADENCE_DECISIONS,
+    **TX_CADENCE_DECISIONS,
+}
+
+# One lookup for both generations, so the builder reads a rule id and never guesses an ordinal.
+DECISIONS_BY_RULE: dict[str, dict[str, object]] = {
+    **{cadence_rule_id(job_id): decision for job_id, decision in DECISIONS.items()},
+    **OBSERVE_DECISIONS,
+}
 
 def _spec(job_id: str, schedule: dict[str, object], anchor: str) -> dict[str, object]:
     interval = schedule.get("cadence_interval")
@@ -271,18 +341,22 @@ def _build() -> tuple[dict[str, object], ...]:
         job_id = str(schedule["job_id"])
         if schedule["trigger"] == "external_timer":
             continue
-        decision = DECISIONS[job_id]
+        rule_id = str(schedule.get("rule_id") or cadence_rule_id(job_id))
+        founding = cadence_rule_id(job_id)
+        decision = DECISIONS_BY_RULE[rule_id]
         source_id = anchor[job_id]
         rules.append(
             {
-                "rule_id": cadence_rule_id(job_id),
+                "rule_id": rule_id,
+                "supersedes_rule_id": None if rule_id == founding else founding,
+                "effective_from": schedule.get("effective_from", EFFECTIVE_FROM),
                 "source_id": source_id,
                 "stage": "schedule",
                 "rule_kind": "code_ref",
-                "applies_to_fields": ["job_schedules.trigger"],
+                "applies_to_fields": decision.get("applies_to", ["job_schedules.trigger"]),
                 "spec": _spec(job_id, schedule, source_id),
-                "rule": decision["rule"],
-                "rationale": decision["rationale"],
+                "rule": str(decision["rule"]),
+                "rationale": str(decision["rationale"]),
                 "evidence_url": EVIDENCE[source_id],
                 "code_ref": "glasswell/scheduler/plan.py",
             }
@@ -309,8 +383,6 @@ def _row(rule: dict[str, object]) -> dict[str, object]:
         **rule,
         "rule_family": rule_id.rsplit("_", 1)[0],
         "spec": Jsonb(rule["spec"]),
-        "supersedes_rule_id": None,
-        "effective_from": EFFECTIVE_FROM,
     }
 
 

@@ -253,3 +253,29 @@
   reason: >-
     How long a scheduled job ran, on the status page's job rows. Operational inventory from a
     timed snapshot, not a petroleum figure.
+
+# --- the allocation, and what is method rather than measurement ---------------
+# An allocated share is a figure and carries a handle like any other. What is exempt
+# here is the arithmetic that produced it — a divisor is part of the method — and the
+# registry key the residual ledgers are reported for.
+- pointer: /series/oil_bbl_eligible_wells_by_month/*
+  reason: >-
+    Divisor. The count of wells a share was computed over is part of the method, not a
+    measured quantity of anything.
+- pointer: /series/gas_mcf_eligible_wells_by_month/*
+  reason: >-
+    Divisor. The count of wells a share was computed over is part of the method, not a
+    measured quantity of anything.
+- pointer: /series/oil_bbl_shares_by_month/*
+  reason: >-
+    Cardinality. The count of lease records a point was summed over is part of the method,
+    not a measured quantity of anything; each share carries its own handle.
+- pointer: /series/gas_mcf_shares_by_month/*
+  reason: >-
+    Cardinality. The count of lease records a point was summed over is part of the method,
+    not a measured quantity of anything; each share carries its own handle.
+- pointer: /blocks/*/degraded_at
+  reason: >-
+    The threshold the Status check compares the unallocated share against, read from
+    cr_tx_allocation_v0_1's own spec. A parameter of the decision, not an observation the
+    ledger stands behind; the share beside it is the figure.

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from typing import Annotated, Any, Literal
 
 import psycopg
@@ -22,6 +23,7 @@ from glasswell.api.examples import (
     request_example,
     semantics,
 )
+from glasswell.api.provenance import register_response_figures
 from glasswell.api.responses import (
     EnvelopeModel,
     enveloped,
@@ -29,14 +31,15 @@ from glasswell.api.responses import (
     iso,
     month_label,
 )
-from glasswell.api.routers.health import source_health_data
 from glasswell.api.routers.wells import API10_PATTERN, RANKED_WELLS, pending_allocation
-from glasswell.lineage.conformance import lease_reporting_rule
+from glasswell.lineage.conformance import allocated_series_rule, lease_reporting_rule
 from glasswell.lineage.envelope import series
 from glasswell.lineage.ids import format_handle
 from glasswell.lineage.jurisdictions import JurisdictionRegistry
 from glasswell.lineage.selector_registry import identity_selector_term
 from glasswell.lineage.vintages import select_production
+from glasswell.marts.cumulatives import CUMULATIVES_SCOPE
+from glasswell.status.source_health import source_health_data
 
 router = APIRouter(tags=["wells"])
 
@@ -50,6 +53,13 @@ WATER_BASIS = "water"
 PRODUCTION_GRAIN = "production_grain"
 
 STREAM_COLUMNS = {"oil": "oil_bbl", "gas": "gas_mcf", "water": "water_bbl"}
+
+# The allocated mart folds oil and condensate into one liquid stream, so the wire column it
+# fills is the one a reader already knows. Water has no column at all in a jurisdiction whose
+# regulator publishes none, and the absence is stated rather than served as an empty array.
+ALLOCATED_STREAM_COLUMNS = {"liquid": "oil_bbl", "gas": "gas_mcf"}
+ALLOCATED_STREAM_OF = {"oil": "liquid", "gas": "gas"}
+ALLOCATION_MART = "marts.tx_allocated_production"
 
 
 def stream_basis(stream: str, state_code: str | None, *, registry: JurisdictionRegistry):
@@ -67,6 +77,53 @@ def stream_basis(stream: str, state_code: str | None, *, registry: JurisdictionR
 def rollup_rule(state_code: str | None, *, registry: JurisdictionRegistry) -> str | None:
     return registry.rule_for(state_code, PRODUCTION_GRAIN)
 MONTH_FORMAT = r"^\d{4}-\d{2}$"
+
+# The summed per-well series: a well's shares for a month, added at request time. It is stored
+# nowhere -- a dual-lease wellbore has two rows at the well grain and _require_one raises on
+# them -- so this query is the only place the figure exists, and api.respond is the only
+# address it has.
+_ALLOCATED_SERIES = """
+select production_month, stream, sum(volume) as volume, min(unit) as unit,
+       min(basis) as basis, count(*) as shares,
+       sum(eligible_wells) as eligible_wells,
+       array_agg(distinct allocation_class order by allocation_class) as classes,
+       array_agg(distinct granularity order by granularity) as granularities,
+       array_agg(distinct lease_key order by lease_key) as lease_keys,
+       min(allocation_model_id) as allocation_model_id,
+       min(allocation_rule_id) as allocation_rule_id,
+       min(error_rule_id) as error_rule_id,
+       bool_or(incomplete_window) as incomplete_window,
+       min(membership_vintage) as membership_vintage,
+       min(snapshot_vintage) as snapshot_vintage,
+       min(derivation_id) as derivation_id
+  from marts.tx_allocated_production
+ where api10 = %(api10)s
+ group by production_month, stream
+ order by production_month
+"""
+
+
+def allocated_rows(
+    connection: psycopg.Connection, api10: str, requested: Sequence[str], window
+) -> list[dict[str, Any]]:
+    """One summed point per month and mart stream, filtered to the streams asked for."""
+    wanted = {ALLOCATED_STREAM_OF[name] for name in requested if name in ALLOCATED_STREAM_OF}
+    return [
+        row
+        for row in rows(connection, _ALLOCATED_SERIES, {"api10": api10})
+        if row["stream"] in wanted and _in_window(row["production_month"], window)
+    ]
+
+
+def _in_window(month: date, window: tuple[date | None, date | None]) -> bool:
+    first, last = window
+    return (first is None or month >= first) and (last is None or month <= last)
+
+
+def _dominant(values: Sequence[str]) -> str:
+    """The class the scalar reports, when the array beside it is the authoritative answer."""
+    return sorted(values, key=lambda value: (-values.count(value), value))[0]
+
 
 _VINTAGE_BOUNDS = """
 select min(report_vintage) as earliest, max(report_vintage) as latest
@@ -113,6 +170,55 @@ select (row_payload ->> 'production_month')::date as production_month,
  group by 1, 2
 """
 
+class ErrorBounds(BaseModel):
+    """4F.5 as amended: a bound, or a served statement that no transferable one exists.
+
+    `not_measured` names the study that will close it rather than omitting the field, which
+    makes the absence a resolvable fact instead of a gap a reader has to notice. A band
+    measured on another regulator's leases over a horizon nobody has shown to match would be
+    a naked number with a decoration on it.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    outcome: Literal["not_measured", "measured"] = Field(
+        description="Whether a transferable bound has been measured for this model."
+    )
+    measured_by_rule: str | None = Field(
+        default=None, description="The rule that measures it, whether or not it has yet."
+    )
+    bed: str | None = Field(default=None, description="The jurisdiction it was measured on.")
+    error_lo: str | None = Field(default=None, description="Lower bound, once measured.")
+    error_hi: str | None = Field(default=None, description="Upper bound, once measured.")
+
+
+class AllocationBlock(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    model_id: str | None = Field(
+        description="The versioned artifact that computed every share in this series."
+    )
+    rule_id: str = Field(description="The R8 decision that admits a well-level figure here.")
+    leases: list[str] = Field(
+        description=(
+            "Every lease this wellbore carries. The served series is the sum of its shares;"
+            " each share is separately addressable at alloc.apply with the lease key."
+        )
+    )
+    membership_vintage: str | None = Field(
+        description="The crosswalk snapshot the shares were resolved against."
+    )
+    incomplete_from: str | None = Field(
+        default=None,
+        description=(
+            "The first month inside the regulator's completeness lag. Months from here on are"
+            " systematically under-filed, and a reader sees a decline rather than an"
+            " incompleteness unless the chart says so."
+        ),
+    )
+    error_bounds: ErrorBounds = Field(description="Whether the method's error is measured.")
+
+
 class ProductionSeries(BaseModel):
     """Parallel arrays: `pm` is the shared month axis and every column aligns to it."""
 
@@ -135,7 +241,8 @@ class ProductionSeries(BaseModel):
         description=(
             "reported, reported_zero, no_report or withheld per point, plus"
             " multi_pool_pending where two filings share one pool label and no single row is"
-            " the well's production."
+            " the well's production, and lease_reported where the filing is the lease's and"
+            " the point is a share of it rather than a report about this well."
         ),
     )
     oil_bbl_aggregation: list[str | None] | None = Field(
@@ -158,6 +265,72 @@ class ProductionSeries(BaseModel):
     )
     gas_mcf_aggregation: list[str | None] | None = Field(
         default=None, description="Aggregation per gas point; same vocabulary as oil."
+    )
+    # Three arrays beside the existing ones, and not a change to the scalar: the additive-only
+    # freeze forbids changing a field's type, and a lease that crossed one to two eligible
+    # wells produces a series that is partly well_observed and partly lease_allocated, which
+    # one scalar cannot say.
+    oil_bbl_granularity_by_month: list[str | None] | None = Field(
+        default=None,
+        description=(
+            "well_observed or lease_allocated per oil point. Authoritative: the scalar"
+            " `granularity` reports the series' dominant class."
+        ),
+        json_schema_extra={GLOSSARY_KEY: "gt_granularity"},
+    )
+    oil_bbl_allocation_class_by_month: list[str | None] | None = Field(
+        default=None,
+        description=(
+            "observed_gas_well, observed_single_well_lease, allocated_equal_share,"
+            " allocated_after_status_change or excluded_after_plug per oil point."
+        ),
+        json_schema_extra={GLOSSARY_KEY: "gt_allocation_allocation_v0"},
+    )
+    oil_bbl_eligible_wells_by_month: list[int | None] | None = Field(
+        default=None,
+        description=(
+            "How many wells the lease volume was divided among, per oil point; null where the"
+            " point sums shares from more than one lease and no single division produced it."
+        ),
+        json_schema_extra=not_a_figure(
+            "Divisor. The count of wells a share was computed over is part of the method, not"
+            " a measured quantity of anything."
+        ),
+    )
+    oil_bbl_shares_by_month: list[int | None] | None = Field(
+        default=None,
+        description=(
+            "How many lease shares this oil point is the sum of. One for all but the wellbores"
+            " that carry more than one lease record; each share is addressable with its lease"
+            " key at alloc.apply."
+        ),
+        json_schema_extra=not_a_figure(
+            "Cardinality. The count of lease records a point was summed over is part of the"
+            " method, not a measured quantity of anything; each share carries its own handle."
+        ),
+    )
+    gas_mcf_granularity_by_month: list[str | None] | None = Field(
+        default=None, description="Granularity per gas point; same vocabulary as oil.",
+        json_schema_extra={GLOSSARY_KEY: "gt_granularity"},
+    )
+    gas_mcf_allocation_class_by_month: list[str | None] | None = Field(
+        default=None, description="Allocation class per gas point; same vocabulary as oil.",
+        json_schema_extra={GLOSSARY_KEY: "gt_allocation_allocation_v0"},
+    )
+    gas_mcf_shares_by_month: list[int | None] | None = Field(
+        default=None, description="Lease shares per gas point; same vocabulary as oil.",
+        json_schema_extra=not_a_figure(
+            "Cardinality. The count of lease records a point was summed over is part of the"
+            " method, not a measured quantity of anything; each share carries its own handle."
+        ),
+    )
+    gas_mcf_eligible_wells_by_month: list[int | None] | None = Field(
+        default=None,
+        description="Divisor per gas point; same meaning as oil.",
+        json_schema_extra=not_a_figure(
+            "Divisor. The count of wells a share was computed over is part of the method, not"
+            " a measured quantity of anything."
+        ),
     )
     water_bbl: list[str | None] | None = Field(
         default=None,
@@ -209,6 +382,15 @@ class Production(BaseModel):
     units: dict[str, str] = Field(alias="_units", description="Dotted column path to unit.")
     basis: dict[str, str] = Field(
         alias="_basis", description="Dotted column path to liquids basis, where one applies."
+    )
+    allocation: AllocationBlock | None = Field(
+        default=None,
+        description=(
+            "Present only where the series is an allocation. It names the model that computed"
+            " it, the rule that admits it, the leases the shares came from, the crosswalk"
+            " vintage they were resolved against, and whether a transferable error bound has"
+            " been measured."
+        ),
     )
 
 
@@ -367,7 +549,8 @@ def _state_code(connection, api10: str) -> str | None:
         ),
     },
     responses=problem_responses(
-        "not_found", "validation_failed", "as_of_out_of_range", "service_degraded"
+        "not_found", "validation_failed", "as_of_out_of_range", "as_of_not_supported",
+        "service_degraded"
     ),
 )
 def get_well_production(
@@ -407,6 +590,42 @@ def get_well_production(
 
     registry = jurisdictions(connection)
     state_code = _state_code(connection, api10)
+    # A lease-reporting jurisdiction that serves a well-level figure anyway is serving an
+    # allocation, and the series comes from the mart rather than from canonical -- which could
+    # not hold it: 020_production_entity_key.sql:43-46 admits no lease_allocated row.
+    # Resolved at the current cut and not at the caller's `as_of`. Whether this jurisdiction
+    # serves an allocated series is a fact about the registry now; asking it as of 2020 would
+    # answer "no rule was published yet" and quietly fall through to the observed arm, which
+    # would serve an empty envelope reading as "nothing was produced".
+    allocated_rule = allocated_series_rule(connection, state_code)
+    if allocated_rule is not None:
+        if as_of is not None:
+            # The mart holds one snapshot per key, so an older as_of would return the current
+            # allocation labelled with the caller's date -- and the back-projection makes the
+            # two differ by the whole well set. A refusal is a served class, not a silence.
+            model_rule = registry.rule_for(state_code, CUMULATIVES_SCOPE)
+            raise ProblemError(
+                "as_of_not_supported",
+                detail=(
+                    f"as_of is not supported on this well series: {allocated_rule['rule_id']}"
+                    f" admits an allocated figure and {model_rule} records"
+                    " as_of_supported: false, because the mart holds one snapshot per key --"
+                    " so an older date would be answered with today's allocation. The lease"
+                    " series it is computed from is bitemporal and answers as_of."
+                ),
+            )
+        return _allocated_response(
+            request,
+            connection,
+            api10=api10,
+            requested=requested,
+            window=window,
+            registry=registry,
+            state_code=state_code,
+            rule=allocated_rule,
+            explain=explain,
+        )
+
     observed = _rows_in_window(
         select_production(connection, as_of=as_of, api10=api10, entity_type="well"),
         requested=requested,
@@ -522,6 +741,301 @@ def get_well_production(
         links=links,
         explain=inline_for(connection, explain),
     )
+
+
+def _allocated_response(
+    request: Request,
+    connection: psycopg.Connection,
+    *,
+    api10: str,
+    requested: Sequence[str],
+    window: tuple[date | None, date | None],
+    registry: JurisdictionRegistry,
+    state_code: str | None,
+    rule: Mapping[str, Any],
+    explain: Any,
+) -> JSONResponse:
+    """The allocated series, with every point saying that it is one.
+
+    Three parallel arrays ride beside the existing `*_null_semantics` ones because the scalar
+    `granularity` cannot describe a series that is partly observed and partly allocated: a
+    lease that crossed one to two eligible wells produces exactly that, and the additive-only
+    freeze forbids changing the scalar's type. The scalar keeps its value and says the array
+    is authoritative.
+    """
+    points = allocated_rows(connection, api10, requested, window)
+    if not points:
+        return _allocation_not_built(
+            request,
+            connection,
+            api10=api10,
+            rule=rule,
+            # The rule that computes the share, read from the registration rather than written
+            # here: which rule a jurisdiction's shares are computed under is a mapping
+            # decision, and one that lives in a serving module is stranded the day a
+            # supersession moves it (gate-tx RV-3). The mart's own rows carry it where there
+            # are rows; this is the arm that has none to read.
+            model_rule=registry.rule_for(state_code, CUMULATIVES_SCOPE),
+            explain=explain,
+        )
+    months = sorted({row["production_month"] for row in points})
+    payload: dict[str, Any] = {"pm": [month_label(month) for month in months]}
+    warnings: list[dict[str, Any]] = []
+    columns: list[str] = []
+    granularities: list[str] = []
+    incomplete: list[str] = []
+    # One evidence row per point the chart can address, because the chart addresses every one:
+    # its handle button appends the month to the column selector, and a selector nobody
+    # recorded resolves to an error panel rather than to the lease row (B1).
+    point_outputs: dict[str, dict[str, Any]] = {}
+
+    for mart_stream, column in ALLOCATED_STREAM_COLUMNS.items():
+        by_month = {row["production_month"]: row for row in points if row["stream"] == mart_stream}
+        if not by_month:
+            continue
+        columns.append(column)
+        first = next(iter(by_month.values()))
+        column_granularity = _dominant(
+            [value for row in by_month.values() for value in row["granularities"]]
+        )
+        granularities.append(column_granularity)
+        values = [
+            _decimal(by_month[month]["volume"]) if month in by_month else None
+            for month in months
+        ]
+        for month, value in zip(months, values, strict=True):
+            point_outputs[f"api10={api10}&col={column}&pm={month_label(month)}"] = {
+                "value": value,
+                "unit": first["unit"],
+            }
+        payload[column] = series(
+            values,
+            unit=first["unit"],
+            derivation=first["derivation_id"],
+            selector=f"api10={api10}&col={column}",
+            granularity=column_granularity,
+            basis=first["basis"],
+            allocation_model_id=first["allocation_model_id"],
+        )
+        payload[f"{column}_report_vintage"] = [
+            iso(by_month[month]["snapshot_vintage"]) if month in by_month else None
+            for month in months
+        ]
+        # The subject here is the lease-month, and saying so is the difference between a
+        # filing and an observation of this well: `reported` beside a share says the well's
+        # month was reported, three words from the mark that says it was computed (M1).
+        payload[f"{column}_null_semantics"] = [
+            "lease_reported" if month in by_month else None for month in months
+        ]
+        payload[f"{column}_aggregation"] = [None for _ in months]
+        payload[f"{column}_granularity_by_month"] = [
+            _dominant(by_month[month]["granularities"]) if month in by_month else None
+            for month in months
+        ]
+        payload[f"{column}_allocation_class_by_month"] = [
+            _dominant(by_month[month]["classes"]) if month in by_month else None
+            for month in months
+        ]
+        payload[f"{column}_shares_by_month"] = [
+            int(by_month[month]["shares"]) if month in by_month else None for month in months
+        ]
+        payload[f"{column}_eligible_wells_by_month"] = [
+            _divisor(by_month[month]) if month in by_month else None for month in months
+        ]
+        if any(row["incomplete_window"] for row in by_month.values()):
+            incomplete.append(column)
+
+    first_incomplete = (
+        min(row["production_month"] for row in points if row["incomplete_window"])
+        if incomplete
+        else None
+    )
+    if first_incomplete is not None:
+        warnings.append(
+            {
+                "code": "production_incomplete_window",
+                "detail": (
+                    f"months from {month_label(first_incomplete)} are inside the"
+                    f" completeness lag {rule['rule_id']} records; the regulator states"
+                    " production records are substantially complete after about six months"
+                ),
+                "pointer": "/series",
+            }
+        )
+    leases = sorted({key for row in points for key in row["lease_keys"]})
+    if len(leases) > 1:
+        warnings.append(
+            {
+                "code": "well_carries_more_than_one_lease",
+                "detail": (
+                    f"this wellbore is on {len(leases)} leases and the served series is the sum"
+                    " of its shares; each share is separately addressable at alloc.apply"
+                ),
+                "pointer": "/series",
+            }
+        )
+
+    error_rule = next((row["error_rule_id"] for row in points), None)
+    data: dict[str, Any] = {
+        "api10": api10,
+        "source_id": None,
+        "granularity": _dominant(granularities) if granularities else "lease_allocated",
+        "reporting_level": "lease",
+        "streams": [
+            name for name in requested
+            if ALLOCATED_STREAM_COLUMNS.get(ALLOCATED_STREAM_OF.get(name, "")) in columns
+        ],
+        "series": payload,
+        "allocation": {
+            "model_id": next((row["allocation_model_id"] for row in points), None),
+            "rule_id": rule["rule_id"],
+            "leases": leases,
+            "membership_vintage": iso(
+                next((row["membership_vintage"] for row in points), None)
+            ),
+            "incomplete_from": month_label(first_incomplete) if incomplete else None,
+            # 4F.5 as P8 amends it: a served statement that no transferable bound exists,
+            # naming the study that will close it, rather than a band measured on another
+            # regulator's leases over a horizon nobody has shown to match.
+            "error_bounds": {"outcome": "not_measured", "measured_by_rule": error_rule},
+        },
+    }
+    # The summed per-well series is computed here and stored nowhere: a dual-lease wellbore has
+    # two mart rows at the well grain, and _require_one raises on them. So the figure is
+    # addressed the way every other request-computed one is -- at api.respond, under
+    # response_output, with a persisted row per point -- and the mart's own derivation stays the
+    # address of the per-lease shares it was summed from.
+    data = register_response_figures(
+        connection,
+        data,
+        dataset="api.tx_production",
+        operation_id="get_well_production",
+        locator=request.url.path,
+        partition={"api10": api10, "streams": "+".join(sorted(requested))},
+        input_derivations=sorted({row["derivation_id"] for row in points}),
+        correlation_id=request.state.request_id,
+        rule_ids=[rule["rule_id"], *([error_rule] if error_rule else [])],
+        point_outputs=point_outputs,
+    )
+    # Two rules, two links, because they answer two questions: `allocation_rule` is the R8
+    # decision that admits a well-level figure here at all, and the model rule is the one that
+    # computed the share. The mart rows cite the second and the cumulative coverage block cites
+    # the second, so a reader following only the first landed on the grain decision (H-19).
+    model_rule = next((row["allocation_rule_id"] for row in points), None)
+    links = {
+        "well": f"/v1/wells/{api10}",
+        "allocation_rule": f"/v1/conformance/{rule['rule_id']}",
+    }
+    if model_rule:
+        links["allocation_model_rule"] = f"/v1/conformance/{model_rule}"
+    if error_rule:
+        links["error_bounds_rule"] = f"/v1/conformance/{error_rule}"
+    return enveloped(
+        request,
+        data,
+        as_of=next((row["snapshot_vintage"] for row in points), None),
+        as_of_requested="latest",
+        labels=_labels(columns),
+        source_freshness=_freshness(connection, ["tx_pdq_dsv"]),
+        warnings=warnings,
+        links=links,
+        explain=inline_for(connection, explain),
+    )
+
+
+def pending_allocation_detail(grain_rule: str, model_rule: str | None) -> str:
+    """The disclosure's sentence, guarded the way the link beside it is guarded.
+
+    `model_rule` is read from the registration's cumulative scope, a different lookup from the
+    grain decision that routed the well here, so a registration carrying the second and not the
+    first resolves None -- and an interpolated None served "None is the rule that computes it"
+    (gate-tx D-1).
+    """
+    computes = (
+        f" {model_rule} is the rule"
+        " that computes it; the lease volumes it splits are promoted at their"
+        " native grain and are served as the lease's own."
+        if model_rule
+        else " The lease volumes are promoted at their native grain and are served as the"
+        " lease's own."
+    )
+    return (
+        "This well's regulator reports production at the lease"
+        f" ({grain_rule}), and the allocated mart holds no rows on this"
+        " instance, so no well-level figure is served rather than an empty series"
+        " that would read as nothing produced." + computes
+    )
+
+
+def _allocation_not_built(
+    request: Request,
+    connection: psycopg.Connection,
+    *,
+    api10: str,
+    rule: Mapping[str, Any],
+    model_rule: str | None,
+    explain: Any,
+) -> JSONResponse:
+    """The disclosure an instance owes while its allocated mart is empty.
+
+    Between `make deploy` and the end of the manual load the mart holds nothing, and the
+    allocated arm served 200 with an empty series, `granularity: lease_allocated`, a null
+    model id and a null `measured_by_rule` -- an envelope that reads as "nothing was
+    produced", which is the exact outcome the disclosure below exists to prevent, and an
+    absence served without naming the rule that closes it, which 4F.5 as amended forbids
+    (gate-tx H-10).
+    """
+    data: dict[str, Any] = {
+        "api10": api10,
+        "source_id": None,
+        # The grain the regulator files at, which is what is true when nothing is computed
+        # yet. Claiming `lease_allocated` would describe a share that does not exist.
+        "granularity": "lease_reported",
+        "reporting_level": "lease",
+        "streams": [],
+        "series": {"pm": []},
+        "allocation": None,
+    }
+    return enveloped(
+        request,
+        data,
+        as_of=None,
+        as_of_requested="latest",
+        labels=_labels([]),
+        source_freshness=_freshness(connection, ["tx_pdq_dsv"]),
+        warnings=[
+            {
+                "code": "production_pending_allocation",
+                "detail": pending_allocation_detail(rule["rule_id"], model_rule),
+                "pointer": "/production",
+            }
+        ],
+        links={
+            "well": f"/v1/wells/{api10}",
+            "allocation_rule": f"/v1/conformance/{rule['rule_id']}",
+            **(
+                {"allocation_model_rule": f"/v1/conformance/{model_rule}"}
+                if model_rule
+                else {}
+            ),
+        },
+        explain=inline_for(connection, explain),
+    )
+
+
+def _decimal(value: Any) -> str | None:
+    """Decimal strings, as the observed arm serves them: a float would round a barrel away."""
+    return None if value is None else str(Decimal(value))
+
+
+def _divisor(row: Mapping[str, Any]) -> int | None:
+    """The wells this month's volume was divided among, or None where no one division made it.
+
+    A wellbore on two leases sums two shares, and summing their divisors states a division
+    that never happened -- 3 wells and 1 well reported as "over 4 wells" (M2). The per-lease
+    divisor is on each share's own `lk` handle, which is where a divided figure is addressed.
+    """
+    return int(row["eligible_wells"]) if int(row["shares"]) == 1 else None
 
 
 class PoolProduction(BaseModel):

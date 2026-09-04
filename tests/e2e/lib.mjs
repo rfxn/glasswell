@@ -200,6 +200,68 @@ export function shooter(directory) {
   };
 }
 
+// The same 3:1 non-text floor, applied to a mark that carries no text: an encoding cell is
+// judged on its fill, and a fill may be a background colour, a gradient, or both. Every paint
+// the rule contributes is measured against the strip the mark sits on, so a class whose only
+// paint is the surface token is caught wherever it is drawn. `host` is a selector for the
+// element the probes are appended to, so they are measured in the context that paints them.
+export async function markContrast(page, { host, classNames, base }) {
+  return page.evaluate(
+    ([hostSelector, classes, baseClass]) => {
+      const lum = (colour) => {
+        const [r, g, b] = colour
+          .match(/\d+(\.\d+)?/g)
+          .slice(0, 3)
+          .map(Number)
+          .map((v) => {
+            v /= 255;
+            return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+          });
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      };
+      const ratio = (a, b) => {
+        const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+        return +((hi + 0.05) / (lo + 0.05)).toFixed(2);
+      };
+      const opaque = (colour) => Boolean(colour) && colour !== "transparent" && !/,\s*0\)$/.test(colour);
+      const backgroundOf = (element) => {
+        let node = element;
+        while (node) {
+          const colour = getComputedStyle(node).backgroundColor;
+          if (opaque(colour)) return colour;
+          node = node.parentElement;
+        }
+        return "rgb(11, 16, 20)";
+      };
+      const container = document.querySelector(hostSelector);
+      if (!container) return { missing: hostSelector, theme: document.documentElement.dataset.theme ?? "dark" };
+      const background = backgroundOf(container);
+      const marks = classes.map((className) => {
+        const probe = document.createElement("span");
+        probe.className = `${baseClass} ${className}`;
+        container.appendChild(probe);
+        const style = getComputedStyle(probe);
+        const fill = style.backgroundColor;
+        const image = style.backgroundImage;
+        probe.remove();
+        const paints = [
+          ...(opaque(fill) ? [fill] : []),
+          ...(image === "none" ? [] : image.match(/rgba?\([^)]*\)/g) ?? []).filter(opaque),
+        ];
+        const ratios = [...new Set(paints)].map((colour) => ({ colour, ratio: ratio(colour, background) }));
+        return {
+          className,
+          paints: ratios,
+          best: ratios.length ? Math.max(...ratios.map((entry) => entry.ratio)) : 1,
+          signature: `${fill}|${image}`,
+        };
+      });
+      return { theme: document.documentElement.dataset.theme ?? "dark", background, marks };
+    },
+    [host, classNames, base],
+  );
+}
+
 export async function shotElement(page, selector, path) {
   const element = page.locator(selector).first();
   if (!(await element.count())) return false;
@@ -209,6 +271,13 @@ export async function shotElement(page, selector, path) {
 
 // WCAG 2.x relative-luminance contrast for [label, [selector, ...]] targets, measured in the
 // page against the nearest painted ancestor background. SB-05 §7: >=4.5:1 text, >=3:1 chrome.
+//
+// Every match, not the first. gate-v078 N8: this reported `legend label 14.87` while the
+// receded rows beside it rendered at 2.60:1, because it measured `document.querySelector` --
+// the brightest row in the panel -- and never sampled the ones the finding was about. An audit
+// that stops at the first node reports the best case of whatever it is auditing. `ratio` is
+// now the worst of the matches, which is the number an audit is for; `best` and `samples` are
+// beside it so a caller can still say which node carried which.
 export async function contrastAudit(page, targets, fallbackBackground = "rgb(11, 16, 20)") {
   return page.evaluate(
     ([pairs, fallback]) => {
@@ -236,19 +305,65 @@ export async function contrastAudit(page, targets, fallbackBackground = "rgb(11,
         }
         return fallback;
       };
+      const channels = (colour) => colour.match(/\d+(\.\d+)?/g).slice(0, 3).map(Number);
+      // The alpha the element is really painted at: its own colour's, times every `opacity`
+      // on it and on its ancestors. `opacity` composites the whole subtree onto what is behind
+      // it, so reading `color` alone reports the declared paint and not the painted one --
+      // which is how a legend row shipping at opacity 0.72 measured 7.87:1 where the pixels
+      // are 4.70:1 (gate-wellcard N5).
+      const alphaOf = (element) => {
+        // The fourth component of an rgba(), where there is one: `color` alone is three
+        // numbers and reading the last of those as alpha would take 188 for an opacity.
+        const parts = (getComputedStyle(element).color.match(/[\d.]+/g) || []).map(Number);
+        let alpha = parts.length > 3 && Number.isFinite(parts[3]) ? parts[3] : 1;
+        let node = element;
+        while (node) {
+          const opacity = Number(getComputedStyle(node).opacity);
+          if (Number.isFinite(opacity)) alpha *= opacity;
+          node = node.parentElement;
+        }
+        return Math.min(1, Math.max(0, alpha));
+      };
+      const painted = (colour, background, alpha) => {
+        if (alpha >= 1) return colour;
+        const front = channels(colour);
+        const back = channels(background);
+        return `rgb(${front
+          .map((channel, index) => Math.round(back[index] + alpha * (channel - back[index])))
+          .join(", ")})`;
+      };
       return pairs.map(([name, selectors]) => {
-        const matched = selectors.find((selector) => document.querySelector(selector));
+        const matched = selectors.find(
+          (selector) => document.querySelectorAll(selector).length > 0,
+        );
         if (!matched) return { name, missing: true, tried: selectors };
-        const element = document.querySelector(matched);
-        const style = getComputedStyle(element);
-        const background = backgroundOf(element);
+        const samples = [...document.querySelectorAll(matched)].map((element) => {
+          const style = getComputedStyle(element);
+          const background = backgroundOf(element);
+          const alpha = alphaOf(element);
+          const foreground = painted(style.color, background, alpha);
+          return {
+            fg: foreground,
+            declared: style.color,
+            alpha: +alpha.toFixed(3),
+            bg: background,
+            size: style.fontSize,
+            ratio: ratio(foreground, background),
+            text: (element.textContent || "").trim().slice(0, 40),
+          };
+        });
+        const worst = samples.reduce((low, one) => (one.ratio < low.ratio ? one : low));
+        const best = samples.reduce((high, one) => (one.ratio > high.ratio ? one : high));
         return {
           name,
           matched,
-          fg: style.color,
-          bg: background,
-          size: style.fontSize,
-          ratio: ratio(style.color, background),
+          count: samples.length,
+          fg: worst.fg,
+          bg: worst.bg,
+          size: worst.size,
+          ratio: worst.ratio,
+          best: best.ratio,
+          samples,
         };
       });
     },

@@ -57,6 +57,7 @@ from glasswell.api.routers import (
     tiles,
     type_curves,
     users,
+    validators,
     wells,
 )
 from glasswell.api.security import (
@@ -242,6 +243,7 @@ def create_app() -> FastAPI:
         completions.router,
         cumulatives.router,
         production.router,
+        validators.router,
         formations.router,
         jurisdictions.router,
         tiles.router,

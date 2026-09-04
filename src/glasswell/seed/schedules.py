@@ -4,10 +4,10 @@ Cadence used to be ten `ExecStart=` lines and a runbook sentence, so a registere
 not a scheduled source and no query could tell which was which. These rows are the answer, and
 every schedule row cites the `cr_job_cadence_*` conformance rule that decided it.
 
-A row launches only where nothing else already drives its entry point. The four legacy
-jurisdictions stay armed through the two pipeline units, so their rows observe and the tick
-records `would_run`; Colorado installs no unit, so its six rows launch and each one's
-`cr_job_cadence_<job>_1` rationale says why.
+Every row here observes: the tick computes its plan, records `would_run`, and launches
+nothing. `launch` is the launch-flip track's own act rather than a per-jurisdiction choice,
+because `plan.py:363` turns a due `would_run` into `run` for a launching row and
+`runner.py:306` starts it, so a launching row is an unattended run on the next tick.
 """
 
 from __future__ import annotations
@@ -19,6 +19,9 @@ import psycopg
 from glasswell.lineage.errors import LineageError
 
 REGISTERED_ON = date(2026, 9, 2)
+# The owner's launch-posture ruling, and the day the host's scheduler timer was disarmed.
+# 079_scheduler_observe.sql writes the same literal; the two writers must move together.
+OBSERVED_FROM = date(2026, 9, 3)
 INGEST_UNIT = "glasswell-ingest.service"
 C115B_UNIT = "glasswell-c115b.service"
 
@@ -30,6 +33,11 @@ class ScheduleSeedError(LineageError):
 def cadence_rule_id(job_id: str) -> str:
     """One immutable rule id per job. Gate 4 pins the shape in both directions."""
     return f"cr_job_cadence_{job_id}_1"
+
+
+def observe_rule_id(job_id: str) -> str:
+    """The successor the launch-posture ruling appends. A posture change is a row, not an edit."""
+    return f"cr_job_cadence_{job_id}_2"
 
 
 REFUSAL_CODES: tuple[tuple[str, str, str], ...] = (
@@ -97,9 +105,9 @@ REFUSAL_CODES: tuple[tuple[str, str, str], ...] = (
 )
 
 # Colorado's six, one entry point each, appended under the invitation this module's own
-# comment extends to a later jurisdiction track. They are the first rows in the registry that
-# launch rather than observe: Colorado adds no unit file, so no installed timer drives any of
-# these entry points and there is nothing for a launched run to collide with.
+# comment extends to a later jurisdiction track. Their founding schedule rows below carry
+# launch_mode='launch' and are superseded by CO_OBSERVE_SCHEDULES: the rows are append-only and
+# what they registered is what they registered, so the correction is a later row.
 CO_JOBS: tuple[dict[str, object], ...] = (
     {
         "job_id": "co_ecmc_gis",
@@ -176,6 +184,114 @@ CO_JOBS: tuple[dict[str, object], ...] = (
     },
 )
 
+# Texas, three entry points. None is driven by an installed timer, and all three observe: a
+# launching row is the launch flip's own act rather than a registration's, on the owner's
+# ruling of 2026-09-03 (079_scheduler_observe.sql:1-18 carries the reasoning). The ingest is a
+# 3.65 GB unresumable fetch on the cadence the RRC publishes on, and it takes the registry's
+# own six-hour ceiling (076_job_schedule_registry.sql:88); the source's twelve-hour attempt
+# timeout answers a different question, which is how long one fetch may take.
+TX_JOBS: tuple[dict[str, object], ...] = (
+    {
+        "job_id": "ingest_tx_pdq",
+        "label": "Texas PDQ dump ingest",
+        "kind": "ingest",
+        "entry_point": "glasswell.ingest.tx_pdq",
+        "argv": [],
+        "jurisdiction": "TX",
+        "run_as": "glasswell",
+        "rationale": "One fetch a month to the raw zone, then a two-pass parse from the stored"
+        " artifact. The archive is republished on the last Saturday of each month and the"
+        " server ignores Range, so a missed window is a whole month re-downloaded rather than"
+        " resumed. The two 26-month well-status files are archived by the same job, because"
+        " they are pulled in one pass and parsed by nothing.",
+    },
+    {
+        "job_id": "marts_tx_allocation",
+        "label": "Texas allocated production mart",
+        "kind": "mart",
+        "entry_point": "glasswell.marts.tx_allocation",
+        "argv": [],
+        "jurisdiction": "TX",
+        "run_as": "glasswell",
+        "rationale": "The split reads the lease rows the ingest promoted and the membership it"
+        " staged, so it reacts to that ingest rather than to a clock of its own. It refuses"
+        " rather than publishing when conservation fails, so a defect stops the mart instead of"
+        " shipping a share that does not sum back to what the operator filed.",
+    },
+    {
+        "job_id": "marts_allocation_backtest",
+        "label": "Allocation method study",
+        "kind": "mart",
+        "entry_point": "glasswell.marts.allocation_backtest",
+        "argv": [],
+        "jurisdiction": "MT",
+        "run_as": "glasswell",
+        "rationale": "The study is measured on Montana's two grains, so it is a Montana job by"
+        " jurisdiction whatever it is a control for: gate 2 asks a mart to wait on an ingest of"
+        " its own jurisdiction, and Montana's is the one whose filings it reads.",
+    },
+)
+
+# Every row observes, on the owner's ruling of 2026-09-03. plan.py:363 rewrites a due
+# would_run entry to run for a launching row and runner.py:306 starts it, so a launching row
+# registered here is one unattended run on the first tick after a deploy -- and the ingest's
+# is a 3.65 GB unresumable fetch. launch is the launch-flip track's own act.
+TX_SCHEDULES: tuple[dict[str, object], ...] = (
+    {
+        "job_id": "ingest_tx_pdq",
+        "trigger": "cadence",
+        "cadence_interval": timedelta(days=35),
+        "cadence_note": "Every 35 days; the RRC republishes on the last Saturday of the month",
+        "launch_mode": "observe",
+        "memory_max": "6G",
+        # The registry caps a job at six hours (076:88) and the source's own attempt timeout is
+        # twelve (050:41). They answer different questions: the attempt timeout is how long one
+        # fetch may take, and this is how long the whole job may. Six hours at 3.65 GB is about
+        # 170 KB/s, below which the fetch is broken rather than slow.
+        "timeout_seconds": 21600,
+    },
+    {
+        "job_id": "marts_tx_allocation",
+        "trigger": "after_dependency",
+        "cadence_note": "After the ingest that promotes the lease rows it splits",
+        "launch_mode": "observe",
+        "memory_max": "6G",
+        "timeout_seconds": 7200,
+    },
+    {
+        "job_id": "marts_allocation_backtest",
+        "trigger": "after_dependency",
+        "cadence_note": "After the Montana ingest whose two grains it scores against",
+        "launch_mode": "observe",
+        "memory_max": "6G",
+        "timeout_seconds": 3600,
+    },
+)
+
+TX_DEPENDENCIES: tuple[tuple[str, str, str, str], ...] = (
+    (
+        "marts_tx_allocation",
+        "ingest_tx_pdq",
+        "changed",
+        "The split reads the lease rows and the membership that ingest promoted, so a pull that"
+        " changed nothing leaves it with nothing to re-split.",
+    ),
+    (
+        "marts_allocation_backtest",
+        "ingest_mt_bogc",
+        "changed",
+        "The study is measured on Montana's well and lease grains, so it waits on the ingest"
+        " that promotes them rather than on the jurisdiction it is a control for.",
+    ),
+    (
+        "marts_cumulatives",
+        "marts_tx_allocation",
+        "changed",
+        "Texas writes its well-grain cumulative row from the allocated mart, so the cumulative"
+        " refresh reads a mart that has to have been rebuilt first.",
+    ),
+)
+
 CO_SCHEDULES: tuple[dict[str, object], ...] = (
     {
         "job_id": "co_ecmc_gis",
@@ -227,6 +343,19 @@ CO_SCHEDULES: tuple[dict[str, object], ...] = (
         "memory_max": "2G",
         "timeout_seconds": 1800,
     },
+)
+
+# The launch-posture ruling as rows. Every field is the founding row's; only the posture and the
+# rule it cites move, so the supersession states one decision and restates nothing else.
+CO_OBSERVE_SCHEDULES: tuple[dict[str, object], ...] = tuple(
+    {
+        **row,
+        "launch_mode": "observe",
+        "effective_from": OBSERVED_FROM,
+        "published_at": OBSERVED_FROM,
+        "rule_id": observe_rule_id(str(row["job_id"])),
+    }
+    for row in CO_SCHEDULES
 )
 
 CO_DEPENDENCIES: tuple[tuple[str, str, str, str], ...] = (
@@ -594,6 +723,7 @@ JOBS: tuple[dict[str, object], ...] = (
         " visibility and the scheduler holds no opinion about when or as whom it runs.",
     },
     *CO_JOBS,
+    *TX_JOBS,
 )
 
 NM_OCD_SOURCES = (
@@ -620,6 +750,9 @@ JOB_SOURCES: dict[str, tuple[str, ...]] = {
     "ingest_nm_c115b": ("nm_c115b_upstream",),
     "ingest_fracfocus": ("fracfocus_csv",),
     "ingest_mt_bogc": ("mt_bogc_pru_production", "mt_bogc_well_production"),
+    # One job, three sources: the dump and the two 26-month well-status files are pulled in
+    # one pass, and the latter two are archived and parsed by nothing.
+    "ingest_tx_pdq": ("tx_g10_gse10", "tx_pdq_dsv", "tx_w10_wlf607"),
     "ingest_mt_gis": ("mt_gis_well_paths", "mt_gis_wells"),
     "ingest_eia_boundaries": ("eia_sedimentary_basins", "eia_shale_plays"),
     "ingest_nm_ocd_stage": NM_OCD_SOURCES,
@@ -647,7 +780,7 @@ JOB_SOURCES: dict[str, tuple[str, ...]] = {
 # co_ecmc_prod_reports is the third: the 2.49 GB annual archives are a later dispatch and no
 # job polls them in this release, so the source is registered with a null interval and named
 # here rather than given a schedule that would claim a poll nothing performs.
-UNJOBBED_SOURCES = frozenset({"proj_grid_nad27", "tx_pdq_dsv", "co_ecmc_prod_reports"})
+UNJOBBED_SOURCES = frozenset({"proj_grid_nad27", "co_ecmc_prod_reports"})
 
 DEPENDENCIES: tuple[tuple[str, str, str, str], ...] = (
     (
@@ -787,6 +920,7 @@ DEPENDENCIES: tuple[tuple[str, str, str, str], ...] = (
         " code change.",
     ),
     *CO_DEPENDENCIES,
+    *TX_DEPENDENCIES,
 )
 
 # job_id -> (trigger, interval, monthly_day, note, memory_max, timeout_seconds, legacy_unit)
@@ -1016,6 +1150,8 @@ SCHEDULES: tuple[dict[str, object], ...] = (
         "external_service_unit": "glasswell-backup.service",
     },
     *CO_SCHEDULES,
+    *CO_OBSERVE_SCHEDULES,
+    *TX_SCHEDULES,
 )
 
 
@@ -1101,18 +1237,39 @@ def _job_row(job: dict[str, object], anchor: dict[str, str]) -> dict[str, object
     return {**job, "anchor_source_id": anchor.get(job_id)}
 
 
+def schedule_clocks(schedule: dict[str, object]) -> tuple[date, date]:
+    """A row's two clocks: founding rows carry the registration date, restatements their own."""
+    return (
+        schedule.get("effective_from", REGISTERED_ON),  # type: ignore[return-value]
+        schedule.get("published_at", REGISTERED_ON),  # type: ignore[return-value]
+    )
+
+
+def resolved_schedules() -> dict[str, dict[str, object]]:
+    """The row `lineage.job_schedules_as_of` resolves per job, from this module's own tuples.
+
+    Ranked the way the resolver ranks, so a reader of the seed sees the posture the database
+    serves rather than a founding row a later restatement has superseded.
+    """
+    resolved: dict[str, dict[str, object]] = {}
+    for row in sorted(SCHEDULES, key=schedule_clocks):
+        resolved[str(row["job_id"])] = row
+    return resolved
+
+
 def _schedule_row(schedule: dict[str, object]) -> dict[str, object]:
     job_id = str(schedule["job_id"])
     external = schedule["trigger"] == "external_timer"
+    effective_from, published_at = schedule_clocks(schedule)
     return {
         "job_id": job_id,
-        "effective_from": REGISTERED_ON,
-        "published_at": REGISTERED_ON,
-        "rule_id": None if external else cadence_rule_id(job_id),
+        "effective_from": effective_from,
+        "published_at": published_at,
+        "rule_id": None if external else str(schedule.get("rule_id") or cadence_rule_id(job_id)),
         "trigger": schedule["trigger"],
-        # Observing unless the row says otherwise: the four legacy jurisdictions stay armed
-        # through their own units, and a row may launch only where no timer drives its entry
-        # point, which is what the job's own cadence rule has to argue.
+        # Observing unless the row says otherwise: a launching row is started by the next tick,
+        # so the posture is the launch flip's to change and a founding row that claimed it is
+        # superseded rather than trusted.
         "launch_mode": schedule.get("launch_mode", "observe"),
         "cadence_interval": schedule.get("cadence_interval"),
         "cadence_monthly_on_day": schedule.get("cadence_monthly_on_day"),

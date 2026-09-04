@@ -16,6 +16,11 @@ function column(label: string, unit: string): SeriesColumn {
     raw: [],
     vintages: [],
     nullSemantics: [],
+    allocationClasses: [],
+    granularities: [],
+    eligibleWells: [],
+    shares: [],
+    incomplete: [],
     vintage: null,
     mixedVintages: false,
   };
@@ -30,6 +35,8 @@ function chart(columns: SeriesColumn[]): ChartSeries {
     data: [],
     columns,
     scales: [...new Set(columns.map((entry) => entry.unit))],
+    allocation: null,
+    allocated: false,
   };
 }
 

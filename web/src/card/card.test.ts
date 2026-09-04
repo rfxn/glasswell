@@ -55,23 +55,28 @@ afterEach(() => {
 });
 
 describe("a well whose regulator reports at the lease", () => {
-  it("says production is pending allocation instead of drawing an empty chart", async () => {
-    const pending = {
+  const RULE = "/v1/conformance/cr_tx_allocation_scope_1";
+
+  function pendingWell(warnings: { code: string; detail: string; pointer: string }[]) {
+    return {
       ...wellEnvelope,
-      links: { ...wellEnvelope.links, reporting_rule: "/v1/conformance/cr_tx_allocation_scope_1" },
-      meta: {
-        ...wellEnvelope.meta,
-        warnings: [
-          {
-            code: "production_pending_allocation",
-            detail:
-              "This well's regulator reports production at the lease" +
-              " (cr_tx_allocation_scope_1), so no well-level series has been observed.",
-            pointer: "/production",
-          },
-        ],
-      },
+      links: { ...wellEnvelope.links, reporting_rule: RULE },
+      meta: { ...wellEnvelope.meta, warnings },
     };
+  }
+
+  it("says production is pending only while no allocation is served", async () => {
+    // The disclosure is a served fact with two clocks behind it, and it is true until the
+    // allocation is published. What must not happen is a card showing both.
+    const pending = pendingWell([
+      {
+        code: "production_pending_allocation",
+        detail:
+          "This well's regulator reports production at the lease" +
+          " (cr_tx_allocation_scope_1), so no well-level series has been observed.",
+        pointer: "/production",
+      },
+    ]);
     // Only the well route is stubbed: a production request would 404 through stubFetch and
     // surface as an error panel, which is a failure the spy could not have shown — it matched
     // the well route first and was never reached.
@@ -84,29 +89,29 @@ describe("a well whose regulator reports at the lease", () => {
       "Production pending allocation",
     );
     expect(panel?.textContent).toContain("cr_tx_allocation_scope_1");
-    expect(panel?.querySelector(".gw-pending-rule")?.getAttribute("href")).toBe(
-      "/v1/conformance/cr_tx_allocation_scope_1",
-    );
+    expect(panel?.querySelector(".gw-pending-rule")?.getAttribute("href")).toBe(RULE);
     expect(host.textContent).not.toContain("No production has been reported");
-    expect(host.querySelector(".gw-completion-context")).not.toBeNull();
     expect(renderChart).not.toHaveBeenCalled();
   });
 
+  it("draws the chart instead the moment the warning stops arriving", async () => {
+    // The successor rule carries the third spec key, so the API stops emitting the warning.
+    // Nothing in the card decides this: a jurisdiction test in the client would be a mapping
+    // decision living in code, which is what R8 refuses.
+    await renderWellCard(host, API10, callbacks);
+
+    expect(host.querySelector("[data-state='production_pending_allocation']")).toBeNull();
+    expect(renderChart).toHaveBeenCalled();
+  });
+
   it("says it once: no raw warning line above the panel that renders the same sentence", async () => {
-    const pending = {
-      ...wellEnvelope,
-      links: { ...wellEnvelope.links, reporting_rule: "/v1/conformance/cr_tx_allocation_scope_1" },
-      meta: {
-        ...wellEnvelope.meta,
-        warnings: [
-          {
-            code: "production_pending_allocation",
-            detail: "reports production at the lease (cr_tx_allocation_scope_1)",
-            pointer: "/production",
-          },
-        ],
+    const pending = pendingWell([
+      {
+        code: "production_pending_allocation",
+        detail: "reports production at the lease (cr_tx_allocation_scope_1)",
+        pointer: "/production",
       },
-    };
+    ]);
     vi.stubGlobal("fetch", vi.fn(stubFetch({ [`/v1/wells/${API10}`]: pending })));
 
     await renderWellCard(host, API10, callbacks);
@@ -118,23 +123,129 @@ describe("a well whose regulator reports at the lease", () => {
   });
 
   it("still renders warnings that have no panel of their own", async () => {
-    const both = {
-      ...wellEnvelope,
-      links: { ...wellEnvelope.links, reporting_rule: "/v1/conformance/cr_tx_allocation_scope_1" },
-      meta: {
-        ...wellEnvelope.meta,
-        warnings: [
-          { code: "production_pending_allocation", detail: "pending", pointer: "/production" },
-          { code: "geometry_not_promoted", detail: "one segment held back", pointer: "/geometry" },
-        ],
-      },
-    };
+    const both = pendingWell([
+      { code: "production_pending_allocation", detail: "pending", pointer: "/production" },
+      { code: "geometry_not_promoted", detail: "one segment held back", pointer: "/geometry" },
+    ]);
     vi.stubGlobal("fetch", vi.fn(stubFetch({ [`/v1/wells/${API10}`]: both })));
 
     await renderWellCard(host, API10, callbacks);
 
     expect(host.textContent).toContain("geometry_not_promoted");
     expect(host.querySelector("[data-state='production_pending_allocation']")).not.toBeNull();
+  });
+});
+
+describe("a Texas well while the allocated mart is empty", () => {
+  // The load window: `scripts/deploy.sh` refreshes the marts before the manual load, which the
+  // runbook says takes two to six hours. The API serves the disclosure on the PRODUCTION
+  // envelope -- the well's own warning was retired when the grain rule superseded the
+  // disclosure rule -- and the card read only the well's, so it printed "No production
+  // reported." over a lease that has filed every month (gate-tx H-10-W).
+  const GRAIN = "/v1/conformance/cr_tx_production_grain_1";
+  const MODEL = "/v1/conformance/cr_tx_allocation_v0_1";
+  const DETAIL =
+    "This well's regulator reports production at the lease (cr_tx_production_grain_1), and" +
+    " the allocated mart holds no rows on this instance, so no well-level figure is served" +
+    " rather than an empty series that would read as nothing produced. cr_tx_allocation_v0_1" +
+    " is the rule that computes it; the lease volumes it splits are promoted at their native" +
+    " grain and are served as the lease's own.";
+  const CUMULATIVE_PENDING = {
+    type: "https://glasswell.rpx.sh/v1/errors/not_found",
+    title: "Not found",
+    status: 404,
+    detail:
+      `no cumulative for ${API10} yet. This jurisdiction is registered for a well-grain` +
+      " cumulative row and the last refresh skipped it: the allocated mart it reads holds no" +
+      " rows on this instance, so nothing is published rather than a total over months nobody" +
+      " has split.",
+  };
+
+  function pendingProduction() {
+    return {
+      ...productionEnvelope,
+      data: {
+        ...productionEnvelope.data,
+        granularity: "lease_reported",
+        streams: [],
+        series: { pm: [] },
+        allocation: null,
+      },
+      links: {
+        ...productionEnvelope.links,
+        allocation_rule: GRAIN,
+        allocation_model_rule: MODEL,
+      },
+      meta: {
+        ...productionEnvelope.meta,
+        warnings: [
+          { code: "production_pending_allocation", detail: DETAIL, pointer: "/production" },
+        ],
+      },
+    };
+  }
+
+  async function render(): Promise<void> {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        stubFetch({
+          [`/v1/wells/${API10}/completions`]: completionContextEnvelope,
+          [`/v1/wells/${API10}/cumulatives`]: CUMULATIVE_PENDING,
+          [`/v1/wells/${API10}/neighbors`]: neighborEnvelope,
+          [`/v1/wells/${API10}/production`]: pendingProduction(),
+          [`/v1/wells/${API10}`]: wellEnvelope,
+        }),
+      ),
+    );
+    await renderWellCard(host, API10, callbacks);
+  }
+
+  it("renders the disclosure the production envelope carries, not an empty chart", async () => {
+    await render();
+    const panel = host.querySelector<HTMLElement>("[data-state='production_pending_allocation']");
+
+    expect(panel).not.toBeNull();
+    expect(panel?.querySelector(".gw-frame-title")?.textContent).toBe(
+      "Production pending allocation",
+    );
+    expect(host.textContent).not.toContain("No production reported.");
+    expect(renderChart).not.toHaveBeenCalled();
+  });
+
+  it("names both rules and links each one", async () => {
+    await render();
+    const panel = host.querySelector<HTMLElement>("[data-state='production_pending_allocation']");
+    const links = [...(panel?.querySelectorAll("a.gw-pending-rule") ?? [])];
+
+    expect(panel?.textContent).toContain("cr_tx_production_grain_1");
+    expect(panel?.textContent).toContain("cr_tx_allocation_v0_1");
+    expect(links.map((link) => link.getAttribute("href"))).toEqual([GRAIN, MODEL]);
+  });
+
+  it("says why the cumulative is absent instead of blaming the snapshot", async () => {
+    await render();
+
+    expect(host.textContent).toContain("the last refresh skipped it");
+    expect(host.textContent).not.toContain("No cumulative: not in the snapshot.");
+  });
+
+  // The detail is written for a machine-readable `problem` field, where a lowercase opening is
+  // correct; the CUMULATIVE section's only prose is that field rendered verbatim, so it opened
+  // the section with "no cumulative for 4200300002 yet." (gate-tx-shots V-nit).
+  it("opens the section's prose with a capital", async () => {
+    await render();
+    const prose = host.querySelector<HTMLElement>(".gw-well-cumulatives .gw-empty");
+
+    expect(prose?.textContent?.startsWith(`No cumulative for ${API10} yet.`)).toBe(true);
+    expect(host.textContent).not.toContain(`no cumulative for ${API10}`);
+  });
+
+  it("leaves an observed well drawing its chart", async () => {
+    await renderWellCard(host, API10, callbacks);
+
+    expect(host.querySelector("[data-state='production_pending_allocation']")).toBeNull();
+    expect(renderChart).toHaveBeenCalled();
   });
 });
 
@@ -1107,3 +1218,151 @@ function problem(status: number, code: string): Response {
     { status, headers: { "content-type": "application/problem+json" } },
   );
 }
+
+describe("a cumulative total that some months were allocated into", () => {
+  const EMPTY_COVERAGE = {
+    coverage_complete: false,
+    first_month: "2024-01",
+    last_month: "2025-12",
+    months_no_report: 0,
+    months_reported: 0,
+    months_reported_zero: 0,
+    months_withheld: 0,
+    span_months: 24,
+  };
+
+  function allocatedCumulatives(share = "0.6700") {
+    const base = cumulativesEnvelope as unknown as {
+      data: Record<string, unknown>;
+      [key: string]: unknown;
+    };
+    return {
+      ...base,
+      data: {
+        ...base.data,
+        granularity: "lease_allocated",
+        coverage_outcome: "observed_with_allocated",
+        // The coverage block counts well-grain canonical months, and a lease-grain
+        // jurisdiction has none: this is the shape the Texas arm actually serves, and the
+        // one that put "0 of 24 months admitted" under a 7,200 bbl total.
+        coverage: {
+          ...(base.data["coverage"] as Record<string, unknown>),
+          oil_bbl: EMPTY_COVERAGE,
+          gas_mcf: EMPTY_COVERAGE,
+          water_bbl: EMPTY_COVERAGE,
+        },
+        allocation: {
+          basis: "allocated",
+          model_id: "alloc_v0_2026_09",
+          rule_id: "cr_tx_allocation_v0_1",
+          months: {
+            liquid: { value: "24", unit: "months", d: "drv_a#api10=x&stream=liquid" },
+            gas: { value: "24", unit: "months", d: "drv_a#api10=x&stream=gas" },
+          },
+          share: {
+            liquid: { value: share, unit: "share", d: "drv_a#api10=x&stream=liquid" },
+          },
+          shares_counted: { value: "9", unit: "shares", d: "drv_a#api10=x&col=shares_counted" },
+        },
+      },
+    };
+  }
+
+  async function render(share?: string): Promise<void> {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        stubFetch({
+          [`/v1/wells/${API10}/completions`]: completionContextEnvelope,
+          [`/v1/wells/${API10}/cumulatives`]: allocatedCumulatives(share),
+          [`/v1/wells/${API10}/neighbors`]: neighborEnvelope,
+          [`/v1/wells/${API10}/production`]: productionEnvelope,
+          [`/v1/wells/${API10}`]: wellEnvelope,
+        }),
+      ),
+    );
+    await renderWellCard(host, API10, callbacks);
+  }
+
+  it("states the allocated share beside the total rather than after it", async () => {
+    await render();
+    const cells = [...host.querySelectorAll(".gw-cumulative-cell")];
+    const oil = cells.find((cell) => cell.textContent?.startsWith("Oil"));
+
+    expect(oil?.querySelector(".gw-alloc-share")?.textContent).toBe("67% allocated");
+  });
+
+  it("labels the coverage class as a chip, never as a footnote", async () => {
+    await render();
+    const chip = host.querySelector<HTMLElement>(".gw-alloc-coverage");
+
+    expect(chip).not.toBeNull();
+    expect(chip?.dataset["basis"]).toBe("allocated");
+    expect(chip?.textContent).toContain("alloc_v0_2026_09");
+    expect(chip?.getAttribute("title")).toContain("cr_tx_allocation_v0_1");
+  });
+
+  it("reads the share rather than hedging on a well where every month is one", async () => {
+    // "Some months are allocated" beside a chip reading `100% allocated` is the chip
+    // contradicting its neighbour.
+    await render("1.0000");
+    const chip = host.querySelector<HTMLElement>(".gw-alloc-coverage");
+
+    expect(chip?.textContent).toContain("All months are allocated");
+    expect(chip?.textContent).not.toContain("Some months");
+  });
+
+  it("states the count where the total is only partly a share", async () => {
+    await render();
+    const chip = host.querySelector<HTMLElement>(".gw-alloc-coverage");
+
+    expect(chip?.textContent).toContain("24 months are allocated");
+    expect(chip?.textContent).not.toContain("Some months");
+  });
+
+  it("states how many shares are behind the totals, and where the count came from", async () => {
+    await render();
+    const shares = host.querySelector<HTMLElement>(".gw-alloc-shares");
+
+    expect(shares?.textContent).toContain("9 shares");
+    expect(shares?.dataset["handle"]).toBe("drv_a#api10=x&col=shares_counted");
+  });
+
+  it("shows no chip on a stream nothing was allocated into", async () => {
+    // A stream with no allocated month is not partly allocated, and a 0% chip trains a reader
+    // to stop reading the chip on the stream that does carry one.
+    await render();
+    const cells = [...host.querySelectorAll(".gw-cumulative-cell")];
+    const gas = cells.find((cell) => cell.textContent?.startsWith("Gas"));
+
+    expect(gas?.querySelector(".gw-alloc-share")).toBeNull();
+  });
+
+  it("leaves an observed total alone", async () => {
+    await renderWellCard(host, API10, callbacks);
+
+    expect(host.querySelector(".gw-alloc-coverage")).toBeNull();
+    expect(host.querySelector(".gw-alloc-share")).toBeNull();
+    expect(host.querySelector(".gw-scope-allocated")).toBeNull();
+    expect(host.textContent).toContain("months admitted");
+  });
+
+  it("counts the allocated months rather than reporting none admitted", async () => {
+    // `months_reported` counts well-grain canonical months and there are none, so the scope
+    // line said nothing was admitted directly under two non-null totals, a number the
+    // surface contradicts in the next sentence, which is worse than a naked one.
+    await render();
+    const scope = host.querySelector<HTMLElement>(".gw-scope-allocated");
+
+    expect(scope?.textContent).toBe("24 of 24 months allocated · 0 observed");
+    expect(host.textContent).not.toContain("months admitted");
+  });
+
+  it("takes that count from the served figure, so it resolves like any other", async () => {
+    await render();
+    const scope = host.querySelector<HTMLElement>(".gw-scope-allocated");
+
+    expect(scope?.dataset["handle"]).toBe("drv_a#api10=x&stream=liquid");
+    expect(scope?.getAttribute("title")).toContain("cr_tx_allocation_v0_1");
+  });
+});

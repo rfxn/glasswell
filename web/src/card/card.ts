@@ -2,7 +2,7 @@ import "./gw-figure.ts";
 
 import { ApiError, getEnvelope } from "../api/client.ts";
 import { derivationFor, labelFor, unwrap } from "../api/envelope.ts";
-import type { Envelope, Figure } from "../api/envelope.ts";
+import type { Envelope, Figure, Links } from "../api/envelope.ts";
 import { readState } from "../app/state.ts";
 import { toChartSeries } from "../chart/series.ts";
 import type { ProductionData } from "../chart/series.ts";
@@ -13,7 +13,14 @@ import { crossingLink, openThisSeries, rowsForThisWell } from "../explore/bridge
 import { labelElement } from "../glossary/gw-term.ts";
 import { highlight } from "../glossary/index.ts";
 import { termIndex } from "../glossary/store.ts";
-import { absentValue, formatMonth, formatVintage, nullSemantics } from "./format.ts";
+import {
+  absentValue,
+  formatMonth,
+  formatValue,
+  formatVintage,
+  nullSemantics,
+  roundTo,
+} from "./format.ts";
 
 export interface WellDetail {
   api10: string;
@@ -100,6 +107,15 @@ export interface StreamCoverage {
   coverage_complete: boolean;
 }
 
+export interface CumulativeAllocation {
+  basis: string;
+  model_id: string | null;
+  rule_id: string;
+  months: Record<string, Figure>;
+  share: Record<string, Figure>;
+  shares_counted: Figure | null;
+}
+
 export interface WellCumulatives {
   api10: string;
   granularity: string;
@@ -108,6 +124,8 @@ export interface WellCumulatives {
   cumulative: { oil_bbl: Figure | null; gas_mcf: Figure | null; water_bbl: Figure | null } | null;
   coverage: Record<string, StreamCoverage> & { _lineage: Record<string, string> };
   months_withheld: Figure;
+  /** Present only where allocated months contribute to the totals beside it. */
+  allocation?: CumulativeAllocation | null;
 }
 
 export interface CardCallbacks {
@@ -497,9 +515,7 @@ export async function renderWellCard(
   // a Texas well whose lease reports every month (DIR-3, cr_tx_allocation_scope_1).
   const pending = well.meta.warnings.find((warning) => warning.code === PENDING_ALLOCATION);
   if (pending) {
-    chartFrame.replaceWith(
-      pendingProductionPanel(pending, well.links?.["reporting_rule"] ?? undefined),
-    );
+    chartFrame.replaceWith(pendingProductionPanel(pending, ruleLinks(well.links)));
     container.replaceChildren(card);
     highlight(card, termIndex());
     focusPanel(container);
@@ -518,6 +534,19 @@ export async function renderWellCard(
         asOfQuery,
       );
       const data = unwrap(production);
+      // The disclosure the API serves while the allocated mart is empty. It arrives on THIS
+      // envelope, not on the well's -- the well's warning was retired when the grain rule
+      // superseded the disclosure rule -- and without reading it here the card printed "No
+      // production reported." over a lease that has filed every month (gate-tx H-10-W).
+      const pendingSeries = production.meta.warnings.find(
+        (warning) => warning.code === PENDING_ALLOCATION,
+      );
+      if (pendingSeries) {
+        chartFrame.replaceWith(
+          pendingProductionPanel(pendingSeries, ruleLinks(production.links)),
+        );
+        return;
+      }
       if (data.streams.length === 0) {
         chartHost.replaceChildren(emptyState("No production reported."));
         return;
@@ -583,7 +612,12 @@ async function loadWellCumulatives(
     // An ND well the snapshot has not absorbed yet. Distinct from "produced nothing", which
     // is the null cumulative above, and from a read failure, which is the line below.
     if (error instanceof ApiError && error.code === "not_found") {
-      host.replaceChildren(emptyState("No cumulative: not in the snapshot."));
+      // The API's own sentence, where it served one: only the API knows whether this well is
+      // outside the mart's scope or inside a jurisdiction whose mart the last refresh skipped,
+      // and "not in the snapshot" said the first about the second (gate-tx H-10-W, H-10-C).
+      host.replaceChildren(
+        emptyState(asProse(error.problem.detail ?? "No cumulative: not in the snapshot.")),
+      );
       host.dataset["state"] = "empty";
       return;
     }
@@ -593,6 +627,13 @@ async function loadWellCumulatives(
     host.setAttribute("aria-busy", "false");
   }
 }
+
+// A `problem` detail is written for a machine-readable field and opens lowercase. This is the
+// one place one is reused as a section's prose, and it is already a whole sentence.
+function asProse(detail: string): string {
+  return detail.charAt(0).toUpperCase() + detail.slice(1);
+}
+
 
 function cumulativesBody(
   data: WellCumulatives,
@@ -631,14 +672,88 @@ function cumulativesBody(
       basis.textContent = figure.basis;
       value.appendChild(basis);
     }
+    // The allocated share, beside the total and never after it. A total that sums allocated
+    // months without saying so is the naked number this whole surface exists against, and the
+    // share is the one number that says how much of it is an estimate.
+    const share = data.allocation?.share[streamOf(key)];
+    // A stream with no allocated month is not partly allocated, and "0% allocated" beside a
+    // total is noise that trains a reader to stop reading the chip.
+    if (figure && share && Number(share.value) > 0) {
+      const chip = document.createElement("span");
+      chip.className = "gw-chip gw-alloc-share";
+      chip.textContent = `${percent(share.value)} allocated`;
+      chip.title =
+        `${percent(share.value)} of this total is an allocated estimate rather than a` +
+        ` reported figure (${data.allocation?.rule_id ?? ""}).`;
+      value.appendChild(chip);
+    }
     const record = coverageTitle(data.coverage[key]);
     if (record) cell.title = record;
     cell.append(term_, value);
     row.appendChild(cell);
   }
   fragment.appendChild(row);
+  const chip = allocationChip(data);
+  if (chip) fragment.appendChild(chip);
   fragment.appendChild(scopeLine(cumulativeScope(data)));
   return fragment;
+}
+
+const MART_STREAM_OF: Record<string, string> = {
+  oil_bbl: "liquid",
+  gas_mcf: "gas",
+  water_bbl: "water",
+};
+
+function streamOf(key: string): string {
+  return MART_STREAM_OF[key] ?? key;
+}
+
+/** A decimal share as a whole-number percent, without ever parsing it as a float. */
+function percent(value: string): string {
+  return `${roundTo(String(Number(value) * 100), 0)}%`;
+}
+
+/**
+ * `observed_with_allocated` as a labelled chip rather than a footnote.
+ *
+ * A reader who does not notice a footnote has read the total as an observation, which is the
+ * one reading this coverage class exists to prevent.
+ */
+function allocationChip(data: WellCumulatives): HTMLElement | null {
+  if (data.coverage_outcome !== "observed_with_allocated" || !data.allocation) return null;
+  const chip = document.createElement("p");
+  chip.className = "gw-chip gw-alloc-coverage";
+  chip.dataset["basis"] = data.allocation.basis;
+  const model = data.allocation.model_id ?? "";
+  chip.append(`${coverageSentence(data.allocation)}${model ? ` · ${model}` : ""}`);
+  // The share count is served with a handle and had nowhere on screen to be: the brief asks
+  // this row to state the basis, the model and how many shares are behind it.
+  const counted = data.allocation.shares_counted;
+  if (counted) {
+    const shares = document.createElement("span");
+    shares.className = "gw-alloc-shares";
+    shares.textContent = ` · ${formatValue(counted.value)} ${counted.unit}`;
+    if (counted.d) shares.dataset["handle"] = counted.d;
+    chip.appendChild(shares);
+  }
+  chip.title =
+    "Part of this total is an estimate: the jurisdiction files production by lease and the" +
+    ` per-well share is computed under ${data.allocation.rule_id}. The share of each total` +
+    " it accounts for is stated beside that total.";
+  return chip;
+}
+
+/**
+ * How much of the total is a share, in words. "Some" on a well where every month is one is a
+ * hedge the data does not support, and it sits beside a chip reading `100% allocated`.
+ */
+function coverageSentence(allocation: CumulativeAllocation): string {
+  const shares = Object.values(allocation.share).map((figure) => Number(figure.value));
+  if (shares.length > 0 && shares.every((share) => share >= 1)) return "All months are allocated";
+  const months = Object.values(allocation.months).map((figure) => Number(figure.value));
+  if (months.length > 0) return `${range(months)} months are allocated`;
+  return "Some months are allocated";
 }
 
 /**
@@ -678,12 +793,10 @@ function cumulativeScope(data: WellCumulatives): (string | Node | false)[] {
   // another's is filed — so a single number would be wrong for two of the three.
   const admitted = blocks.map((block) => block.months_reported + block.months_reported_zero);
   const span = Math.max(...blocks.map((block) => block.span_months), 0);
-  const low = Math.min(...admitted);
-  const high = Math.max(...admitted);
-  const count = low === high ? `${low}` : `${low}–${high}`;
+  const count = range(admitted);
   return [
     window,
-    span > 0 && `${count} of ${span} months admitted`,
+    span > 0 && (allocatedScope(data, span, count) ?? `${count} of ${span} months admitted`),
     // The span is the months this source has filed for this well, not the well's life, and
     // the two are far apart where a regulator publishes a rolling window rather than a
     // history. Said generically because it is true of every jurisdiction: a total over what
@@ -692,6 +805,43 @@ function cumulativeScope(data: WellCumulatives): (string | Node | false)[] {
     span > 0 && "over the months filed, not the well's life",
     unbreakable(`snapshot ${formatVintage(data.snapshot_vintage)}`),
   ];
+}
+
+/** One number where every stream agrees, and the range where they do not. */
+function range(counts: number[]): string {
+  const low = Math.min(...counts);
+  const high = Math.max(...counts);
+  return low === high ? `${low}` : `${low}–${high}`;
+}
+
+/**
+ * The scope line for a total built from shares, or null where the total is observed.
+ *
+ * `months_reported` counts well-grain canonical months and a lease-grain jurisdiction has
+ * none of them, so "0 of 24 months admitted" printed under a 7,200 bbl total: the card
+ * contradicting its own number one line down (M3). Both counts are stated instead, and the
+ * allocated one is the served figure rather than a recount of it.
+ */
+function allocatedScope(
+  data: WellCumulatives,
+  span: number,
+  observed: string,
+): HTMLElement | null {
+  const months = Object.values(data.allocation?.months ?? {});
+  if (months.length === 0) return null;
+  const line = document.createElement("span");
+  line.className = "gw-scope-allocated";
+  line.textContent =
+    `${range(months.map((figure) => Number(figure.value)))} of ${span} months allocated` +
+    ` · ${observed} observed`;
+  const handle = months.find((figure) => figure.d)?.d;
+  if (handle) line.dataset["handle"] = handle;
+  line.title =
+    "An allocated month is a computed share of the lease's filing; an observed month is a" +
+    ` report about this well. This jurisdiction files at the lease (${
+      data.allocation?.rule_id ?? ""
+    }).`;
+  return line;
 }
 
 /** The disclosures both the header and the completion design carry, worded for their own
@@ -1036,7 +1186,36 @@ export const PENDING_ALLOCATION = "production_pending_allocation";
  * The production slot for a well whose regulator reports at the lease. It is a state, not an
  * absence: the section is titled for what is pending and links to the rule that says so.
  */
-export function pendingProductionPanel(warning: ApiWarning, ruleLink?: string): HTMLElement {
+/** A rule the panel sends the reader to, named by its own id so the link says which. */
+export interface PendingRuleLink {
+  href: string;
+  label: string;
+}
+
+/** `/v1/conformance/cr_tx_allocation_v0_1` -> `cr_tx_allocation_v0_1`. */
+function ruleIdOf(href: string): string {
+  return href.split("/").filter(Boolean).pop() ?? href;
+}
+
+export function ruleLinks(links: Links | undefined): PendingRuleLink[] {
+  // Two rules, and they answer two questions: the decision that admits a well-level figure
+  // for this jurisdiction at all, and the rule that will compute the share once the mart is
+  // built. A panel that names neither is the empty envelope with a heading on it.
+  const wanted: [string, string][] = [
+    ["allocation_rule", "The registered grain decision"],
+    ["allocation_model_rule", "The rule that computes the share"],
+    ["reporting_rule", "The conformance rule that decided this"],
+  ];
+  return wanted.flatMap(([key, sentence]) => {
+    const href = links?.[key];
+    return href ? [{ href, label: `${sentence}: ${ruleIdOf(href)}.` }] : [];
+  });
+}
+
+export function pendingProductionPanel(
+  warning: ApiWarning,
+  links: PendingRuleLink[] = [],
+): HTMLElement {
   const frame = document.createElement("section");
   frame.className = "gw-card-chart gw-pending";
   frame.dataset["state"] = "production_pending_allocation";
@@ -1050,13 +1229,19 @@ export function pendingProductionPanel(warning: ApiWarning, ruleLink?: string): 
     warning.detail ??
     "This well's regulator reports production at the lease, so no well-level series has" +
       " been observed.";
-  const link = document.createElement("a");
-  link.className = "gw-pending-rule";
-  // The rule itself, not the collection: the well header already carries the link, and a
-  // reader sent to a list of thirty-three rules has to find this one again.
-  link.href = ruleLink ?? "/v1/conformance";
-  link.textContent = "See the conformance rule that decided this.";
-  body.append(detail, link);
+  body.append(detail);
+  // The rules themselves, not the collection: the reader sent to a list of thirty-three has
+  // to find these again.
+  const named = links.length
+    ? links
+    : [{ href: "/v1/conformance", label: "See the conformance rule that decided this." }];
+  for (const rule of named) {
+    const link = document.createElement("a");
+    link.className = "gw-pending-rule";
+    link.href = rule.href;
+    link.textContent = rule.label;
+    body.appendChild(link);
+  }
   frame.append(title, body);
   return frame;
 }

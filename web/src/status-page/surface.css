@@ -202,6 +202,14 @@
   overflow-wrap: anywhere;
 }
 
+/* N6: `Next due` may name a past instant — the planner's own docstring says so — and the column
+   heading is future tense, so a passed one is prefixed and toned rather than left to read as a
+   promise. Not a fault colour: an overdue next-due is information, and the row's State cell is
+   where a fault is stated. */
+.gw-status-overdue {
+  color: var(--amber-text);
+}
+
 .gw-status-badge {
   display: inline-flex;
   align-items: center;
@@ -319,7 +327,7 @@
   line-height: 1.45;
 }
 
-".gw-status-card-time {
+.gw-status-card-time {
   font-size: var(--gw-fs-micro);
 }
 
