@@ -786,8 +786,17 @@ DEPENDENCIES: tuple[tuple[str, str, str, str], ...] = (
         "marts_basin_context",
         "marts_tx_wells",
         "completed",
-        "Texas is the fourth resident jurisdiction; a fifth adds an edge here rather than a"
-        " code change.",
+        "Texas is the fourth of the five resident jurisdictions, and every one of them has an"
+        " edge here.",
+    ),
+    (
+        "marts_basin_context",
+        "co_wells",
+        "completed",
+        "Colorado is the fifth, and it is named at its header promotion rather than at a wells"
+        " mart because that is the job that writes the canonical rows this mart reads; its"
+        " tile mart draws from the same promotion. A sixth jurisdiction adds an edge here"
+        " rather than a code change.",
     ),
     (
         "marts_neighbors",

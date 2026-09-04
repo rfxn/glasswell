@@ -218,8 +218,9 @@ _DECISIONS: dict[str, dict[str, str]] = {
         " the moment a jurisdiction's wells move and the card then serves 'no basin context"
         " has been built for this well yet' -- an honest sentence about the pipeline that a"
         " reader takes as a fact about the well. Ordered after each state's wells mart rather"
-        " than raced against it, and re-run when the EIA boundary download changes, which is"
-        " the other half of every answer it writes.",
+        " than raced against it -- Colorado at its header promotion, which is the job that"
+        " writes its canonical rows -- and re-run when the EIA boundary download changes,"
+        " which is the other half of every answer it writes.",
     },
     "marts_neighbors": {
         "rule": "Rebuild the neighbour index after the wells mart, or on a design change.",
