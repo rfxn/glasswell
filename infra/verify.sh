@@ -425,6 +425,31 @@ unresolved_read_time="$("${PSQL[@]}" "select coalesce(string_agg(
    and not exists (select 1 from lineage.status_resolution_resolved s
                     where s.for_state_code = j.identity_prefix)")"
 assert "every read-time status vocabulary has resolver rows" "" "$unresolved_read_time"
+# The mart is one row per well in canonical.wells_latest at the moment it ran, and the ingest
+# timer promotes wells between deploys -- so a resident count held against a live spine count
+# refuses a healthy host the first time one well lands. Two facts that cannot race instead: the
+# mart is not empty where the spine has wells, and its resident count is the one its own
+# refresh recorded on the derivation it wrote. Staleness against a spine that has moved since
+# is the scheduler's to answer, not a deploy check's.
+basin_context_check() {
+    local rows="$1" wells="$2" recorded="$3"
+    if [ "${wells:-0}" -eq 0 ]; then
+        ok "basin context not asserted: the spine holds no wells yet"
+    elif [ "${rows:-0}" -eq 0 ]; then
+        bad "basin context populated" \
+            "the spine holds $wells wells and marts.well_basin_context is empty; did the deploy skip 6d2?"
+    elif [ "$rows" != "$recorded" ]; then
+        bad "basin context matches the run that wrote it" \
+            "$rows rows resident, $recorded recorded by the refresh derivation"
+    else
+        ok "basin context populated ($rows rows, exactly what its own refresh recorded)"
+    fi
+}
+basin_context="$("${PSQL[@]}" "select count(*) from marts.well_basin_context")"
+wells_latest="$("${PSQL[@]}" "select count(*) from canonical.wells_latest")"
+basin_recorded="$("${PSQL[@]}" "select coalesce(sum(d.output_rows), -1) from lineage.derivations d
+   where d.derivation_id in (select distinct derivation_id from marts.well_basin_context)")"
+basin_context_check "${basin_context:-0}" "${wells_latest:-0}" "${basin_recorded:--1}"
 cumulatives="$("${PSQL[@]}" "select count(*) from marts.well_cumulatives")"
 withholding="$("${PSQL[@]}" "select count(*) from marts.well_withholding")"
 assert_true "per-well cumulatives populated ($cumulatives)" "mart is empty" \
@@ -858,9 +883,12 @@ if systemctl list-unit-files glasswell-scheduler.timer >/dev/null 2>&1; then
                 ;;
         esac
     fi
-    # The v0.78 posture, which inverts at the flag flip: every row this track seeds observes.
-    launching="$("${PSQL[@]}" "select count(*) from lineage.job_schedules_as_of(current_date, current_date) s join lineage.scheduled_jobs j on j.job_id = s.job_id where s.launch_mode = 'launch' and (j.jurisdiction in ('ND','TX','NM','MT') or j.jurisdiction is null)")"
-    assert "every resident and cross-jurisdiction row observes" 0 "$launching"
+    # The posture ruling, which inverts at the launch flip: every resolved row observes, in
+    # every jurisdiction. Naming the residents scoped this to the states that existed when it
+    # was written, so Colorado's six launching rows were invisible to it and a seventh state's
+    # would be too -- and a jurisdiction nobody listed is exactly where a launching row lands.
+    launching="$("${PSQL[@]}" "select count(*) from lineage.job_schedules_as_of(current_date, current_date) where launch_mode = 'launch'")"
+    assert "every resolved row observes" 0 "$launching"
     scheduler_runs="$("${PSQL[@]}" "select count(*) from lineage.job_runs where launched_by = 'scheduler' and outcome in ('ran','failed','interrupted')")"
     assert "the scheduler has launched nothing" 0 "$scheduler_runs"
 
@@ -884,7 +912,10 @@ fi
 printf 'scheduler identity\n'
 assert "no role named root exists" 0 \
     "$("${PSQL[@]}" "select count(*) from pg_roles where rolname = 'root'")"
-assert "glasswell_scheduler can log in and is not a superuser" 'f|t' \
+# false|true, not f|t: psql renders a bare boolean column through boolout as t/f, but a
+# concatenation goes through the text cast, which spells the same value true/false. The old
+# expectation could not match any role, so this line had never once passed.
+assert "glasswell_scheduler can log in and is not a superuser" 'false|true' \
     "$("${PSQL[@]}" "select rolsuper || '|' || rolcanlogin from pg_roles where rolname = 'glasswell_scheduler'")"
 assert "glasswell_scheduler holds no pipeline membership" f \
     "$("${PSQL[@]}" "select pg_has_role('glasswell_scheduler', 'glasswell_pipeline', 'MEMBER')")"

@@ -25,12 +25,15 @@
 --      cr_nm_wcproduction_pool_rollup_1's. A conformance rule is superseded by a later valid
 --      time; this item is about lineage.conformance_rules and nothing else.
 --   5. The restatement's published_at 2026-09-05 -> the same date as item 3, and it MUST be
---      strictly later than every published_at already on lineage.jurisdictions; if two trains
---      are cut on one day, the restatement carries the following day. It must also not be a
---      founding date plus one day: two standing gates plant a rival registration on that
---      instant and the partial unique indexes would refuse them. This is the highest
---      consequence line on this list, because this file makes max(published_at) the knowledge
---      cut lineage.refresh_status_resolution() reads.
+--      strictly later than every published_at Montana and New Mexico already carry; if two
+--      trains are cut on one day, the restatement carries the following day. It must also not
+--      be a founding date plus one day: two standing gates plant a rival registration on that
+--      instant and the partial unique indexes would refuse them. It need not be the table's
+--      maximum: the card track's Texas supersession publishes at 2026-09-06 on another code,
+--      which is later and bounds nothing here. This is the highest consequence line on this
+--      list, because the knowledge cut lineage.refresh_status_resolution() reads is
+--      max(published_at) over the whole table, so a restatement dated at or before what MT and
+--      NM already carry resolves to the older row and neither grain decision serves.
 --   6. seed/status_classes.py DOMAIN_EFFECTIVE_FROM / DOMAIN_EVIDENCE_TAG /
 --      DOMAIN_EVIDENCE_COMMIT and seed/conformance_status_classes.py EFFECTIVE_FROM -> the same
 --      values, in the same commit. The seed is the second writer and

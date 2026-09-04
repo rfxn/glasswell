@@ -26,11 +26,21 @@ const {
   wellEnvelope,
 } = await import("../test/fixtures.ts");
 
+const { resetSections, sectionsSettled } = await import("./sections.ts");
+
 const callbacks = { onExplain: vi.fn(), onClose: vi.fn() };
 let host: HTMLElement;
 
+/** A collapsed lazy section makes no request until a reader opens it, so a test that
+ *  asserts its body has to open it first, which is the contract rather than a detour. */
+async function expand(id: string): Promise<void> {
+  host.querySelector<HTMLButtonElement>(`#gw-section-${id} .gw-section-toggle`)?.click();
+  await sectionsSettled();
+}
+
 beforeEach(() => {
   window.history.replaceState(null, "", "/");
+  resetSections();
   document.body.innerHTML = "";
   host = document.createElement("aside");
   document.body.appendChild(host);
@@ -55,23 +65,28 @@ afterEach(() => {
 });
 
 describe("a well whose regulator reports at the lease", () => {
-  it("says production is pending allocation instead of drawing an empty chart", async () => {
-    const pending = {
+  const RULE = "/v1/conformance/cr_tx_allocation_scope_1";
+
+  function pendingWell(warnings: { code: string; detail: string; pointer: string }[]) {
+    return {
       ...wellEnvelope,
-      links: { ...wellEnvelope.links, reporting_rule: "/v1/conformance/cr_tx_allocation_scope_1" },
-      meta: {
-        ...wellEnvelope.meta,
-        warnings: [
-          {
-            code: "production_pending_allocation",
-            detail:
-              "This well's regulator reports production at the lease" +
-              " (cr_tx_allocation_scope_1), so no well-level series has been observed.",
-            pointer: "/production",
-          },
-        ],
-      },
+      links: { ...wellEnvelope.links, reporting_rule: RULE },
+      meta: { ...wellEnvelope.meta, warnings },
     };
+  }
+
+  it("says production is pending only while no allocation is served", async () => {
+    // The disclosure is a served fact with two clocks behind it, and it is true until the
+    // allocation is published. What must not happen is a card showing both.
+    const pending = pendingWell([
+      {
+        code: "production_pending_allocation",
+        detail:
+          "This well's regulator reports production at the lease" +
+          " (cr_tx_allocation_scope_1), so no well-level series has been observed.",
+        pointer: "/production",
+      },
+    ]);
     // Only the well route is stubbed: a production request would 404 through stubFetch and
     // surface as an error panel, which is a failure the spy could not have shown — it matched
     // the well route first and was never reached.
@@ -84,29 +99,29 @@ describe("a well whose regulator reports at the lease", () => {
       "Production pending allocation",
     );
     expect(panel?.textContent).toContain("cr_tx_allocation_scope_1");
-    expect(panel?.querySelector(".gw-pending-rule")?.getAttribute("href")).toBe(
-      "/v1/conformance/cr_tx_allocation_scope_1",
-    );
+    expect(panel?.querySelector(".gw-pending-rule")?.getAttribute("href")).toBe(RULE);
     expect(host.textContent).not.toContain("No production has been reported");
-    expect(host.querySelector(".gw-completion-context")).not.toBeNull();
     expect(renderChart).not.toHaveBeenCalled();
   });
 
+  it("draws the chart instead the moment the warning stops arriving", async () => {
+    // The successor rule carries the third spec key, so the API stops emitting the warning.
+    // Nothing in the card decides this: a jurisdiction test in the client would be a mapping
+    // decision living in code, which is what R8 refuses.
+    await renderWellCard(host, API10, callbacks);
+
+    expect(host.querySelector("[data-state='production_pending_allocation']")).toBeNull();
+    expect(renderChart).toHaveBeenCalled();
+  });
+
   it("says it once: no raw warning line above the panel that renders the same sentence", async () => {
-    const pending = {
-      ...wellEnvelope,
-      links: { ...wellEnvelope.links, reporting_rule: "/v1/conformance/cr_tx_allocation_scope_1" },
-      meta: {
-        ...wellEnvelope.meta,
-        warnings: [
-          {
-            code: "production_pending_allocation",
-            detail: "reports production at the lease (cr_tx_allocation_scope_1)",
-            pointer: "/production",
-          },
-        ],
+    const pending = pendingWell([
+      {
+        code: "production_pending_allocation",
+        detail: "reports production at the lease (cr_tx_allocation_scope_1)",
+        pointer: "/production",
       },
-    };
+    ]);
     vi.stubGlobal("fetch", vi.fn(stubFetch({ [`/v1/wells/${API10}`]: pending })));
 
     await renderWellCard(host, API10, callbacks);
@@ -118,23 +133,129 @@ describe("a well whose regulator reports at the lease", () => {
   });
 
   it("still renders warnings that have no panel of their own", async () => {
-    const both = {
-      ...wellEnvelope,
-      links: { ...wellEnvelope.links, reporting_rule: "/v1/conformance/cr_tx_allocation_scope_1" },
-      meta: {
-        ...wellEnvelope.meta,
-        warnings: [
-          { code: "production_pending_allocation", detail: "pending", pointer: "/production" },
-          { code: "geometry_not_promoted", detail: "one segment held back", pointer: "/geometry" },
-        ],
-      },
-    };
+    const both = pendingWell([
+      { code: "production_pending_allocation", detail: "pending", pointer: "/production" },
+      { code: "geometry_not_promoted", detail: "one segment held back", pointer: "/geometry" },
+    ]);
     vi.stubGlobal("fetch", vi.fn(stubFetch({ [`/v1/wells/${API10}`]: both })));
 
     await renderWellCard(host, API10, callbacks);
 
     expect(host.textContent).toContain("geometry_not_promoted");
     expect(host.querySelector("[data-state='production_pending_allocation']")).not.toBeNull();
+  });
+});
+
+describe("a Texas well while the allocated mart is empty", () => {
+  // The load window: `scripts/deploy.sh` refreshes the marts before the manual load, which the
+  // runbook says takes two to six hours. The API serves the disclosure on the PRODUCTION
+  // envelope -- the well's own warning was retired when the grain rule superseded the
+  // disclosure rule -- and the card read only the well's, so it printed "No production
+  // reported." over a lease that has filed every month (gate-tx H-10-W).
+  const GRAIN = "/v1/conformance/cr_tx_production_grain_1";
+  const MODEL = "/v1/conformance/cr_tx_allocation_v0_1";
+  const DETAIL =
+    "This well's regulator reports production at the lease (cr_tx_production_grain_1), and" +
+    " the allocated mart holds no rows on this instance, so no well-level figure is served" +
+    " rather than an empty series that would read as nothing produced. cr_tx_allocation_v0_1" +
+    " is the rule that computes it; the lease volumes it splits are promoted at their native" +
+    " grain and are served as the lease's own.";
+  const CUMULATIVE_PENDING = {
+    type: "https://glasswell.rpx.sh/v1/errors/not_found",
+    title: "Not found",
+    status: 404,
+    detail:
+      `no cumulative for ${API10} yet. This jurisdiction is registered for a well-grain` +
+      " cumulative row and the last refresh skipped it: the allocated mart it reads holds no" +
+      " rows on this instance, so nothing is published rather than a total over months nobody" +
+      " has split.",
+  };
+
+  function pendingProduction() {
+    return {
+      ...productionEnvelope,
+      data: {
+        ...productionEnvelope.data,
+        granularity: "lease_reported",
+        streams: [],
+        series: { pm: [] },
+        allocation: null,
+      },
+      links: {
+        ...productionEnvelope.links,
+        allocation_rule: GRAIN,
+        allocation_model_rule: MODEL,
+      },
+      meta: {
+        ...productionEnvelope.meta,
+        warnings: [
+          { code: "production_pending_allocation", detail: DETAIL, pointer: "/production" },
+        ],
+      },
+    };
+  }
+
+  async function render(): Promise<void> {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        stubFetch({
+          [`/v1/wells/${API10}/completions`]: completionContextEnvelope,
+          [`/v1/wells/${API10}/cumulatives`]: CUMULATIVE_PENDING,
+          [`/v1/wells/${API10}/neighbors`]: neighborEnvelope,
+          [`/v1/wells/${API10}/production`]: pendingProduction(),
+          [`/v1/wells/${API10}`]: wellEnvelope,
+        }),
+      ),
+    );
+    await renderWellCard(host, API10, callbacks);
+  }
+
+  it("renders the disclosure the production envelope carries, not an empty chart", async () => {
+    await render();
+    const panel = host.querySelector<HTMLElement>("[data-state='production_pending_allocation']");
+
+    expect(panel).not.toBeNull();
+    expect(panel?.querySelector(".gw-frame-title")?.textContent).toBe(
+      "Production pending allocation",
+    );
+    expect(host.textContent).not.toContain("No production reported.");
+    expect(renderChart).not.toHaveBeenCalled();
+  });
+
+  it("names both rules and links each one", async () => {
+    await render();
+    const panel = host.querySelector<HTMLElement>("[data-state='production_pending_allocation']");
+    const links = [...(panel?.querySelectorAll("a.gw-pending-rule") ?? [])];
+
+    expect(panel?.textContent).toContain("cr_tx_production_grain_1");
+    expect(panel?.textContent).toContain("cr_tx_allocation_v0_1");
+    expect(links.map((link) => link.getAttribute("href"))).toEqual([GRAIN, MODEL]);
+  });
+
+  it("says why the cumulative is absent instead of blaming the snapshot", async () => {
+    await render();
+
+    expect(host.textContent).toContain("the last refresh skipped it");
+    expect(host.textContent).not.toContain("No cumulative: not in the snapshot.");
+  });
+
+  // The detail is written for a machine-readable `problem` field, where a lowercase opening is
+  // correct; the CUMULATIVE section's only prose is that field rendered verbatim, so it opened
+  // the section with "no cumulative for 4200300002 yet." (gate-tx-shots V-nit).
+  it("opens the section's prose with a capital", async () => {
+    await render();
+    const prose = host.querySelector<HTMLElement>(".gw-well-cumulatives .gw-empty");
+
+    expect(prose?.textContent?.startsWith(`No cumulative for ${API10} yet.`)).toBe(true);
+    expect(host.textContent).not.toContain(`no cumulative for ${API10}`);
+  });
+
+  it("leaves an observed well drawing its chart", async () => {
+    await renderWellCard(host, API10, callbacks);
+
+    expect(host.querySelector("[data-state='production_pending_allocation']")).toBeNull();
+    expect(renderChart).toHaveBeenCalled();
   });
 });
 
@@ -154,6 +275,21 @@ describe("well card", () => {
 
     await renderWellCard(host, API10, callbacks);
 
+    // A collapsed lazy section makes no request until it is first expanded, so what a mount
+    // asks for is the header, the expanded sections and the series. Completions and
+    // neighbours are collapsed and have asked for nothing.
+    expect(requested.mock.calls.map(([input]) => String(input)).sort()).toEqual(
+      [
+        `/v1/wells/${API10}?as_of=2026-07-01`,
+        `/v1/wells/${API10}/cumulatives?as_of=2026-07-01`,
+        `/v1/wells/${API10}/production?as_of=2026-07-01`,
+      ].sort(),
+    );
+
+    await expand("completions");
+    await expand("neighbours");
+
+    // And when they do ask, they ask through the same seam, so the pin reaches them too.
     expect(requested.mock.calls.map(([input]) => String(input)).sort()).toEqual(
       [
         `/v1/wells/${API10}?as_of=2026-07-01`,
@@ -163,6 +299,12 @@ describe("well card", () => {
         `/v1/wells/${API10}/production?as_of=2026-07-01`,
       ].sort(),
     );
+
+    // Expanded a second time it asks again for nothing: a loaded section is never re-fetched.
+    const asked = requested.mock.calls.length;
+    await expand("completions");
+    await expand("completions");
+    expect(requested.mock.calls.length).toBe(asked);
   });
 
   it("renders the header the operator would recognise", async () => {
@@ -183,6 +325,7 @@ describe("well card", () => {
 
   it("renders physical neighbours as current-only proximity, not model analogs", async () => {
     await renderWellCard(host, API10, callbacks);
+    await expand("neighbours");
 
     const frame = host.querySelector<HTMLElement>(".gw-neighbor-context");
     const links = frame?.querySelectorAll<HTMLAnchorElement>(".gw-neighbor-link");
@@ -224,6 +367,7 @@ describe("well card", () => {
     );
 
     await renderWellCard(host, API10, callbacks);
+    await expand("neighbours");
 
     const body = host.querySelector<HTMLElement>(".gw-neighbor-context .gw-frame-body");
     expect(body?.dataset["state"]).toBe("empty");
@@ -248,6 +392,7 @@ describe("well card", () => {
     );
 
     await renderWellCard(host, API10, callbacks);
+    await expand("neighbours");
 
     const body = host.querySelector<HTMLElement>(".gw-neighbor-context .gw-frame-body");
     expect(body?.dataset["state"]).toBe("unavailable");
@@ -416,13 +561,19 @@ describe("well card", () => {
     expect(
       cells.map((cell) => cell.querySelector(".gw-figure-value, .gw-absent")?.textContent),
     ).toEqual(["21,000 bbl", "unavailable: withheld", "unavailable: no report"]);
-    // The whole point: an absent month is never summed as a zero.
-    expect(cells[1]?.textContent).not.toMatch(/\b0\b/);
-    expect(cells[2]?.textContent).not.toMatch(/\b0\b/);
-    // Nothing is collapsed away — the four counts stay reachable on the cell.
-    expect(cells[1]?.getAttribute("title")).toBe(
+    // The whole point: an absent month is never summed as a zero. Against the value rather
+    // than the whole cell, because the coverage counts beside it are readable text now and a
+    // month count of zero is exactly what they are there to say.
+    const shown = (cell: Element | undefined): string =>
+      cell?.querySelector(".gw-figure-value, .gw-absent")?.textContent ?? "";
+    expect(shown(cells[1])).not.toMatch(/\b0\b/);
+    expect(shown(cells[2])).not.toMatch(/\b0\b/);
+    // Nothing is collapsed away, and nothing is hidden behind a hover: the four counts are
+    // text under the figure, where a keyboard reader and a phone reader have them too.
+    expect(cells[1]?.querySelector(".gw-coverage-line")?.textContent).toBe(
       "0 reported · 0 reported zero · 0 no report · 7 withheld of 7 months",
     );
+    expect(cells[1]?.getAttribute("title")).toBeNull();
   });
 
   it("says nothing was ever filed rather than showing a zero cumulative", async () => {
@@ -512,11 +663,12 @@ describe("well card", () => {
     await renderWellCard(host, API10, callbacks);
 
     const frame = host.querySelector(".gw-production-chart") as HTMLElement;
-    const title = frame.querySelector(".gw-frame-title") as HTMLElement;
-    // §2.6's crossing sits in this header too, so the label is the title's own text and not
-    // everything the header carries.
-    expect(title.firstElementChild?.textContent).toBe("Monthly production");
-    expect(title.querySelector('[data-crossing="open-this-series"]')).not.toBeNull();
+    // The label is the section's own head now: the frame had a title of its own and the
+    // section names it, and two headings over one plot is one heading too many.
+    const head = host.querySelector("#gw-section-production .gw-section-head") as HTMLElement;
+    const title = head.querySelector(".gw-section-title") as HTMLElement;
+    expect(title.firstElementChild?.textContent).toBe("Production");
+    expect(head.querySelector('[data-crossing="open-this-series"]')).not.toBeNull();
     expect(renderChart.mock.calls[0]?.[0]).toBe(frame.querySelector(".gw-frame-body"));
   });
 
@@ -584,6 +736,64 @@ describe("well card", () => {
     );
   });
 
+  it("counts the lineage index again when another section draws after it", async () => {
+    // Opened by deep link before Production had drawn, the index listed one section and read
+    // as a card carrying two handles. The count is of what is rendered, so it is taken again
+    // whenever more is (gate N7).
+    await renderWellCard(host, API10, callbacks);
+    const open = (id: string): void =>
+      (host.querySelector(`#gw-section-${id} .gw-section-toggle`) as HTMLElement).click();
+
+    open("lineage");
+    await sectionsSettled();
+    const index = (): string =>
+      host.querySelector("#gw-section-lineage .gw-lineage-index")?.textContent ?? "";
+    const first = index();
+
+    open("neighbours");
+    await sectionsSettled();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(first).not.toContain("Neighbours and spacing");
+    expect(index()).toContain("Neighbours and spacing");
+  });
+
+  it("counts the chart's own handles, which land outside the section queue", async () => {
+    // The production request runs beside the queue and the chart chunk imports lazily inside
+    // it, so an index counted when the queue drained missed the section with the most handles
+    // on the card (gate N7, the half the queue could not reach). The stub draws what the real
+    // chart draws for this purpose: a handle in the host it was given.
+    renderChart.mockImplementation((container: HTMLElement) => {
+      const ring = document.createElement("button");
+      ring.className = "gw-handle";
+      container.appendChild(ring);
+    });
+    // The deep link, which is how the gate found it: `?section=lineage` opens the index while
+    // the production request is still in flight, so it is built before the plot exists and
+    // nothing in the section queue will ever run again.
+    window.history.replaceState(null, "", `/?well=${API10}&section=lineage`);
+    await renderWellCard(host, API10, callbacks);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const index = host.querySelector("#gw-section-lineage .gw-lineage-index")?.textContent ?? "";
+    window.history.replaceState(null, "", "/");
+
+    expect(index).toContain("Production");
+  });
+
+  it("prints the well type once, qualified, and never as the bare code beside it", async () => {
+    // §2.3 replaces the bare `well_type_reported` with `<code> · as <regulator> filed it`.
+    // Rendered in both places a reader has to choose which of two rows to believe (gate M1).
+    await renderWellCard(host, API10, callbacks);
+
+    const labels = [...host.querySelectorAll("dt")].map((dt) => dt.textContent?.trim());
+    expect(labels.filter((label) => label === "Well type")).toHaveLength(1);
+    const drilling = [...host.querySelectorAll<HTMLElement>(".gw-facts-band")][1];
+    expect([...(drilling?.querySelectorAll("dt") ?? [])].map((dt) => dt.textContent)).not.toContain(
+      "Well type",
+    );
+  });
+
   it("drops a band whose every field is absent instead of heading an empty list", async () => {
     const bare = structuredClone(wellEnvelope);
     for (const field of ["basin", "county_code_at_permit", "land_unit_label", "surface_point"]) {
@@ -599,6 +809,7 @@ describe("well card", () => {
 
   it("marks an absent value so a skimmed column separates it from a measured one", async () => {
     await renderWellCard(host, API10, callbacks);
+    await expand("neighbours");
 
     // The neighbour rows used to print the raw enum token, so "alias unavailable" stood in the
     // Formation cell looking exactly like a formation name beside "bakken".
@@ -657,10 +868,13 @@ describe("well card", () => {
 describe("completion and formation context", () => {
   it("renders source events and reported pool mappings without design or top claims", async () => {
     await renderWellCard(host, API10, callbacks);
+    await expand("completions");
 
     const frame = host.querySelector(".gw-completion-context") as HTMLElement;
     const body = frame.querySelector<HTMLElement>(".gw-frame-body");
-    expect(frame.querySelector(".gw-frame-title")?.textContent).toBe("Completions & formations");
+    expect(
+      host.querySelector("#gw-section-completions .gw-section-title")?.textContent,
+    ).toBe("Completions and fluids");
     expect(body?.dataset["state"]).toBe("populated");
     expect(body?.getAttribute("aria-busy")).toBe("false");
     const groups = frame.querySelectorAll<HTMLElement>(".gw-context-group");
@@ -737,6 +951,7 @@ describe("completion and formation context", () => {
     );
 
     await renderWellCard(host, API10, callbacks);
+    await expand("completions");
 
     const event = host.querySelector(".gw-context-group") as HTMLElement;
     expect(factsOf(event)["Job start"]).toBe("unavailable");
@@ -784,6 +999,7 @@ describe("completion and formation context", () => {
     );
 
     await renderWellCard(host, API10, callbacks);
+    await expand("completions");
 
     const frame = host.querySelector(".gw-completion-context") as HTMLElement;
     expect(frame.textContent).toContain("None reported");
@@ -833,6 +1049,7 @@ describe("completion and formation context", () => {
     );
 
     await renderWellCard(host, API10, callbacks);
+    await expand("completions");
 
     const frame = host.querySelector(".gw-completion-context") as HTMLElement;
     const groups = frame.querySelectorAll<HTMLElement>(".gw-context-group");
@@ -869,6 +1086,7 @@ describe("completion and formation context", () => {
     );
 
     await renderWellCard(host, API10, callbacks);
+    await expand("completions");
 
     const frame = host.querySelector(".gw-completion-context") as HTMLElement;
     const designFacts = factsOf(frame.querySelectorAll<HTMLElement>(".gw-context-group")[2] as HTMLElement);
@@ -903,6 +1121,7 @@ describe("completion and formation context", () => {
     );
 
     await renderWellCard(host, API10, callbacks);
+    await expand("completions");
 
     const frame = host.querySelector(".gw-completion-context") as HTMLElement;
     const designFacts = factsOf(
@@ -936,6 +1155,7 @@ describe("completion and formation context", () => {
     );
 
     await renderWellCard(host, API10, callbacks);
+    await expand("completions");
 
     const frame = host.querySelector(".gw-completion-context") as HTMLElement;
     expect(frame.textContent).toContain("None disclosed");
@@ -970,6 +1190,7 @@ describe("completion and formation context", () => {
     );
 
     await renderWellCard(host, API10, callbacks);
+    await expand("completions");
 
     const body = host.querySelector<HTMLElement>(".gw-completion-context .gw-frame-body");
     expect(body?.dataset["state"]).toBe("empty");
@@ -1003,6 +1224,7 @@ describe("completion and formation context", () => {
     );
 
     await renderWellCard(host, API10, callbacks);
+    await expand("completions");
 
     // Summary reads on its own; the served detail and the code that raised it stay reachable
     // under it rather than being printed as a line of internal vocabulary.
@@ -1031,6 +1253,7 @@ describe("completion and formation context", () => {
     );
 
     await renderWellCard(host, API10, callbacks);
+    await expand("completions");
 
     const body = host.querySelector<HTMLElement>(".gw-completion-context .gw-frame-body");
     expect(body?.dataset["state"]).toBe("unavailable");
@@ -1056,6 +1279,7 @@ describe("completion and formation context", () => {
     );
 
     await renderWellCard(host, API10, callbacks);
+    await expand("completions");
 
     const body = host.querySelector<HTMLElement>(".gw-completion-context .gw-frame-body");
     expect(body?.dataset["state"]).toBe("unavailable");
@@ -1080,6 +1304,7 @@ describe("completion and formation context", () => {
     );
 
     await renderWellCard(host, API10, callbacks);
+    await expand("completions");
 
     const body = host.querySelector<HTMLElement>(".gw-completion-context .gw-frame-body");
     expect(body?.dataset["state"]).toBe("unavailable");
@@ -1107,3 +1332,212 @@ function problem(status: number, code: string): Response {
     { status, headers: { "content-type": "application/problem+json" } },
   );
 }
+
+describe("a cumulative total that some months were allocated into", () => {
+  const EMPTY_COVERAGE = {
+    coverage_complete: false,
+    first_month: "2024-01",
+    last_month: "2025-12",
+    months_no_report: 0,
+    months_reported: 0,
+    months_reported_zero: 0,
+    months_withheld: 0,
+    span_months: 24,
+  };
+
+  function allocatedCumulatives(share = "0.6700") {
+    const base = cumulativesEnvelope as unknown as {
+      data: Record<string, unknown>;
+      [key: string]: unknown;
+    };
+    return {
+      ...base,
+      data: {
+        ...base.data,
+        granularity: "lease_allocated",
+        coverage_outcome: "observed_with_allocated",
+        // The coverage block counts well-grain canonical months, and a lease-grain
+        // jurisdiction has none: this is the shape the Texas arm actually serves, and the
+        // one that put "0 of 24 months admitted" under a 7,200 bbl total.
+        coverage: {
+          ...(base.data["coverage"] as Record<string, unknown>),
+          oil_bbl: EMPTY_COVERAGE,
+          gas_mcf: EMPTY_COVERAGE,
+          water_bbl: EMPTY_COVERAGE,
+        },
+        allocation: {
+          basis: "allocated",
+          model_id: "alloc_v0_2026_09",
+          rule_id: "cr_tx_allocation_v0_1",
+          months: {
+            liquid: { value: "24", unit: "months", d: "drv_a#api10=x&stream=liquid" },
+            gas: { value: "24", unit: "months", d: "drv_a#api10=x&stream=gas" },
+          },
+          share: {
+            liquid: { value: share, unit: "share", d: "drv_a#api10=x&stream=liquid" },
+          },
+          shares_counted: { value: "9", unit: "shares", d: "drv_a#api10=x&col=shares_counted" },
+        },
+      },
+    };
+  }
+
+  async function render(share?: string): Promise<void> {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        stubFetch({
+          [`/v1/wells/${API10}/completions`]: completionContextEnvelope,
+          [`/v1/wells/${API10}/cumulatives`]: allocatedCumulatives(share),
+          [`/v1/wells/${API10}/neighbors`]: neighborEnvelope,
+          [`/v1/wells/${API10}/production`]: productionEnvelope,
+          [`/v1/wells/${API10}`]: wellEnvelope,
+        }),
+      ),
+    );
+    await renderWellCard(host, API10, callbacks);
+  }
+
+  it("states the allocated share beside the total rather than after it", async () => {
+    await render();
+    const cells = [...host.querySelectorAll(".gw-cumulative-cell")];
+    const oil = cells.find((cell) => cell.textContent?.startsWith("Oil"));
+
+    expect(oil?.querySelector(".gw-alloc-share")?.textContent).toBe("67% allocated");
+  });
+
+  it("labels the coverage class as a chip, never as a footnote", async () => {
+    await render();
+    const chip = host.querySelector<HTMLElement>(".gw-alloc-coverage");
+
+    expect(chip).not.toBeNull();
+    expect(chip?.dataset["basis"]).toBe("allocated");
+    expect(chip?.textContent).toContain("alloc_v0_2026_09");
+    expect(chip?.getAttribute("title")).toContain("cr_tx_allocation_v0_1");
+  });
+
+  it("reads the share rather than hedging on a well where every month is one", async () => {
+    // "Some months are allocated" beside a chip reading `100% allocated` is the chip
+    // contradicting its neighbour.
+    await render("1.0000");
+    const chip = host.querySelector<HTMLElement>(".gw-alloc-coverage");
+
+    expect(chip?.textContent).toContain("All months are allocated");
+    expect(chip?.textContent).not.toContain("Some months");
+  });
+
+  it("states the count where the total is only partly a share", async () => {
+    await render();
+    const chip = host.querySelector<HTMLElement>(".gw-alloc-coverage");
+
+    expect(chip?.textContent).toContain("24 months are allocated");
+    expect(chip?.textContent).not.toContain("Some months");
+  });
+
+  it("states how many shares are behind the totals, and where the count came from", async () => {
+    await render();
+    const shares = host.querySelector<HTMLElement>(".gw-alloc-shares");
+
+    expect(shares?.textContent).toContain("9 shares");
+    expect(shares?.dataset["handle"]).toBe("drv_a#api10=x&col=shares_counted");
+  });
+
+  it("shows no chip on a stream nothing was allocated into", async () => {
+    // A stream with no allocated month is not partly allocated, and a 0% chip trains a reader
+    // to stop reading the chip on the stream that does carry one.
+    await render();
+    const cells = [...host.querySelectorAll(".gw-cumulative-cell")];
+    const gas = cells.find((cell) => cell.textContent?.startsWith("Gas"));
+
+    expect(gas?.querySelector(".gw-alloc-share")).toBeNull();
+  });
+
+  it("leaves an observed total alone", async () => {
+    await renderWellCard(host, API10, callbacks);
+
+    expect(host.querySelector(".gw-alloc-coverage")).toBeNull();
+    expect(host.querySelector(".gw-alloc-share")).toBeNull();
+    expect(host.querySelector(".gw-scope-allocated")).toBeNull();
+    expect(host.textContent).toContain("months admitted");
+  });
+
+  it("counts the allocated months rather than reporting none admitted", async () => {
+    // `months_reported` counts well-grain canonical months and there are none, so the scope
+    // line said nothing was admitted directly under two non-null totals, a number the
+    // surface contradicts in the next sentence, which is worse than a naked one.
+    await render();
+    const scope = host.querySelector<HTMLElement>(".gw-scope-allocated");
+
+    expect(scope?.textContent).toBe("24 of 24 months allocated · 0 observed");
+    expect(host.textContent).not.toContain("months admitted");
+  });
+
+  it("takes that count from the served figure, so it resolves like any other", async () => {
+    await render();
+    const scope = host.querySelector<HTMLElement>(".gw-scope-allocated");
+
+    expect(scope?.dataset["handle"]).toBe("drv_a#api10=x&stream=liquid");
+    expect(scope?.getAttribute("title")).toContain("cr_tx_allocation_v0_1");
+  });
+});
+
+describe("the third production state, and the sections it opens", () => {
+  const poolGrain = {
+    ...wellEnvelope,
+    meta: {
+      ...wellEnvelope.meta,
+      warnings: [
+        {
+          code: "production_reported_at_pool_grain",
+          detail:
+            "This well's regulator files production at the well_completion_pool and glasswell" +
+            " performs no rollup to the well (cr_nm_wcproduction_pool_rollup_1).",
+          pointer: "/producing",
+          rule_id: "cr_nm_wcproduction_pool_rollup_1",
+        },
+      ],
+    },
+  };
+
+  it("draws a titled panel that names the rule and points down at the filings", async () => {
+    vi.stubGlobal("fetch", vi.fn(stubFetch({ [`/v1/wells/${API10}`]: poolGrain })));
+
+    await renderWellCard(host, API10, callbacks);
+
+    const panel = host.querySelector('[data-state="production_reported_at_pool_grain"]');
+    expect(panel?.querySelector(".gw-frame-title")?.textContent).toBe(
+      "Production is filed by pool",
+    );
+    expect(panel?.querySelector(".gw-identity-rule")?.textContent).toBe(
+      "cr_nm_wcproduction_pool_rollup_1",
+    );
+    expect(panel?.querySelector(".gw-section-link")?.textContent).toBe("Production by pool");
+  });
+
+  it("opens the Pools section by default, because the record is there and not above", async () => {
+    // N-24: the reader came for the filings, and on this well the chart is a stated absence.
+    vi.stubGlobal("fetch", vi.fn(stubFetch({ [`/v1/wells/${API10}`]: poolGrain })));
+
+    await renderWellCard(host, API10, callbacks);
+
+    const pools = host.querySelector("#gw-section-pools");
+    expect(pools).not.toBeNull();
+    expect(pools?.querySelector(".gw-section-toggle")?.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("says the pool-grain sentence once, in the panel rather than as a loose warning", async () => {
+    vi.stubGlobal("fetch", vi.fn(stubFetch({ [`/v1/wells/${API10}`]: poolGrain })));
+
+    await renderWellCard(host, API10, callbacks);
+
+    for (const warning of host.querySelectorAll(".gw-warning")) {
+      expect(warning.textContent).not.toContain("performs no rollup");
+    }
+  });
+
+  it("offers no Pools section on a well whose regulator files at the well", async () => {
+    await renderWellCard(host, API10, callbacks);
+
+    expect(host.querySelector("#gw-section-pools")).toBeNull();
+  });
+});

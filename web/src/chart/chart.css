@@ -1,0 +1,272 @@
+/*
+ * The chart's own controls. On this stylesheet rather than the entry one because the chart is
+ * imported when a series arrives and never by a reader who opens no well: the entry stylesheet
+ * is budgeted for what every first paint pays for, and these rules are not that.
+ */
+/* The legend is the stream control, so it carries a button's affordances and a 44 px target
+   at the widths the sheet takes over. Pressed is the drawn state; unpressed dims the swatch
+   rather than removing the row, because the way back has to stay visible. */
+.gw-stream-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.1rem 0.3rem;
+  border: 1px solid transparent;
+  border-radius: var(--gw-radius-xs);
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.gw-stream-toggle:hover:not(:disabled) {
+  border-color: var(--hairline-strong);
+}
+
+.gw-stream-toggle[aria-pressed="false"] {
+  color: var(--slate);
+}
+
+.gw-stream-toggle[aria-pressed="false"] .gw-swatch {
+  opacity: 0.3;
+}
+
+.gw-stream-toggle:disabled {
+  cursor: default;
+}
+
+.gw-scale-toggle {
+  flex: none;
+  padding: 0 var(--gw-space-2);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--gw-radius-pill);
+  background: none;
+  color: var(--slate);
+  font: inherit;
+  font-size: var(--gw-fs-micro);
+  cursor: pointer;
+}
+
+.gw-scale-toggle[aria-pressed="true"] {
+  color: var(--paper);
+  border-color: var(--cyan);
+}
+
+.gw-scale-toggle:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.gw-log-zeros {
+  margin: 0 0 0.4rem;
+}
+
+/* The selection, and the sum it makes possible. The total is text, not a figure: it carries no
+   ⌾ because the client computed it, and the scope line says where provenance actually is. */
+.gw-window-selected {
+  display: flex;
+  align-items: center;
+  gap: var(--gw-space-2);
+  margin: 0.2rem 0 0;
+  color: var(--cyan);
+  font-size: var(--gw-fs-micro);
+}
+
+.gw-window-clear {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--slate);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.gw-running-total {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--gw-space-2);
+  margin: 0.4rem 0 0;
+}
+
+.gw-running-title {
+  color: var(--slate);
+  font-size: var(--gw-fs-micro);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.gw-running-value {
+  font-family: var(--gw-font-mono);
+}
+
+.gw-running-scope {
+  flex-basis: 100%;
+  margin: 0.1rem 0 0;
+}
+
+.gw-normalize-toggle {
+  flex: none;
+  padding: 0 var(--gw-space-2);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--gw-radius-pill);
+  background: none;
+  color: var(--slate);
+  font: inherit;
+  font-size: var(--gw-fs-micro);
+  cursor: pointer;
+}
+
+.gw-normalize-toggle[aria-pressed="true"] {
+  color: var(--paper);
+  border-color: var(--cyan);
+}
+
+.gw-normalize-toggle:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* The third vocabulary's own prefix: `gw-state-*` is the null semantics, `gw-alloc-*` the
+   allocation class, and these say whether the month was filed more than once. */
+.gw-restate-latest {
+  background: var(--hairline-strong);
+}
+
+.gw-restate-earlier {
+  background: var(--amber);
+}
+
+.gw-restate-unknown {
+  background: var(--muted);
+}
+
+.gw-vintage-capture {
+  margin: 0.3rem 0 0;
+}
+
+.gw-table-toggle {
+  flex: none;
+  padding: 0 var(--gw-space-2);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--gw-radius-pill);
+  background: none;
+  color: var(--slate);
+  font: inherit;
+  font-size: var(--gw-fs-micro);
+  cursor: pointer;
+}
+
+.gw-table-toggle[aria-pressed="true"] {
+  color: var(--paper);
+  border-color: var(--cyan);
+}
+
+/* The table is the plot's alternative, so it takes the plot's width and scrolls rather than
+   pushing the card wider than the rail. */
+.gw-series-table {
+  overflow-x: auto;
+  margin: 0 0 0.4rem;
+}
+
+.gw-series-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--gw-fs-micro);
+}
+
+.gw-series-table caption {
+  text-align: left;
+  color: var(--slate);
+  padding-bottom: 0.2rem;
+}
+
+.gw-series-table th,
+.gw-series-table td {
+  border-bottom: 1px solid var(--hairline);
+  padding: 0.15rem 0.4rem 0.15rem 0;
+  text-align: left;
+  white-space: nowrap;
+}
+
+/* The month stays readable while the streams scroll past it: a row whose identity has left
+   the viewport is a row of numbers about nothing, which at 390 is every row. */
+.gw-series-table tbody th,
+.gw-series-table thead th:first-child {
+  position: sticky;
+  left: 0;
+  background: var(--panel);
+  padding-right: 0.6rem;
+}
+
+
+
+.gw-table-value {
+  font-family: var(--gw-font-mono);
+}
+
+.gw-table-state {
+  color: var(--slate);
+  white-space: normal;
+}
+
+.gw-vintage-read {
+  margin-left: var(--gw-space-2);
+  padding: 0 var(--gw-space-2);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--gw-radius-pill);
+  background: none;
+  color: var(--cyan);
+  font: inherit;
+  font-size: var(--gw-fs-micro);
+  cursor: pointer;
+}
+
+.gw-export {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--gw-space-2);
+  margin-top: 0.4rem;
+}
+
+.gw-export button {
+  padding: 0 var(--gw-space-2);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--gw-radius-pill);
+  background: none;
+  color: var(--slate);
+  font: inherit;
+  font-size: var(--gw-fs-micro);
+  cursor: pointer;
+}
+
+.gw-export-note {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.gw-peer-facts dd,
+.gw-peer-identity {
+  font-family: var(--gw-font-mono);
+  font-size: var(--gw-fs-micro);
+}
+
+.gw-peer-title,
+.gw-pool-title {
+  margin: 0.2rem 0;
+  font-size: var(--gw-fs-eyebrow);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--slate);
+}
+
+.gw-peer-reasons {
+  margin: 0.2rem 0 0 1rem;
+  padding: 0;
+}
+
+.gw-coverage-line {
+  margin: 0.1rem 0 0;
+}

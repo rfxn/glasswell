@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from glasswell.api.deps import today
 from glasswell.api.examples import EXAMPLE_DERIVATION_ID, EXAMPLE_RULE_ID
 from glasswell.api.pagination import decode_cursor, query_fingerprint
+from glasswell.seed.conformance_basin_context import BASIN_CONTEXT_RULES
 from glasswell.seed.conformance_basins import BASIN_RULES
 from glasswell.seed.conformance_co import CO_RULES
 from glasswell.seed.conformance_fracfocus import FRACFOCUS_RULES
@@ -21,7 +22,10 @@ from glasswell.seed.conformance_nm_wells import NM_WELLS_GIS_RULES, NM_WELLS_RUL
 from glasswell.seed.conformance_producing import PRODUCING_RULES
 from glasswell.seed.conformance_schedules import SCHEDULE_RULES
 from glasswell.seed.conformance_status_classes import STATUS_CLASS_RULES
-from glasswell.seed.conformance_tx import TX_RULES
+from glasswell.seed.conformance_status_history import (
+    HISTORY_RULES as STATUS_HISTORY_RULES,
+)
+from glasswell.seed.conformance_tx import ALLOCATION_RULES, TX_RULES
 from glasswell.seed.conformance_typecurve import TYPECURVE_RULES
 from glasswell.seed.conformance_vintage import VINTAGE_RULES
 
@@ -101,6 +105,7 @@ def _seeded_policy_rule_ids() -> set[str]:
     return {
         str(rule["rule_id"])
         for registry in (
+            BASIN_CONTEXT_RULES,
             BASIN_RULES,
             CO_RULES,
             FRACFOCUS_RULES,
@@ -113,7 +118,9 @@ def _seeded_policy_rule_ids() -> set[str]:
             PRODUCING_RULES,
             SCHEDULE_RULES,
             STATUS_CLASS_RULES,
+            STATUS_HISTORY_RULES,
             TX_RULES,
+            ALLOCATION_RULES,
             TYPECURVE_RULES,
             VINTAGE_RULES,
         )

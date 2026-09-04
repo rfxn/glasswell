@@ -28,9 +28,8 @@ from glasswell.api.pagination import (
 )
 from glasswell.api.provenance import register_response_figures
 from glasswell.api.responses import EnvelopeModel, FigureModel, enveloped, inline_for, iso
-from glasswell.api.routers.wells import NEIGHBORS_SCOPE
 from glasswell.lineage.envelope import figure
-from glasswell.lineage.jurisdictions import Jurisdiction
+from glasswell.lineage.jurisdictions import NEIGHBORS_SCOPE, Jurisdiction
 from glasswell.lineage.status_classes import StatusClass, load_status_classes
 from glasswell.status_resolution import JurisdictionVocabulary, served_vocabularies
 

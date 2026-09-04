@@ -12,6 +12,8 @@ import pytest
 from glasswell.db import migrate
 from glasswell.lineage.clock import utc_today
 from glasswell.seed import (
+    ALLOCATION_RULES,
+    BASIN_CONTEXT_RULES,
     BASIN_RULES,
     C115B_RULES,
     CO_RULES,
@@ -29,6 +31,7 @@ from glasswell.seed import (
     VINTAGE_RULES,
     seed_crs,
 )
+from glasswell.seed.conformance_status_history import HISTORY_RULES
 
 MIGRATION = (
     Path(__file__).parents[2]
@@ -40,9 +43,11 @@ def _seeded_rule_ids() -> set[str]:
     return {
         str(rule["rule_id"])
         for registry in (
+            BASIN_CONTEXT_RULES,
             BASIN_RULES,
             CO_RULES,
             C115B_RULES,
+            HISTORY_RULES,
             FRACFOCUS_RULES,
             LAND_RULES,
             MT_RULES,
@@ -53,6 +58,7 @@ def _seeded_rule_ids() -> set[str]:
             PRODUCING_RULES,
             SCHEDULE_RULES,
             TX_RULES,
+            ALLOCATION_RULES,
             TYPECURVE_RULES,
             VINTAGE_RULES,
         )

@@ -145,6 +145,89 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe("back and forward across sections do not tear the card down", () => {
+  // followHistory replays the well on every popstate and renderWellCard begins by replacing
+  // every child of its host, so a section-only entry unloaded every lazily loaded section,
+  // re-issued every request and re-landed focus on the first focusable element.
+  it("re-renders nothing and re-requests nothing when only the section changed", async () => {
+    await bootAt("/?well=3305310451&section=production");
+    const card = host("gw-card");
+    // What renderWellCard does for itself and the mock does not: a populated, visible host is
+    // the condition the guard reads, because an empty one has nothing to preserve.
+    card.hidden = false;
+    card.replaceChildren(document.createElement("p"));
+    const mounted = card.firstElementChild;
+    const applied: (string | null)[] = [];
+    document.addEventListener("gw-section", (event) => {
+      applied.push((event as CustomEvent<{ id: string | null }>).detail.id);
+    });
+
+    navigate("/?well=3305310451&section=neighbours");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(renderWellCard.mock.calls.length).toBe(1);
+    expect(card.firstElementChild).toBe(mounted);
+    expect(applied).toEqual(["neighbours"]);
+  });
+
+  it("still renders when the well itself changed, and keeps what the entry recorded", async () => {
+    // A replay is not a choice: the section belongs to the history entry the reader is
+    // returning to, and nulling it here rewrote the address bar without it (gate H-4).
+    await bootAt("/?well=3305310451&section=neighbours");
+    host("gw-card").hidden = false;
+    host("gw-card").replaceChildren(document.createElement("p"));
+
+    navigate("/?well=3305302532&section=basin");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(renderWellCard.mock.calls.length).toBe(2);
+    expect(renderWellCard.mock.calls[1]?.[1]).toBe("3305302532");
+    expect(window.location.search).toContain("section=basin");
+  });
+
+  it("drops the section when a reader chooses another well rather than replaying one", async () => {
+    // The other half of the same rule: a section named for the last card does not survive a
+    // choice, because the new card may not have it at all.
+    const bus = await bootAt("/?well=3305310451&section=neighbours");
+    host("gw-card").hidden = false;
+    host("gw-card").replaceChildren(document.createElement("p"));
+
+    bus.selectWell("3305302532", "map");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(window.location.search).not.toContain("section=");
+  });
+
+  it("keeps the section a deep link asked for through the first mount", async () => {
+    await bootAt("/?well=3305310451&section=neighbours");
+    expect(window.location.search).toContain("section=neighbours");
+  });
+
+  it("writes the section the card asks for, and only main writes app state", async () => {
+    await bootAt("/?well=3305310451");
+    const pushed = vi.spyOn(window.history, "pushState");
+    const replaced = vi.spyOn(window.history, "replaceState");
+
+    document.dispatchEvent(
+      new CustomEvent("gw-section-set", { detail: { id: "land", mode: "replace" } }),
+    );
+    expect(window.location.search).toContain("section=land");
+    expect(replaced).toHaveBeenCalledTimes(1);
+    expect(pushed).not.toHaveBeenCalled();
+
+    document.dispatchEvent(
+      new CustomEvent("gw-section-set", { detail: { id: "basin", mode: "push" } }),
+    );
+    expect(window.location.search).toContain("section=basin");
+    expect(pushed).toHaveBeenCalledTimes(1);
+
+    document.dispatchEvent(
+      new CustomEvent("gw-section-set", { detail: { id: null, mode: "replace" } }),
+    );
+    expect(window.location.search).not.toContain("section=");
+  });
+});
+
 describe("one dispatch on view, three surfaces (SB-08 §2.1)", () => {
   // B1: createMap is not idempotent and its callee's disposer is discarded, so a second mount
   // is a second canvas and a second bus handler — one click would then select twice.
@@ -614,5 +697,25 @@ describe("what the first paint asks for before it knows who is asking", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(seen.filter((path) => path === "/v1/session")).toHaveLength(1);
+  });
+});
+
+describe("a brush reaches the URL, so the link carries the range", () => {
+  it("writes from and to on a brush and drops them when it is cleared", async () => {
+    // The chart narrows its own window; this is the half that makes a brushed card a link
+    // somebody else can open, and it is a replace because a drag is not a navigation.
+    await bootAt("/?well=3305310451");
+
+    document.dispatchEvent(
+      new CustomEvent("gw-param-set", { detail: { params: { from: "2025-11", to: "2026-01" } } }),
+    );
+    expect(window.location.search).toContain("from=2025-11");
+    expect(window.location.search).toContain("to=2026-01");
+
+    document.dispatchEvent(
+      new CustomEvent("gw-param-set", { detail: { params: { from: null, to: null } } }),
+    );
+    expect(window.location.search).not.toContain("from=");
+    expect(window.location.search).not.toContain("to=");
   });
 });

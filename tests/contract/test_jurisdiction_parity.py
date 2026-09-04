@@ -33,16 +33,17 @@ from glasswell.seed.jurisdictions import (
     FOUNDING_JURISDICTIONS,
     GRAIN_RESTATEMENTS,
     JURISDICTION_RESTATEMENTS,
-    JURISDICTION_RULES,
     JURISDICTIONS,
     REGISTERED_ON,
     REQUIRED_DECISIONS,
     RESTATED_ON,
+    SERVING_JURISDICTION_RULES,
     colorado_parameters,
     grain_restatement_parameters,
     registration_parameters,
     restatement_parameters,
     rule_parameters,
+    texas_supersession_parameters,
 )
 from glasswell.seed.reference import SOURCES
 from tests.conftest import FIXTURE_SOURCES
@@ -121,7 +122,7 @@ def test_every_resolved_registration_carries_the_rule_rows_it_declares(
     T2 -- so its rule rows are re-appended with it. This catches one that forgot."""
     registry = load_jurisdictions(db)
     declared: dict[str, set[tuple[str, str, bool]]] = {}
-    for rule in (rule_parameters(row) for row in JURISDICTION_RULES):
+    for rule in (rule_parameters(row) for row in SERVING_JURISDICTION_RULES):
         declared.setdefault(str(rule["jurisdiction_code"]), set()).add(
             (str(rule["decision"]), str(rule["rule_id"]), bool(rule["serving"]))
         )
@@ -277,6 +278,8 @@ def test_the_migration_and_the_seed_module_write_the_same_registrations(
             # The two whose production-grain decision was registered at its own later instant,
             # because a rule row joins its registration on the whole clock pair.
             *(grain_restatement_parameters(row) for row in GRAIN_RESTATEMENTS),
+            # A supersession is one row too, and it carries the whole of what it supersedes.
+            texas_supersession_parameters(),
         ),
         key=lambda row: (str(row["jurisdiction_code"]), row["published_at"]),
     )

@@ -290,7 +290,10 @@ class TestAssertReceiptIsSafe:
 
 
 GUARD_START = "    # The double-run guard's own connection."
-GUARD_END = "    # The v0.78 posture, which inverts at the flag flip"
+# The line the guard block ends at, not the prose above it: anchoring an extraction on a
+# comment makes every correction to that comment a seven-test failure, which is what happened
+# when the posture assertion below it was widened to every jurisdiction (gate-tx H-6).
+GUARD_END = '    launching="$('
 
 
 def test_the_double_run_guard_is_given_a_dsn_from_the_file_and_not_from_the_environment(

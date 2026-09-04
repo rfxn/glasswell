@@ -4,13 +4,12 @@ Colorado is registered by the migration and the seed. This runbook is the **data
 follows: three GIS archives, one rolling production file, two promotions and a tile mart. It is
 written for the first load on a host where none of it has run before.
 
-**Read this first, because it changes what you do.** The scheduler runs all six Colorado jobs
-itself. Every job in `lineage.scheduled_jobs` for this jurisdiction is seeded
-`launch_mode = 'launch'`, which is admissible because Colorado installs no systemd unit and no
-timer drives any of its entry points. So the ordinary path is: deploy, and let the first tick
-run the dependency order. `glasswell-scheduler --run --force` pulls that tick forward. This
-runbook is what you use when you want to watch it happen, when a tick has failed and you are
-bisecting it, or when you are loading a host the scheduler is not yet installed on.
+**Read this first, because it changes what you do.** The scheduler does not run these jobs.
+Every Colorado row resolves `launch_mode = 'observe'`, so an hourly tick computes the dependency
+order, records what it would have run, and starts nothing; `launch` is the launch-flip track's
+own act and no jurisdiction registers it for itself. The commands below are therefore the load,
+not a way of watching one. `glasswell-scheduler --run --force` is the manual path and ignores
+the posture entirely, which is what you use to drive one job under supervision.
 
 ## What this does, and what it deliberately does not
 

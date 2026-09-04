@@ -87,6 +87,14 @@ ERROR_REGISTRY: Mapping[str, ErrorSpec] = {
         "`as_of` is earlier than the earliest captured vintage for every contributing"
         " source. An empty result would be indistinguishable from nothing happening.",
     ),
+    "as_of_not_supported": ErrorSpec(
+        422,
+        "as_of is not supported on this series",
+        "The series is read from a mart holding one snapshot per key, so answering an older"
+        " `as_of` would return today's figure labelled with the caller's date. Refusing is a"
+        " served class; answering would be a silent wrong number. The lease series the"
+        " allocation is computed from is bitemporal and does answer `as_of`.",
+    ),
     "selector_ambiguous": ErrorSpec(
         422, "Handle selector is ambiguous", "The selector does not address exactly one figure."
     ),

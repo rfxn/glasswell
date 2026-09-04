@@ -21,6 +21,7 @@ from glasswell.lineage.conformance import apply_registry_rules, apply_rules, loa
 from glasswell.seed import seed_all
 from glasswell.seed.conformance_nm import NM_PROMOTION_RULES, NM_RULES, RECORD_NAMESPACE
 from glasswell.seed.conformance_nm_wells import NM_WELLS_GIS_RULES, NM_WELLS_RULES
+from glasswell.seed.conformance_status_history import HISTORY_RULES
 from glasswell.seed.reference import NM_TABLES
 
 NM_SOURCE_IDS = tuple(f"nm_ocd_{table}" for table, _ in NM_TABLES)
@@ -174,8 +175,12 @@ def test_no_nm_rule_ships_an_empty_rationale_or_evidence_url(seeded):
     ]
 
     # A filter over an empty read passes without reading anything. The well-header rules carry
-    # nm_ocd_ source ids too, so this read is both seeders' output.
-    assert len(rows) == len(NM_RULES) + len(NM_WELLS_RULES) + len(NM_WELLS_GIS_RULES)
+    # nm_ocd_ source ids too, and so does New Mexico's status-history clock rule, so this read
+    # is three seeders' output and the total is taken over all three.
+    nm_history = [rule for rule in HISTORY_RULES if str(rule["source_id"]).startswith("nm_ocd_")]
+    assert len(rows) == (
+        len(NM_RULES) + len(NM_WELLS_RULES) + len(NM_WELLS_GIS_RULES) + len(nm_history)
+    )
     assert unevidenced == []
 
 

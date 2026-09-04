@@ -255,6 +255,13 @@ step "6d. per-well cumulative marts"
 remote "sudo -u glasswell env $code_env $VENV/bin/python -m glasswell.marts.cumulatives --dsn '$SOCKET_DSN'" \
     || refuse "cumulatives refresh failed"
 
+# Same shape and the same idempotence: one row per well in canonical.wells_latest, rebuilt
+# whole. Without it the card serves "no basin context has been built for this well yet" on
+# every well, which is honest and reads as a product gap; verify asserts on its output below.
+step "6d2. basin-context mart"
+remote "sudo -u glasswell env $code_env $VENV/bin/python -m glasswell.marts.well_basin_context --dsn '$SOCKET_DSN'" \
+    || refuse "basin context refresh failed"
+
 # Exits 0 with a stated outcome on a host that has never fetched the 440 MB archive: nothing
 # to promote is a plan, not a failure.
 step "6e. FracFocus completion-design backfill"
@@ -300,7 +307,11 @@ if remote "systemctl is-enabled --quiet glasswell-restore-drill.timer"; then
 fi
 # The timer only, never the service, for the reason cf-ranges gives above: a tick reads the
 # whole registry and every source's poll evidence, and a deploy step must not wait on it.
-# While every seeded row observes there is nothing for it to launch either way.
+# Every row the registry RESOLVES observes, so a tick launches nothing. The raw table is a
+# different reading and says otherwise: job_schedules is append-only, so Colorado's six
+# founding rows still carry launch_mode='launch' and are superseded by observing rows at a
+# later clock. A reader checking the table directly must resolve it through
+# lineage.job_schedules_as_of, which is what the planner reads.
 remote "systemctl start glasswell-scheduler.timer" \
     || refuse "glasswell-scheduler timer did not start"
 remote "systemctl start glasswell-status.service" \

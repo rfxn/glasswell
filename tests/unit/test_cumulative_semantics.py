@@ -64,15 +64,19 @@ def test_registering_a_withholding_source_does_not_widen_the_population_served()
     STATE_API_PREFIXES scopes the mart refresh, `population_scope.states_served` on
     /v1/wells/vintage-cohorts, the cumulatives link on the well card and the per-well 404
     text. Deriving it from WITHHOLDING_SOURCES made all four move when someone registered a
-    quarantine source — Texas is named two lines above the registry as the next entrant, and
-    it has no production at all, so the mart would have claimed 359,421 wells as
+    quarantine source — Texas was named two lines above the registry as the next entrant, and
+    it had no production at all, so the mart would have claimed 359,421 wells as
     never_reported.
+
+    Texas is now in scope, and by the only route that admits one: a registration naming the
+    rule that decides it writes a well-grain row. A withholding source registered for a fifth
+    jurisdiction still moves nothing, which is what this asserts.
     """
     hypothetical = dict(WITHHOLDING_BY_PREFIX)
-    hypothetical["42"] = (("tx_ewa_xlsx", "confidential_withheld"),)
+    hypothetical["30"] = (("nm_ocd_wcproduction", "confidential_withheld"),)
 
     with mock.patch.object(cumulatives, "WITHHOLDING_BY_PREFIX", hypothetical):
-        assert cumulatives.STATE_API_PREFIXES == ("33", "05")
+        assert cumulatives.STATE_API_PREFIXES == ("33", "05", "42")
         sources, reasons = cumulatives._withholding_pairs()
 
     # The ledger query stays scoped too: an out-of-scope state's source cannot reach it, and a
@@ -93,29 +97,38 @@ def test_the_served_scope_is_its_own_declaration_and_not_a_view_of_the_withholdi
     source = Path(cumulatives.__file__).read_text(encoding="utf-8")
 
     assert 'row["decision"] == CUMULATIVES_SCOPE' in source
+    # And the widening is still a registry read: the serving rule set is the restatement's
+    # rows with a superseded jurisdiction's own newest set in place of them.
+    assert "SERVING_JURISDICTION_RULES" in source
     assert "for code in CUMULATIVE_JURISDICTIONS" in source
     assert "STATE_API_PREFIXES = tuple(WITHHOLDING_SOURCES)" not in source
     assert "for code in WITHHOLDING_SOURCES" not in source
     assert "tuple(WITHHOLDING_BY_PREFIX)" not in source
-    # Both jurisdictions that write a well-grain production row, and only those.
-    assert CUMULATIVE_JURISDICTIONS == ("ND", "CO")
-    assert STATE_API_PREFIXES == ("33", "05")
+    # Every jurisdiction that writes a well-grain production row, and only those. Texas
+    # writes one as an allocation rather than as an observation, which is a difference the
+    # coverage block states on the figure and not a reason to leave the well without a total.
+    assert CUMULATIVE_JURISDICTIONS == ("ND", "CO", "TX")
+    assert STATE_API_PREFIXES == ("33", "05", "42")
 
 
 def test_the_scope_is_a_row_a_registration_carries_and_not_a_tuple_in_this_module() -> None:
     """M-23. A jurisdiction enters the mart by registering the decision, so the widening
     carries a rule and an effective date like every other cross-source decision does."""
-    from glasswell.seed.jurisdictions import JURISDICTION_RULES
+    from glasswell.seed.jurisdictions import SERVING_JURISDICTION_RULES
 
     scoped = {
         str(row["jurisdiction_code"]): str(row["rule_id"])
-        for row in JURISDICTION_RULES
+        for row in SERVING_JURISDICTION_RULES
         if row["decision"] == cumulatives.CUMULATIVES_SCOPE
     }
 
+    # The rule each names is the one deciding the jurisdiction writes a well-grain row at all.
+    # For Texas that is the allocation, which is why the same registration also supplies the
+    # `allocated` basis every figure built from it states.
     assert scoped == {
         "ND": "cr_nd_pool_rollup_1",
         "CO": "cr_co_production_grain_1",
+        "TX": "cr_tx_allocation_v0_1",
     }
     assert tuple(scoped) == CUMULATIVE_JURISDICTIONS
 

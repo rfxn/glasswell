@@ -29,8 +29,13 @@ COMPLETION_ANCHOR_PROFILE = "completion_anchor"
 COMPLETION_DESIGN_PROFILE = "completion_design"
 WELL_PROFILE = "well"
 WELL_CUMULATIVE_PROFILE = "well_cumulative"
+BASIN_CONTEXT_PROFILE = "basin_context"
 NEIGHBOR_PROFILE = "nd_neighbor"
 RESPONSE_PROFILE = "response_output"
+TX_ALLOCATED_PROFILE = "tx_allocated_series"
+TX_LEDGER_PROFILE = "tx_allocation_ledger"
+TX_CROSSWALK_PROFILE = "tx_crosswalk_residual"
+ALLOCATION_ERROR_PROFILE = "allocation_method_error"
 
 _EDGE_COLUMNS = frozenset(
     {
@@ -70,8 +75,36 @@ _NEIGHBOR_COVERAGE_METRICS = frozenset(
 )
 _PRODUCTION_COLUMNS = {"oil_bbl": "oil", "gas_mcf": "gas", "water_bbl": "water"}
 _WELL_COLUMNS = frozenset({"total_depth_ft"})
+# Every column of the basin block the card renders as a line of its own. The classes are here
+# with the values they class: `outside_published_boundaries` is an answer, and an answer a
+# reader cannot resolve to the run that produced it is the naked number rule's own case.
+_BASIN_CONTEXT_COLUMNS = frozenset(
+    {
+        "basin_name",
+        "basin_class",
+        "play_name",
+        "play_class",
+        "basin_label_filed",
+        "label_class",
+        "label_agrees",
+        "boundary_vintage",
+        "geometry_basis",
+        "basin_overlap",
+    }
+)
 _COMPLETION_DESIGN_COLUMNS = frozenset({"base_water_volume"})
-_CUMULATIVE_COLUMNS = frozenset({"cum_volume", "coverage"})
+# `allocated_share` and `allocated_months` are addressable for the same reason `cum_volume` is:
+# the card serves them beside the total, and a figure a handle cannot resolve is a naked number.
+_CUMULATIVE_COLUMNS = frozenset(
+    {"cum_volume", "coverage", "allocated_share", "allocated_months"}
+)
+_ALLOCATED_COLUMNS = frozenset({"volume", "eligible_wells", "allocation_class"})
+_LEDGER_COLUMNS = frozenset({"lease_volume", "cause"})
+_CROSSWALK_COLUMNS = frozenset({"well_count", "share"})
+_METHOD_ERROR_COLUMNS = frozenset(
+    {"error_lo", "error_hi", "p50", "wells_scored", "lease_months_scored",
+     "mean_wells_per_lease", "excluded_zero_zero_share"}
+)
 _CUMULATIVE_STREAMS = frozenset({"liquid", "gas", "water"})
 _KNOWN_PROFILES = frozenset(
     {
@@ -81,8 +114,13 @@ _KNOWN_PROFILES = frozenset(
         COMPLETION_DESIGN_PROFILE,
         WELL_PROFILE,
         WELL_CUMULATIVE_PROFILE,
+        BASIN_CONTEXT_PROFILE,
         NEIGHBOR_PROFILE,
         RESPONSE_PROFILE,
+        TX_ALLOCATED_PROFILE,
+        TX_LEDGER_PROFILE,
+        TX_CROSSWALK_PROFILE,
+        ALLOCATION_ERROR_PROFILE,
     }
 )
 _PLAIN_IDENTITY = re.compile(r"\A[A-Za-z0-9_.:+-]+\Z")
@@ -124,10 +162,16 @@ def validate_selector(
         _validate_well_cumulative(connection, derivation, terms, handle=handle)
     elif profile == COMPLETION_POOL_PROFILE:
         _validate_completion_pool(connection, derivation, terms, handle=handle)
+    elif profile == TX_ALLOCATED_PROFILE:
+        _validate_tx_allocated(connection, derivation, terms, handle=handle)
+    elif profile in (TX_LEDGER_PROFILE, TX_CROSSWALK_PROFILE, ALLOCATION_ERROR_PROFILE):
+        _validate_allocation_row(connection, derivation, terms, profile=profile, handle=handle)
     elif profile == PRODUCTION_PROFILE:
         _validate_production(connection, derivation, terms, handle=handle)
     elif profile == WELL_PROFILE:
         _validate_well(connection, derivation, terms, handle=handle)
+    elif profile == BASIN_CONTEXT_PROFILE:
+        _validate_basin_context(connection, derivation, terms, handle=handle)
     else:
         _validate_response_output(connection, derivation, pairs, outputs=response_outputs)
 
@@ -157,9 +201,21 @@ def _profile_matches(profile: str, terms: Mapping[str, str]) -> bool:
         return bool(keys & {"api10", "api10_b64"}) and "stream" in keys
     if profile == COMPLETION_POOL_PROFILE:
         return bool(keys & {"completion_key", "completion_key_b64"})
+    if profile == TX_ALLOCATED_PROFILE:
+        # `lk` is required, not optional. An optional discriminator whose absence changes what
+        # the selector means is the shape the registry challenge objected to, and with the
+        # lease key required the count is exactly one by the mart's primary key -- which
+        # matters because a dual-lease wellbore has two rows at the well grain.
+        return {"api10", "lk", "pm", "stream"} <= keys
+    if profile == TX_LEDGER_PROFILE:
+        return {"lk", "pm", "stream"} <= keys and "api10" not in keys
+    if profile == TX_CROSSWALK_PROFILE:
+        return "district_no" in keys
+    if profile == ALLOCATION_ERROR_PROFILE:
+        return "bed" in keys and "model_id" in keys
     if profile == PRODUCTION_PROFILE:
         return bool(keys & {"api10", "api10_b64", "entity_key", "entity_key_b64"})
-    if profile == WELL_PROFILE:
+    if profile in (WELL_PROFILE, BASIN_CONTEXT_PROFILE):
         return "api10" in keys or "api10_b64" in keys
     return profile == RESPONSE_PROFILE
 
@@ -358,6 +414,97 @@ def _validate_well_cumulative(
     )
 
 
+def _validate_tx_allocated(
+    connection: psycopg.Connection,
+    derivation: Mapping[str, Any],
+    terms: dict[str, str],
+    *,
+    handle: str,
+) -> None:
+    """One stored share, addressed by the whole of the mart's primary key.
+
+    The lease key is required because the well grain is not unique: 21.9 percent of Texas
+    API-10s carry more than one lease record, and `_require_one` would raise on them. The
+    summed per-well point is a different figure at a different operation and is not addressable
+    here at all -- it is stored nowhere.
+    """
+    column = terms.pop("col", "volume")
+    if column not in _ALLOCATED_COLUMNS:
+        raise InvalidSelector(f"{column!r} is not a selectable allocated-production column")
+    required = {"api10", "lk", "pm", "stream"}
+    if set(terms) != required:
+        raise InvalidSelector(
+            "allocated-share selectors require api10, lk, pm and stream, and nothing else"
+        )
+    if re.fullmatch(r"[0-9]{10}", terms["api10"]) is None:
+        raise InvalidSelector("api10 must be exactly ten digits")
+    _require_one(
+        connection,
+        "select count(*) from marts.tx_allocated_production"
+        " where derivation_id = %s and api10 = %s and lease_key = %s"
+        "   and production_month = %s and stream = %s",
+        (
+            derivation["derivation_id"],
+            terms["api10"],
+            terms["lk"],
+            _month(terms["pm"]),
+            terms["stream"],
+        ),
+        derivation=derivation,
+        handle=handle,
+    )
+
+
+_ALLOCATION_ROW_PROFILES: Mapping[str, tuple[str, frozenset[str], tuple[str, ...]]] = {
+    TX_LEDGER_PROFILE: (
+        "marts.tx_allocation_ledger", _LEDGER_COLUMNS, ("lk", "pm", "stream")
+    ),
+    TX_CROSSWALK_PROFILE: (
+        "marts.tx_crosswalk_residual", _CROSSWALK_COLUMNS, ("district_no", "kind")
+    ),
+    ALLOCATION_ERROR_PROFILE: (
+        "marts.allocation_method_error", _METHOD_ERROR_COLUMNS, ("bed", "model_id")
+    ),
+}
+
+_ALLOCATION_ROW_KEYS: Mapping[str, tuple[str, ...]] = {
+    TX_LEDGER_PROFILE: ("lease_key", "production_month", "stream"),
+    TX_CROSSWALK_PROFILE: ("district_no", "disagreement_kind"),
+    ALLOCATION_ERROR_PROFILE: ("bed_jurisdiction", "model_id"),
+}
+
+
+def _validate_allocation_row(
+    connection: psycopg.Connection,
+    derivation: Mapping[str, Any],
+    terms: dict[str, str],
+    *,
+    profile: str,
+    handle: str,
+) -> None:
+    """The three residual ledgers, each addressed by its own primary key and nothing else."""
+    dataset, columns, selector_terms = _ALLOCATION_ROW_PROFILES[profile]
+    column = terms.pop("col", None)
+    if column is None or column not in columns:
+        raise InvalidSelector(f"{column!r} is not a selectable {dataset} column")
+    if set(terms) != set(selector_terms):
+        raise InvalidSelector(
+            f"{dataset} selectors require {', '.join(selector_terms)}, and nothing else"
+        )
+    key_columns = _ALLOCATION_ROW_KEYS[profile]
+    predicate = " and ".join(f"{name} = %s" for name in key_columns)
+    values = [
+        _month(terms[term]) if term == "pm" else terms[term] for term in selector_terms
+    ]
+    _require_one(
+        connection,
+        f"select count(*) from {dataset} where derivation_id = %s and {predicate}",
+        (derivation["derivation_id"], *values),
+        derivation=derivation,
+        handle=handle,
+    )
+
+
 def _validate_production(
     connection: psycopg.Connection,
     derivation: Mapping[str, Any],
@@ -441,6 +588,29 @@ def _validate_well(
         " where derivation_id = %s and api10 = %s and effective_from = %s"
         " and total_depth_ft is not null",
         (derivation["derivation_id"], api10, parsed_effective),
+        derivation=derivation,
+        handle=handle,
+    )
+
+
+def _validate_basin_context(
+    connection: psycopg.Connection,
+    derivation: Mapping[str, Any],
+    terms: dict[str, str],
+    *,
+    handle: str,
+) -> None:
+    column = terms.pop("col", None)
+    if column not in _BASIN_CONTEXT_COLUMNS:
+        raise InvalidSelector(f"{column!r} is not a selectable basin-context column")
+    api10 = _identity(terms, "api10")
+    if re.fullmatch(r"[0-9]{10}", api10) is None or terms:
+        raise InvalidSelector("basin-context selectors require api10 and col")
+    _require_one(
+        connection,
+        "select count(*) from marts.well_basin_context"
+        " where derivation_id = %s and api10 = %s",
+        (derivation["derivation_id"], api10),
         derivation=derivation,
         handle=handle,
     )

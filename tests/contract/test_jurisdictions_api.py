@@ -165,13 +165,18 @@ def test_montanas_two_inventory_rules_are_both_visible_and_one_serves(
     assert next(rule for rule in inventory if not rule["serving"])["note"] == "PRU lease grain"
 
 
-def test_texas_registers_no_geometry_provenance_decision_and_says_so_by_omission(
+def test_texas_registers_its_own_geometry_provenance_decision_and_names_the_rule(
     client: TestClient,
 ) -> None:
+    """Inverted at v0.80 (gate-tx H-4). Until then Texas registered no geometry_provenance
+    decision and said so by omission, which was correct while no Texas rule existed; the
+    supersession registers `cr_tx_geometry_provenance_1` and the liquids policy beside it."""
     row = next(item for item in body(client)["data"] if item["jurisdiction_code"] == "TX")
 
-    assert all(rule["decision"] != "geometry_provenance" for rule in row["rules"])
-    assert row["liquids_basis"] is None
+    provenance = [rule for rule in row["rules"] if rule["decision"] == "geometry_provenance"]
+
+    assert [rule["rule_id"] for rule in provenance] == ["cr_tx_geometry_provenance_1"]
+    assert row["liquids_basis"] == "oil+condensate"
 
 
 def test_every_rule_it_names_resolves_at_the_conformance_route(client: TestClient) -> None:

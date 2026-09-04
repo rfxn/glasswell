@@ -770,6 +770,15 @@ export const cumulativesEnvelope = {
   }
 };
 
+function isProblem(body: unknown): body is { status: number; type: string } {
+  return (
+    typeof body === "object" &&
+    body !== null &&
+    typeof (body as { status?: unknown }).status === "number" &&
+    typeof (body as { type?: unknown }).type === "string"
+  );
+}
+
 export function stubFetch(
   routes: Record<string, unknown>,
 ): (input: RequestInfo | URL) => Promise<Response> {
@@ -777,10 +786,13 @@ export function stubFetch(
     const url = String(input);
     for (const [path, body] of Object.entries(routes)) {
       if (url.startsWith(path)) {
-        if (body === problemBody) {
+        // Any problem document, not one particular object: a route that answers 404 with its
+        // own `detail` is what the card renders now, so a stub that could only serve one
+        // problem could not test what the reader is shown (gate-tx H-10-W).
+        if (isProblem(body)) {
           return Promise.resolve(
             new Response(JSON.stringify(body), {
-              status: 404,
+              status: body.status,
               headers: { "content-type": "application/problem+json" },
             }),
           );

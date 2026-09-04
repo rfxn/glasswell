@@ -1,8 +1,9 @@
+import "./card.css";
 import "./gw-figure.ts";
 
 import { ApiError, getEnvelope } from "../api/client.ts";
 import { derivationFor, labelFor, unwrap } from "../api/envelope.ts";
-import type { Envelope, Figure } from "../api/envelope.ts";
+import type { Envelope, Figure, Links } from "../api/envelope.ts";
 import { readState } from "../app/state.ts";
 import { toChartSeries } from "../chart/series.ts";
 import type { ProductionData } from "../chart/series.ts";
@@ -13,7 +14,31 @@ import { crossingLink, openThisSeries, rowsForThisWell } from "../explore/bridge
 import { labelElement } from "../glossary/gw-term.ts";
 import { highlight } from "../glossary/index.ts";
 import { termIndex } from "../glossary/store.ts";
-import { absentValue, formatMonth, formatVintage, nullSemantics } from "./format.ts";
+import {
+  absentValue,
+  formatMonth,
+  formatValue,
+  formatVintage,
+  nullSemantics,
+  roundTo,
+} from "./format.ts";
+import { cardQuery } from "./requests.ts";
+import { renderBasin } from "./basin.ts";
+import type { WellBasin } from "./basin.ts";
+import { renderIdentity } from "./identity.ts";
+import { renderPeerControl } from "./peer.ts";
+import { renderPools } from "./pools.ts";
+import { exportControls } from "./export.ts";
+import type { WellIdentity } from "./identity.ts";
+import type { NormalizationControl } from "../chart/chart.ts";
+import {
+  SECTION_OPEN_EVENT,
+  applySection,
+  mountSections,
+  sectionLink,
+  sectionsSettled,
+} from "./sections.ts";
+import type { SectionSpec } from "./sections.ts";
 
 export interface WellDetail {
   api10: string;
@@ -100,6 +125,15 @@ export interface StreamCoverage {
   coverage_complete: boolean;
 }
 
+export interface CumulativeAllocation {
+  basis: string;
+  model_id: string | null;
+  rule_id: string;
+  months: Record<string, Figure>;
+  share: Record<string, Figure>;
+  shares_counted: Figure | null;
+}
+
 export interface WellCumulatives {
   api10: string;
   granularity: string;
@@ -108,6 +142,8 @@ export interface WellCumulatives {
   cumulative: { oil_bbl: Figure | null; gas_mcf: Figure | null; water_bbl: Figure | null } | null;
   coverage: Record<string, StreamCoverage> & { _lineage: Record<string, string> };
   months_withheld: Figure;
+  /** Present only where allocated months contribute to the totals beside it. */
+  allocation?: CumulativeAllocation | null;
 }
 
 export interface CardCallbacks {
@@ -127,20 +163,21 @@ const FACT_GROUPS: { title: string; fields: [keyof WellDetail, string, string][]
   {
     title: "Location",
     fields: [
-      ["basin", "Basin", "/basin"],
       ["county_code_at_permit", "County", "/county_code_at_permit"],
-      ["land_unit_label", "Land unit", "/land_unit_label"],
     ],
   },
   {
+    // No `well_type_reported` here: the Identity section renders it as `<code> · as <regulator>
+    // filed it`, and §2.3 replaces the bare code rather than printing both five rows apart.
     title: "Drilling",
-    fields: [
-      ["spud_date", "Spud", "/spud_date"],
-      ["well_type_reported", "Well type", "/well_type_reported"],
-    ],
+    fields: [["spud_date", "Spud", "/spud_date"]],
   },
   { title: "Record", fields: [] },
 ];
+
+// The newest card's own re-count, and the one listener that calls it.
+let recountLineage: (() => void) | null = null;
+let recounting = false;
 
 export async function renderWellCard(
   container: HTMLElement,
@@ -150,12 +187,14 @@ export async function renderWellCard(
   container.replaceChildren(placeholder(`Loading well ${api10}…`));
   container.hidden = false;
   const state = readState();
-  const pinnedAsOf = state.extra["as_of"]?.[0];
-  const asOfQuery: Record<string, string> = pinnedAsOf ? { as_of: pinnedAsOf } : {};
+  // Every request this card makes carries the same bag, built in one place. It used to pick
+  // `as_of` out by name and forward nothing else, so a brushed window and a normalisation
+  // basis had no route from the URL into the request that would have to answer for them.
+  const query = cardQuery(state);
 
   let well: Envelope<WellDetail>;
   try {
-    well = await getEnvelope<WellDetail>(`/v1/wells/${api10}`, asOfQuery);
+    well = await getEnvelope<WellDetail>(`/v1/wells/${api10}`, query);
   } catch (error) {
     container.replaceChildren(errorPanel(error, callbacks));
     return;
@@ -347,10 +386,11 @@ export async function renderWellCard(
     record.appendChild(definition);
   }
 
-  // The reading order the card is built in, and the change that matters most about it:
-  // production is what a reader opened the card for, and it used to sit at 49% of a 1,600px
-  // scroll behind two sections that are empty for most wells. Slots are placed first and
-  // filled by their own requests, so the order cannot drift with which response lands first.
+  // Ten named sections in one order, three of them expanded. The order is the order an
+  // engineer reads a well; the split is that a section is expanded when its content is why a
+  // reader opens a well, and collapsed when it is why they open this particular one. The
+  // frames are built first and handed to their sections, so the order cannot drift with which
+  // response lands first.
   const cumulativeSlot = document.createElement("div");
   const factsSlot = document.createElement("div");
   factsSlot.className = "gw-card-facts";
@@ -359,13 +399,8 @@ export async function renderWellCard(
   const notesSlot = document.createElement("div");
   notesSlot.className = "gw-notes gw-card-notes";
 
-  // Title outside the swappable body: the placeholder, the plot and an error all land in
-  // .gw-frame-body, so none of them can take the frame's label down with them.
   const chartFrame = document.createElement("section");
   chartFrame.className = "gw-card-chart gw-production-chart";
-  const chartTitle = document.createElement("h3");
-  chartTitle.className = "gw-frame-title";
-  chartTitle.textContent = "Monthly production";
   const chartHost = document.createElement("div");
   chartHost.className = "gw-frame-body";
   chartHost.appendChild(placeholder("Loading production…"));
@@ -373,11 +408,7 @@ export async function renderWellCard(
   // the series' warnings — R8's disclosure of the derivations behind a column — sit beside it.
   const chartNotes = document.createElement("div");
   chartNotes.className = "gw-chart-notes gw-notes";
-  chartFrame.append(chartTitle, chartHost, chartNotes);
-
-  // Directly under the chart: the total belongs beside the series it is a total of, and a
-  // reader who came for production should not have to scroll past the fact bands to find it.
-  body.append(chartFrame, cumulativeSlot, factsSlot, contextSlot, neighborSlot, notesSlot);
+  chartFrame.append(chartHost, chartNotes);
 
   // A band whose every field was absent is a heading over nothing: dropped, not left standing.
   for (const { title } of FACT_GROUPS) {
@@ -394,29 +425,26 @@ export async function renderWellCard(
 
   // Everything except the codes a dedicated panel already renders, or the card shows the raw
   // internal warning line immediately above the polished version of the same sentence.
-  const panelled = new Set([PENDING_ALLOCATION]);
+  const panelled = new Set([PENDING_ALLOCATION, POOL_GRAIN]);
   const generic = well.meta.warnings.filter((warning) => !panelled.has(warning.code));
   for (const note of warningNotes(generic)) notesSlot.appendChild(note);
 
   const contextFrame = document.createElement("section");
   contextFrame.className = "gw-card-chart gw-completion-context";
-  const contextTitle = document.createElement("h3");
-  contextTitle.className = "gw-frame-title";
-  contextTitle.textContent = "Completions & formations";
   const contextHost = document.createElement("div");
   contextHost.className = "gw-frame-body";
   contextHost.dataset["state"] = "loading";
   contextHost.setAttribute("aria-busy", "true");
   contextHost.setAttribute("aria-live", "polite");
   contextHost.appendChild(placeholder("Loading completions…"));
-  contextFrame.append(contextTitle, contextHost);
+  contextFrame.append(contextHost);
   contextSlot.appendChild(contextFrame);
 
-  const contextRequest = loadCompletionContext(
+  const loadContext = (): Promise<void> => loadCompletionContext(
     contextHost,
     well.links?.["completions"] ?? `/v1/wells/${api10}/completions`,
     api10,
-    asOfQuery,
+    query,
     // Said once per card, and only for the two codes that say it twice. The header and the
     // completion design are two surfaces and both rightly disclose a withheld length, but on
     // one screen the reader gets the sentence under two headings and reads the second as a
@@ -434,26 +462,24 @@ export async function renderWellCard(
   // Absent outside the mart's states: the API declines to offer a link it would 404, and a
   // section headed "no cumulative" would say the well produced nothing rather than that this
   // jurisdiction is not summed here.
-  let cumulativeRequest: Promise<void> = Promise.resolve();
+  let loadCumulative: (() => Promise<void>) | undefined;
   const cumulativePath = well.links?.["cumulatives"];
   if (cumulativePath) {
     const cumulativeFrame = document.createElement("section");
     cumulativeFrame.className = "gw-card-chart gw-well-cumulatives";
-    const cumulativeTitle = document.createElement("h3");
-    cumulativeTitle.className = "gw-frame-title";
-    cumulativeTitle.textContent = "Cumulative";
     const cumulativeHost = document.createElement("div");
     cumulativeHost.className = "gw-frame-body";
     cumulativeHost.dataset["state"] = "loading";
     cumulativeHost.setAttribute("aria-busy", "true");
     cumulativeHost.setAttribute("aria-live", "polite");
     cumulativeHost.appendChild(placeholder("Loading cumulative…"));
-    cumulativeFrame.append(cumulativeTitle, cumulativeHost);
+    cumulativeFrame.append(cumulativeHost);
     cumulativeSlot.appendChild(cumulativeFrame);
-    cumulativeRequest = loadWellCumulatives(cumulativeHost, cumulativePath, api10, asOfQuery);
+    loadCumulative = (): Promise<void> =>
+      loadWellCumulatives(cumulativeHost, cumulativePath, api10, query);
   }
 
-  let neighborRequest: Promise<void> = Promise.resolve();
+  let loadNeighbours: (() => Promise<void>) | undefined;
   const neighborPath = well.links?.["neighbors"];
   // A third case beside served and absent: the jurisdiction registers laterals and the mart's
   // measured domain does not reach it. Rendering nothing at all reads as "this well has no
@@ -461,35 +487,196 @@ export async function renderWellCard(
   if (!neighborPath && detail.neighbors_reason) {
     const refusalFrame = document.createElement("section");
     refusalFrame.className = "gw-card-chart gw-neighbor-context";
-    const refusalTitle = document.createElement("h3");
-    refusalTitle.className = "gw-frame-title";
-    refusalTitle.textContent = "Physical neighbours";
     const refusalHost = document.createElement("div");
     refusalHost.className = "gw-frame-body";
     refusalHost.dataset["state"] = "not_covered";
-    refusalFrame.append(refusalTitle, refusalHost);
+    refusalFrame.append(refusalHost);
     neighborSlot.appendChild(refusalFrame);
-    neighborRequest = import("./neighbors.ts").then(({ renderNeighborRefusal }) => {
-      refusalHost.replaceChildren(renderNeighborRefusal(detail.neighbors_reason as string));
-    });
+    loadNeighbours = (): Promise<void> =>
+      import("./neighbors.ts").then(({ renderNeighborRefusal }) => {
+        refusalHost.replaceChildren(renderNeighborRefusal(detail.neighbors_reason as string));
+      });
   }
   if (neighborPath) {
     const neighborFrame = document.createElement("section");
     neighborFrame.className = "gw-card-chart gw-neighbor-context";
-    const neighborTitle = document.createElement("h3");
-    neighborTitle.className = "gw-frame-title";
-    neighborTitle.textContent = "Physical neighbours";
     const neighborHost = document.createElement("div");
     neighborHost.className = "gw-frame-body";
     neighborHost.dataset["state"] = "loading";
     neighborHost.setAttribute("aria-busy", "true");
     neighborHost.setAttribute("aria-live", "polite");
     neighborHost.appendChild(placeholder("Loading neighbours…"));
-    neighborFrame.append(neighborTitle, neighborHost);
+    neighborFrame.append(neighborHost);
     neighborSlot.appendChild(neighborFrame);
-    neighborRequest = import("./neighbors.ts").then(({ loadNeighborContext }) =>
-      loadNeighborContext(neighborHost, neighborPath, api10, { ...asOfQuery, limit: "5" }),
-    );
+    loadNeighbours = (): Promise<void> =>
+      import("./neighbors.ts").then(({ loadNeighborContext }) =>
+        loadNeighborContext(neighborHost, neighborPath, api10, { ...query, limit: "5" }),
+      );
+  }
+
+  // Land and basin leave the Location band for sections of their own: the land unit becomes a
+  // link in v0.81 and basin becomes a served polygon answer with a handle at P4, and neither
+  // is a fact row once it has a rule behind it.
+  const landBody = document.createElement("dl");
+  landBody.className = "gw-facts";
+  if (detail.land_unit_label) {
+    landBody.appendChild(term("Land unit", labelFor(well, "/land_unit_label")));
+    const value = document.createElement("dd");
+    value.textContent = detail.land_unit_label;
+    landBody.appendChild(value);
+  }
+
+  // The served polygon answer, its plays, the ingest label beside it and their agreement.
+  // Rendered on expansion rather than at mount because the section is collapsed by default and
+  // its content is the reason a reader opens this particular well.
+  const basinBody = document.createElement("div");
+
+  const poolsBody = document.createElement("div");
+  const peerBody = document.createElement("div");
+  const poolGrain = well.meta.warnings.find((warning) => warning.code === POOL_GRAIN);
+  const lineageBody = document.createElement("div");
+  const identityHost = document.createElement("div");
+
+  // Ten ids in one fixed order. A section absent for this well is not rendered at all, but it
+  // stays in the list so a link that named it is answered with its own name and rule rather
+  // than with silence. Only three are expanded, and the rule behind that split is that a
+  // section is expanded when its content is why a reader opens a well, and collapsed when it
+  // is why they open this particular one.
+  const specs: SectionSpec[] = [
+    { id: "production", title: "Production", expanded: true, body: chartFrame },
+    {
+      id: "cumulative",
+      title: "Cumulative",
+      expanded: true,
+      body: cumulativeSlot,
+      present: loadCumulative !== undefined,
+      ...(loadCumulative ? { load: loadCumulative } : {}),
+    },
+    {
+      id: "identity",
+      title: "Identity and status",
+      expanded: true,
+      body: identityHost,
+      // Whose well it is, plus the status history where the jurisdiction's clock has one.
+      // The request rides the section rather than the card, so it is inside the same bound.
+      load: () =>
+        renderIdentity(
+          identityHost,
+          well as unknown as Envelope<WellIdentity>,
+          factsSlot,
+          query,
+        ),
+    },
+    {
+      id: "completions",
+      title: "Completions and fluids",
+      expanded: false,
+      body: contextSlot,
+      load: loadContext,
+    },
+    {
+      id: "neighbours",
+      title: "Neighbours and spacing",
+      expanded: false,
+      body: neighborSlot,
+      present: loadNeighbours !== undefined,
+      ...(loadNeighbours ? { load: loadNeighbours } : {}),
+      ...(well.links?.["neighbors_rule"] ? { absentRule: well.links["neighbors_rule"] } : {}),
+    },
+    { id: "land", title: "Land and lease", expanded: false, body: landBody },
+    {
+      id: "basin",
+      title: "Basin and geology",
+      expanded: false,
+      body: basinBody,
+      load: () => {
+        renderBasin(basinBody, well as unknown as Envelope<WellBasin>);
+        return Promise.resolve();
+      },
+    },
+    {
+      id: "pools",
+      title: "Production by pool",
+      // N-24: expanded where the Production section is in its pool-grain state, because the
+      // record the reader came for is here rather than there.
+      expanded: poolGrain !== undefined,
+      present: poolGrain !== undefined,
+      body: poolsBody,
+      load: () =>
+        renderPools(
+          poolsBody,
+          `/v1/wells/${api10}/production/pools`,
+          query,
+          poolGrain?.rule_id ? { reporting_rule: `/v1/conformance/${poolGrain.rule_id}` } : {},
+          {
+            onExplain: callbacks.onExplain,
+            labelTermFor: (pointer: string) => labelFor(well, pointer),
+          },
+        ),
+    },
+    {
+      id: "peer",
+      title: "Peer control",
+      expanded: false,
+      present: well.links?.["type_curve"] !== undefined,
+      body: peerBody,
+      load: () =>
+        renderPeerControl(peerBody, well.links?.["type_curve"] ?? "", query, {
+          onExplain: callbacks.onExplain,
+        }),
+
+    },
+    {
+      id: "lineage",
+      title: "Lineage",
+      expanded: false,
+      body: lineageBody,
+      load: () => fillLineage(),
+    },
+  ];
+
+  const sections = mountSections(body, api10, specs);
+  body.appendChild(notesSlot);
+
+  // The index is a count of what is rendered, so it has to be taken again when more renders:
+  // opened by deep link before Production had drawn, it listed Identity alone and read as a
+  // card carrying two handles (gate N7). One document listener, re-pointed at the newest card.
+  recountLineage = () => {
+    const host = sections.get("lineage");
+    if (!host || host.toggle.getAttribute("aria-expanded") !== "true") return;
+    // After the queue drains, not at the moment of expansion: a section's handles are drawn
+    // by its own load, so counting on the click counts the body it has not rendered yet.
+    void sectionsSettled().then(() => fillLineage());
+  };
+  if (!recounting) {
+    recounting = true;
+    document.addEventListener(SECTION_OPEN_EVENT, () => recountLineage?.());
+  }
+
+  // "What can I check here", and it costs a request of zero. The counts are read off what is
+  // rendered at the moment the reader looks, so they are not served figures and carry no
+  // handle of their own; the sentence says so, in the shape the running total will use.
+  async function fillLineage(): Promise<void> {
+    const list = document.createElement("dl");
+    list.className = "gw-facts gw-lineage-index";
+    for (const spec of specs) {
+      const host = sections.get(spec.id);
+      if (!host || spec.id === "lineage") continue;
+      const count = host.body.querySelectorAll("gw-figure[handle], .gw-handle").length;
+      if (count === 0) continue;
+      const name = document.createElement("dt");
+      name.appendChild(sectionLink(spec.id, spec.title));
+      const value = document.createElement("dd");
+      value.setAttribute("data-no-glossary", "");
+      value.textContent = `${count} handle${count === 1 ? "" : "s"}`;
+      list.append(name, value);
+    }
+    const note = document.createElement("p");
+    note.className = "gw-note";
+    note.textContent = list.childElementCount
+      ? "Counted on this page from what is rendered now, so these counts are not served figures and carry no handle of their own. Each handle's own is beside it."
+      : "This card is carrying no derivation handles yet.";
+    lineageBody.replaceChildren(list, note);
   }
 
   // A lease-reporting jurisdiction has no observed well-level series, so the card says that
@@ -497,65 +684,152 @@ export async function renderWellCard(
   // a Texas well whose lease reports every month (DIR-3, cr_tx_allocation_scope_1).
   const pending = well.meta.warnings.find((warning) => warning.code === PENDING_ALLOCATION);
   if (pending) {
-    chartFrame.replaceWith(
-      pendingProductionPanel(pending, well.links?.["reporting_rule"] ?? undefined),
-    );
-    container.replaceChildren(card);
-    highlight(card, termIndex());
-    focusPanel(container);
-    await Promise.all([statusRequest, contextRequest, cumulativeRequest, neighborRequest]);
+    // Texas's two rule links, landed through P2's section machinery: the panel names the grain
+    // decision and the model rule, and the card is still mounted by `land` so the reader's
+    // deep-linked section is the one that opens.
+    chartFrame.replaceWith(pendingProductionPanel(pending, ruleLinks(well.links)));
+    land(container, card, state.section);
+    await Promise.all([statusRequest, sectionsSettled()]);
     return;
   }
 
-  container.replaceChildren(card);
-  highlight(card, termIndex());
-  focusPanel(container);
+  // The third production state (§2.1a): filed below the well, with nothing rolled up to it.
+  // A titled panel that names the rule and points down at the section carrying the record,
+  // rather than a generic note under an empty chart frame.
+  if (poolGrain) {
+    chartFrame.replaceWith(poolGrainPanel(poolGrain));
+    land(container, card, state.section);
+    await Promise.all([statusRequest, sectionsSettled()]);
+    return;
+  }
+
+  land(container, card, state.section);
 
   const productionRequest = (async () => {
     try {
       const production = await getEnvelope<ProductionData>(
         `/v1/wells/${api10}/production`,
-        asOfQuery,
+        query,
       );
       const data = unwrap(production);
+      // The disclosure the API serves while the allocated mart is empty. It arrives on THIS
+      // envelope, not on the well's -- the well's warning was retired when the grain rule
+      // superseded the disclosure rule -- and without reading it here the card printed "No
+      // production reported." over a lease that has filed every month (gate-tx H-10-W).
+      const pendingSeries = production.meta.warnings.find(
+        (warning) => warning.code === PENDING_ALLOCATION,
+      );
+      if (pendingSeries) {
+        chartFrame.replaceWith(
+          pendingProductionPanel(pendingSeries, ruleLinks(production.links)),
+        );
+        return;
+      }
       if (data.streams.length === 0) {
         chartHost.replaceChildren(emptyState("No production reported."));
         return;
       }
-      chartTitle.replaceChildren(
-        labelElement("Monthly production", labelFor(production, "/series")),
-      );
-      // SB-08 §2.6 row 2, in the chart's own header and after that replaceChildren rather
+      const head = sections.get("production");
+      head?.title.replaceChildren(labelElement("Production", labelFor(production, "/series")));
+      // SB-08 §2.6 row 2, in the section's own head and after that replaceChildren rather
       // than before it: the title is rebuilt when the series lands, so an earlier append
       // goes with the placeholder. The vintage pinned is the series' own, not the card's.
       const series = openThisSeries(detail.api10, {
         state,
         resolved: production.meta.as_of.resolved,
       });
-      if (series) chartTitle.appendChild(crossingLink(series));
+      if (series) head?.aside.appendChild(crossingLink(series));
       // Loaded here rather than at module scope: the plot is drawn only once a series has
       // arrived, and the entry chunk carries every reader who never opens a card. The budget
       // test in explore/bundle-budget.test.ts is what holds this to it.
       const { renderChart } = await import("../chart/chart.ts");
-      renderChart(chartHost, toChartSeries(data), {
-        onExplain: callbacks.onExplain,
-        labelTermFor: (pointer) => labelFor(production, pointer),
-      });
+      renderChart(
+        chartHost,
+        toChartSeries(data),
+        {
+          onExplain: callbacks.onExplain,
+          labelTermFor: (pointer) => labelFor(production, pointer),
+          // main.ts is the single writer of app state, so a brush is announced rather than
+          // written here; `card/requests.ts` carries `from`/`to` into the next request.
+          onBrush: (from, to) => setParams({ from, to }),
+          // The `as_of` arm of the request seam: the same parameter the route already
+          // forwards, used by a control rather than only by a URL somebody typed.
+          onVintage: (asOf) => setParams({ as_of: asOf }),
+        },
+        { normalization: normalizationControl(detail, well, state) },
+      );
       for (const note of warningNotes(production.meta.warnings)) chartNotes.appendChild(note);
       highlight(chartFrame, termIndex());
+      // The chart's own handles arrive here, outside the section queue: the production request
+      // runs beside it and `sectionsSettled()` is long resolved by the time the plot draws, so
+      // an index counted on the queue alone still missed the section with the most handles
+      // on the card (gate N7's other half).
+      recountLineage?.();
+      // Export lives with the series it exports, so what leaves the page is exactly the
+      // window on it, handles and all.
+      const drawn = toChartSeries(data);
+      chartNotes.appendChild(
+        exportControls({
+          series: () => drawn,
+          envelope: () => production,
+          context: () => ({
+            api10,
+            url: window.location.href,
+            asOfResolved: production.meta.as_of.resolved,
+            normalization: state.extra["normalization"]?.[0] ?? null,
+            grain: unwrap(production).granularity,
+          }),
+        }),
+      );
     } catch (error) {
       chartHost.replaceChildren(errorPanel(error, callbacks));
     }
   })();
 
-  await Promise.all([
-    statusRequest,
-    contextRequest,
-    cumulativeRequest,
-    neighborRequest,
-    productionRequest,
-  ]);
+  await Promise.all([statusRequest, productionRequest, sectionsSettled()]);
 }
+
+/**
+ * Whether this well can be normalised, and what to say when it cannot. Every fact here is
+ * served: the length figure, the method it was computed by, and the rule link a jurisdiction
+ * that withholds the length carries. Nothing is inferred from a state code.
+ */
+function normalizationControl(
+  detail: WellDetail,
+  well: Envelope<WellDetail>,
+  state: { extra: Record<string, string[]> },
+): NormalizationControl {
+  const withheld = well.links?.["length_rule"];
+  return {
+    on: state.extra["normalization"]?.[0] === PER_LATERAL_FT,
+    available: Boolean(detail.lateral_length_ft) && detail.length_method !== "not_served",
+    reason: withheld
+      ? "This jurisdiction withholds the lateral length by rule, so there is no divisor to" +
+        " normalise by; the rule is linked in the Drilling band."
+      : "No lateral length is served for this well, so there is nothing to divide by.",
+    onChange: (next) => setParams({ normalization: next ? PER_LATERAL_FT : null }),
+  };
+}
+
+/** main.ts is the single writer of app state, so the card announces rather than writes. */
+function setParams(params: Record<string, string | null>): void {
+  document.dispatchEvent(new CustomEvent("gw-param-set", { detail: { params } }));
+}
+
+/**
+ * Mount, highlight, and land focus. With `?section=` present the landing target is that
+ * section's disclosure rather than the card heading, so a deep-linked reader lands on the
+ * thing the link named; `applySection` carries the same quiet-focus rule `focusPanel` does.
+ */
+function land(container: HTMLElement, card: HTMLElement, section: string | null): void {
+  container.replaceChildren(card);
+  highlight(card, termIndex());
+  if (section) applySection(section);
+  else focusPanel(container);
+}
+
+/** The one served normalisation arm, named where the control and the request both read it. */
+const PER_LATERAL_FT = "per_lateral_ft";
 
 const CUMULATIVE_STREAMS: [keyof NonNullable<WellCumulatives["cumulative"]>, string, string][] = [
   ["oil_bbl", "Oil", "/cumulative/oil_bbl"],
@@ -583,7 +857,12 @@ async function loadWellCumulatives(
     // An ND well the snapshot has not absorbed yet. Distinct from "produced nothing", which
     // is the null cumulative above, and from a read failure, which is the line below.
     if (error instanceof ApiError && error.code === "not_found") {
-      host.replaceChildren(emptyState("No cumulative: not in the snapshot."));
+      // The API's own sentence, where it served one: only the API knows whether this well is
+      // outside the mart's scope or inside a jurisdiction whose mart the last refresh skipped,
+      // and "not in the snapshot" said the first about the second (gate-tx H-10-W, H-10-C).
+      host.replaceChildren(
+        emptyState(asProse(error.problem.detail ?? "No cumulative: not in the snapshot.")),
+      );
       host.dataset["state"] = "empty";
       return;
     }
@@ -593,6 +872,13 @@ async function loadWellCumulatives(
     host.setAttribute("aria-busy", "false");
   }
 }
+
+// A `problem` detail is written for a machine-readable field and opens lowercase. This is the
+// one place one is reused as a section's prose, and it is already a whole sentence.
+function asProse(detail: string): string {
+  return detail.charAt(0).toUpperCase() + detail.slice(1);
+}
+
 
 function cumulativesBody(
   data: WellCumulatives,
@@ -631,14 +917,96 @@ function cumulativesBody(
       basis.textContent = figure.basis;
       value.appendChild(basis);
     }
+    // The allocated share, beside the total and never after it. A total that sums allocated
+    // months without saying so is the naked number this whole surface exists against, and the
+    // share is the one number that says how much of it is an estimate.
+    const share = data.allocation?.share[streamOf(key)];
+    // A stream with no allocated month is not partly allocated, and "0% allocated" beside a
+    // total is noise that trains a reader to stop reading the chip.
+    if (figure && share && Number(share.value) > 0) {
+      const chip = document.createElement("span");
+      chip.className = "gw-chip gw-alloc-share";
+      chip.textContent = `${percent(share.value)} allocated`;
+      chip.title =
+        `${percent(share.value)} of this total is an allocated estimate rather than a` +
+        ` reported figure (${data.allocation?.rule_id ?? ""}).`;
+      value.appendChild(chip);
+    }
+    // Readable text, not a tooltip: a count that only a hovering mouse can reach is a count
+    // a keyboard reader and a phone reader do not have (the QUEUE-DISPATCH:1790 debt).
     const record = coverageTitle(data.coverage[key]);
-    if (record) cell.title = record;
     cell.append(term_, value);
+    if (record) {
+      const coverage = document.createElement("p");
+      coverage.className = "gw-note gw-coverage-line";
+      coverage.setAttribute("data-no-glossary", "");
+      coverage.textContent = record;
+      cell.appendChild(coverage);
+    }
     row.appendChild(cell);
   }
   fragment.appendChild(row);
+  const chip = allocationChip(data);
+  if (chip) fragment.appendChild(chip);
   fragment.appendChild(scopeLine(cumulativeScope(data)));
   return fragment;
+}
+
+const MART_STREAM_OF: Record<string, string> = {
+  oil_bbl: "liquid",
+  gas_mcf: "gas",
+  water_bbl: "water",
+};
+
+function streamOf(key: string): string {
+  return MART_STREAM_OF[key] ?? key;
+}
+
+/** A decimal share as a whole-number percent, without ever parsing it as a float. */
+function percent(value: string): string {
+  return `${roundTo(String(Number(value) * 100), 0)}%`;
+}
+
+/**
+ * `observed_with_allocated` as a labelled chip rather than a footnote.
+ *
+ * A reader who does not notice a footnote has read the total as an observation, which is the
+ * one reading this coverage class exists to prevent.
+ */
+function allocationChip(data: WellCumulatives): HTMLElement | null {
+  if (data.coverage_outcome !== "observed_with_allocated" || !data.allocation) return null;
+  const chip = document.createElement("p");
+  chip.className = "gw-chip gw-alloc-coverage";
+  chip.dataset["basis"] = data.allocation.basis;
+  const model = data.allocation.model_id ?? "";
+  chip.append(`${coverageSentence(data.allocation)}${model ? ` · ${model}` : ""}`);
+  // The share count is served with a handle and had nowhere on screen to be: the brief asks
+  // this row to state the basis, the model and how many shares are behind it.
+  const counted = data.allocation.shares_counted;
+  if (counted) {
+    const shares = document.createElement("span");
+    shares.className = "gw-alloc-shares";
+    shares.textContent = ` · ${formatValue(counted.value)} ${counted.unit}`;
+    if (counted.d) shares.dataset["handle"] = counted.d;
+    chip.appendChild(shares);
+  }
+  chip.title =
+    "Part of this total is an estimate: the jurisdiction files production by lease and the" +
+    ` per-well share is computed under ${data.allocation.rule_id}. The share of each total` +
+    " it accounts for is stated beside that total.";
+  return chip;
+}
+
+/**
+ * How much of the total is a share, in words. "Some" on a well where every month is one is a
+ * hedge the data does not support, and it sits beside a chip reading `100% allocated`.
+ */
+function coverageSentence(allocation: CumulativeAllocation): string {
+  const shares = Object.values(allocation.share).map((figure) => Number(figure.value));
+  if (shares.length > 0 && shares.every((share) => share >= 1)) return "All months are allocated";
+  const months = Object.values(allocation.months).map((figure) => Number(figure.value));
+  if (months.length > 0) return `${range(months)} months are allocated`;
+  return "Some months are allocated";
 }
 
 /**
@@ -678,12 +1046,10 @@ function cumulativeScope(data: WellCumulatives): (string | Node | false)[] {
   // another's is filed — so a single number would be wrong for two of the three.
   const admitted = blocks.map((block) => block.months_reported + block.months_reported_zero);
   const span = Math.max(...blocks.map((block) => block.span_months), 0);
-  const low = Math.min(...admitted);
-  const high = Math.max(...admitted);
-  const count = low === high ? `${low}` : `${low}–${high}`;
+  const count = range(admitted);
   return [
     window,
-    span > 0 && `${count} of ${span} months admitted`,
+    span > 0 && (allocatedScope(data, span, count) ?? `${count} of ${span} months admitted`),
     // The span is the months this source has filed for this well, not the well's life, and
     // the two are far apart where a regulator publishes a rolling window rather than a
     // history. Said generically because it is true of every jurisdiction: a total over what
@@ -692,6 +1058,43 @@ function cumulativeScope(data: WellCumulatives): (string | Node | false)[] {
     span > 0 && "over the months filed, not the well's life",
     unbreakable(`snapshot ${formatVintage(data.snapshot_vintage)}`),
   ];
+}
+
+/** One number where every stream agrees, and the range where they do not. */
+function range(counts: number[]): string {
+  const low = Math.min(...counts);
+  const high = Math.max(...counts);
+  return low === high ? `${low}` : `${low}–${high}`;
+}
+
+/**
+ * The scope line for a total built from shares, or null where the total is observed.
+ *
+ * `months_reported` counts well-grain canonical months and a lease-grain jurisdiction has
+ * none of them, so "0 of 24 months admitted" printed under a 7,200 bbl total: the card
+ * contradicting its own number one line down (M3). Both counts are stated instead, and the
+ * allocated one is the served figure rather than a recount of it.
+ */
+function allocatedScope(
+  data: WellCumulatives,
+  span: number,
+  observed: string,
+): HTMLElement | null {
+  const months = Object.values(data.allocation?.months ?? {});
+  if (months.length === 0) return null;
+  const line = document.createElement("span");
+  line.className = "gw-scope-allocated";
+  line.textContent =
+    `${range(months.map((figure) => Number(figure.value)))} of ${span} months allocated` +
+    ` · ${observed} observed`;
+  const handle = months.find((figure) => figure.d)?.d;
+  if (handle) line.dataset["handle"] = handle;
+  line.title =
+    "An allocated month is a computed share of the lease's filing; an observed month is a" +
+    ` report about this well. This jurisdiction files at the lease (${
+      data.allocation?.rule_id ?? ""
+    }).`;
+  return line;
 }
 
 /** The disclosures both the header and the completion design carry, worded for their own
@@ -1027,16 +1430,87 @@ export function placeholder(text: string): HTMLElement {
   return element;
 }
 
-type ApiWarning = { code: string; detail?: string; pointer?: string };
+type ApiWarning = { code: string; detail?: string; pointer?: string; rule_id?: string };
 
 /** The one warning code the card renders as its own panel rather than as a warning line. */
 export const PENDING_ALLOCATION = "production_pending_allocation";
+/** The third production state: filed below the well, with nothing rolled up to it. */
+export const POOL_GRAIN = "production_reported_at_pool_grain";
 
 /**
  * The production slot for a well whose regulator reports at the lease. It is a state, not an
  * absence: the section is titled for what is pending and links to the rule that says so.
  */
-export function pendingProductionPanel(warning: ApiWarning, ruleLink?: string): HTMLElement {
+/** A rule the panel sends the reader to, named by its own id so the link says which. */
+export interface PendingRuleLink {
+  href: string;
+  label: string;
+}
+
+/** `/v1/conformance/cr_tx_allocation_v0_1` -> `cr_tx_allocation_v0_1`. */
+function ruleIdOf(href: string): string {
+  return href.split("/").filter(Boolean).pop() ?? href;
+}
+
+export function ruleLinks(links: Links | undefined): PendingRuleLink[] {
+  // Two rules, and they answer two questions: the decision that admits a well-level figure
+  // for this jurisdiction at all, and the rule that will compute the share once the mart is
+  // built. A panel that names neither is the empty envelope with a heading on it.
+  const wanted: [string, string][] = [
+    ["allocation_rule", "The registered grain decision"],
+    ["allocation_model_rule", "The rule that computes the share"],
+    ["reporting_rule", "The conformance rule that decided this"],
+  ];
+  return wanted.flatMap(([key, sentence]) => {
+    const href = links?.[key];
+    return href ? [{ href, label: `${sentence}: ${ruleIdOf(href)}.` }] : [];
+  });
+}
+
+/**
+ * New Mexico's state, and Montana's absence is deliberately not this: a registered decision
+ * that nothing rolls up is a different fact from a jurisdiction with no grain decision at all,
+ * and one panel for both would erase the difference.
+ */
+export function poolGrainPanel(warning: ApiWarning): HTMLElement {
+  const frame = document.createElement("section");
+  frame.className = "gw-card-chart gw-pending gw-pool-grain";
+  frame.dataset["state"] = "production_reported_at_pool_grain";
+  const title = document.createElement("h3");
+  title.className = "gw-frame-title";
+  title.textContent = "Production is filed by pool";
+  const body = document.createElement("p");
+  body.className = "gw-note";
+  body.textContent =
+    warning.detail ??
+    "This well's regulator files production per completion pool and glasswell rolls nothing" +
+      " up to the well.";
+  frame.append(title, body);
+  if (warning.rule_id) {
+    const rule = document.createElement("p");
+    rule.className = "gw-note";
+    rule.append("The rule that decided that: ");
+    const link = document.createElement("a");
+    link.className = "gw-identity-rule";
+    link.href = `/v1/conformance/${warning.rule_id}`;
+    link.setAttribute("data-no-glossary", "");
+    link.textContent = warning.rule_id;
+    rule.appendChild(link);
+    frame.appendChild(rule);
+  }
+  const down = document.createElement("p");
+  down.className = "gw-note";
+  down.append("The filings themselves are in ");
+  down.appendChild(sectionLink("pools", "Production by pool"));
+  down.append(", which is open below.");
+  frame.appendChild(down);
+  return frame;
+}
+
+export function pendingProductionPanel(
+  warning: ApiWarning,
+  links: PendingRuleLink[] = [],
+): HTMLElement {
   const frame = document.createElement("section");
   frame.className = "gw-card-chart gw-pending";
   frame.dataset["state"] = "production_pending_allocation";
@@ -1050,13 +1524,19 @@ export function pendingProductionPanel(warning: ApiWarning, ruleLink?: string): 
     warning.detail ??
     "This well's regulator reports production at the lease, so no well-level series has" +
       " been observed.";
-  const link = document.createElement("a");
-  link.className = "gw-pending-rule";
-  // The rule itself, not the collection: the well header already carries the link, and a
-  // reader sent to a list of thirty-three rules has to find this one again.
-  link.href = ruleLink ?? "/v1/conformance";
-  link.textContent = "See the conformance rule that decided this.";
-  body.append(detail, link);
+  body.append(detail);
+  // The rules themselves, not the collection: the reader sent to a list of thirty-three has
+  // to find these again.
+  const named = links.length
+    ? links
+    : [{ href: "/v1/conformance", label: "See the conformance rule that decided this." }];
+  for (const rule of named) {
+    const link = document.createElement("a");
+    link.className = "gw-pending-rule";
+    link.href = rule.href;
+    link.textContent = rule.label;
+    body.appendChild(link);
+  }
   frame.append(title, body);
   return frame;
 }

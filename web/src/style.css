@@ -75,9 +75,13 @@
      why it is a third of what it cost when a status line lived in it. */
   --gw-meta-w: 150px;
 
-  /* The flyout's column, declared once: the hint steps aside by exactly this much when a
-     panel is open, and the two drifting apart is how the coach lands back on the card. */
+  /* The rail's column, declared once: the hint steps aside by exactly this much when a
+     panel is open, and the two drifting apart is how the coach lands back on the card. The
+     width is what the flyout's was, so the visual gate compares like with like. */
   --gw-card-w: min(38vw, 540px);
+  --gw-drawer-w: min(40vw, 480px);
+  /* Collapsed, the rail is a reader's affordance and never a state the app chooses. */
+  --gw-rail-strip: 40px;
 
   --gw-radius-xs: 4px;
   --gw-radius-sm: 6px;
@@ -581,6 +585,15 @@ body:has(#gw-drawer:not([hidden])) .gw-hint::before {
   display: none;
 }
 
+/* The step aside is keyed on the card's presence, and a collapsed rail is 40 px wide and does
+   not hide it: without this arm the coach sat 540 px from the edge with 500 px of empty canvas
+   beside it. The id inside :has() is what carries the weight -- :has() takes its most specific
+   argument, so #gw-card:not([hidden]) above scores (1,1,0) and an attribute selector alone
+   would lose to it. Equal weight, declared later, so this one wins on order. */
+body:has(#gw-main[data-rail="collapsed"]) .gw-hint {
+  right: calc(var(--gw-rail-strip) + var(--gw-space-4));
+}
+
 /* The tick points at the help button, which is where the sentence lives once this is gone. */
 .gw-hint::before {
   content: "";
@@ -802,72 +815,216 @@ kbd {
   display: none;
 }
 
+/* The rail is a column of this grid, not a panel floating over it. Attribute-driven rather
+   than declared unconditionally: a hidden rail's track would still reserve its column from
+   Explore and from a map with no well open. The first row is the rail's own chrome and is
+   `auto`, so it takes no height while the chrome is hidden. Each panel column carries the
+   panel's width plus its one hairline, which is where 1600 - 540 - 480 - 2 = 578 comes from. */
 main {
   position: relative;
   flex: 1;
   min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
+main[data-rail="open"] {
+  grid-template-columns: minmax(0, 1fr) calc(var(--gw-card-w) + 1px);
+}
+
+main[data-rail="collapsed"] {
+  grid-template-columns: minmax(0, 1fr) calc(var(--gw-rail-strip) + 1px);
+}
+
+main[data-drawer="open"] {
+  grid-template-columns: minmax(0, 1fr) calc(var(--gw-drawer-w) + 1px);
+}
+
+/* Below 1600 the drawer stacks inside the rail over the rail's body, so the map does not move
+   when a handle is opened. Above it the drawer takes a column of its own (the arm further
+   down), because that is the only width at which three columns leave the map 500 px. */
+main[data-rail="open"][data-drawer="open"] {
+  grid-template-columns: minmax(0, 1fr) calc(var(--gw-card-w) + 1px);
+}
+
+/* Absolutely positioned it would be out of flow, cover the whole padding box and leave the
+   rail sitting on top of a full-width map. Relative because .gw-map-chrome anchors to it
+   (map.css:3-7), which is also why the legend, the sheets and the banner follow the column
+   with no rule of their own. */
 #gw-map {
-  position: absolute;
-  inset: 0;
+  position: relative;
+  grid-column: 1;
+  grid-row: 1 / -1;
+  min-width: 0;
+  min-height: 0;
 }
 
-/* Capped floating panels, not full-height rails: the shell caps, the head holds, and only
-   the body scrolls. Without the flex column a long card pushes its own footer off screen. */
+/* The modal's own cell spans the grid; its child positions itself against main's padding box. */
+#gw-key-host {
+  grid-column: 1 / -1;
+  grid-row: 1 / -1;
+}
+
+/* Rail panels: full-height columns with one hairline against the map, no radius and no
+   shadow, because a column that floats over nothing is not a floating panel. Only the body
+   scrolls — without the flex column a long card pushes its own footer off screen. */
 #gw-card,
-#gw-drawer,
-.gw-login-panel {
-  position: absolute;
-  top: 0.75rem;
-  bottom: auto;
-  max-height: calc(100% - 1.5rem);
+#gw-drawer {
+  grid-column: -2;
   display: flex;
   flex-direction: column;
+  min-height: 0;
   background: var(--panel);
-  border: 1px solid var(--hairline);
-  border-radius: var(--gw-radius-md);
-  box-shadow: var(--shadow-panel);
+  border-left: 1px solid var(--hairline);
   font-size: var(--gw-fs-body);
   z-index: var(--gw-z-panel);
 }
 
-/* The cap was a flat 460 px, so a 2560 px display gave the flyout the column a 1280 px laptop
-   got and the map kept the difference. 38vw still governs the narrow end — the card may never
-   take more than a third of the canvas — and the ceiling is the width at which the plot and
-   the fact grid stop being cramped: 486 px at 1280, 540 from 1422 up. */
+/* Row 2, under the rail's chrome. The width is the flyout's, unchanged: 38vw governs the
+   narrow end — the card may never take more than a third of the canvas — and the ceiling is
+   the width at which the plot and the fact grid stop being cramped, 540 from 1422 up. */
 #gw-card {
-  right: 0.75rem;
-  width: var(--gw-card-w);
-}
-
-/* The card used to sit at right: 480px whether or not the drawer was open, which put it
-   off-screen below 940 px — including with the drawer closed (UX P1-3). */
-main[data-drawer="open"] #gw-card {
-  right: min(calc(480px + 1.25rem), 50vw);
+  grid-row: 2;
 }
 
 #gw-drawer {
-  right: 0.75rem;
-  width: min(40vw, 480px);
+  grid-row: 1 / -1;
   z-index: var(--gw-z-drawer);
 }
 
+@media (min-width: 1600px) {
+  main[data-rail="open"][data-drawer="open"] {
+    grid-template-columns:
+      minmax(0, 1fr) calc(var(--gw-drawer-w) + 1px)
+      calc(var(--gw-card-w) + 1px);
+  }
+
+  main[data-rail="open"][data-drawer="open"] #gw-drawer {
+    grid-column: 2;
+  }
+
+  /* The drawer has its own column here, so stepping aside by the card's width alone lands the
+     coach on top of it: measured 266 x 36 px over the Lineage heading and the map's zoom
+     control (gate M4). The id inside :has() is what carries the weight, exactly as the
+     collapsed-rail arm above says: :has() takes its most specific argument, so the card's own
+     arm scores (1,2,1) through #gw-drawer and an attribute-only selector here would lose. */
+  body:has(#gw-main[data-rail="open"][data-drawer="open"]) .gw-hint {
+    right: calc(var(--gw-card-w) + var(--gw-drawer-w) + var(--gw-space-4));
+  }
+}
+
+/* The rail's chrome: the collapse control, Locate, and the sheet's grab bar. It sits in the
+   rail's own column so it reads as the rail's head, and it is a sibling of #gw-card because
+   the card replaces every child of that host on each render. */
+#gw-rail-chrome {
+  grid-column: -2;
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--gw-space-1);
+  padding: var(--gw-space-1) var(--gw-space-2);
+  background: var(--panel);
+  border-left: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
+  z-index: var(--gw-z-panel);
+}
+
+#gw-rail-chrome button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--gw-control-h);
+  height: var(--gw-control-h);
+  padding: 0 var(--gw-space-1);
+  color: var(--muted);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--gw-radius-sm);
+  cursor: pointer;
+}
+
+#gw-rail-chrome button:hover {
+  color: var(--paper);
+  border-color: var(--hairline);
+}
+
+#gw-rail-locate {
+  margin-left: auto;
+}
+
+/* The arrow points where the control goes, so it reverses with the state rather than telling
+   a collapsed reader to collapse further. Content, not text, so the glyph costs no entry byte
+   and carries no accessible name -- the button's aria-label is where the name lives. */
+.gw-rail-glyph::before {
+  content: "\00bb";
+}
+
+main[data-rail="collapsed"] .gw-rail-glyph::before {
+  content: "\00ab";
+}
+
+/* Collapsed, the chrome is the strip: it takes the whole 40 px column and the toggle carries
+   the well name rotated, so a collapsed rail still says whose it is on screen as well as in
+   its accessible name. */
+main[data-rail="collapsed"] #gw-card {
+  display: none;
+}
+
+main[data-rail="collapsed"] #gw-rail-chrome {
+  grid-row: 1 / -1;
+  flex-direction: column;
+  align-items: stretch;
+  border-bottom: 0;
+}
+
+main[data-rail="collapsed"] #gw-rail-chrome button {
+  width: 100%;
+}
+
+main[data-rail="collapsed"] #gw-rail-toggle {
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--gw-space-2);
+  align-items: center;
+  justify-content: flex-start;
+  padding-top: var(--gw-space-2);
+}
+
+main[data-rail="collapsed"] #gw-rail-locate {
+  margin-left: 0;
+}
+
+.gw-rail-strip-name {
+  writing-mode: vertical-rl;
+  overflow: hidden;
+  font-size: var(--gw-fs-micro);
+  letter-spacing: 0.04em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+main:not([data-rail="collapsed"]) .gw-rail-strip-name {
+  display: none;
+}
+
+/* The login panel is the one member of the family that is still a modal over everything. */
 .gw-login-panel {
+  position: absolute;
   top: 50%;
   left: 50%;
   right: auto;
   transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
   width: min(92vw, 30rem);
   max-height: min(80vh, 32rem);
-  border-color: var(--amber);
+  background: var(--panel);
+  border: 1px solid var(--amber);
+  border-radius: var(--gw-radius-md);
+  box-shadow: var(--shadow-panel);
+  font-size: var(--gw-fs-body);
   z-index: var(--gw-z-modal);
-}
-
-#gw-key-host[hidden],
-#gw-card[hidden],
-#gw-drawer[hidden] {
-  display: none;
 }
 
 /* The card renders its head and body inside an <article>, so the shell's cap has to reach
@@ -1028,7 +1185,11 @@ main[data-drawer="open"] #gw-card {
   margin: 0 0 var(--gw-space-2);
 }
 
+/* One rule per line: the panel names two of them now -- the grain decision and the rule that
+   computes the share -- and inline anchors with no separator run the two sentences together. */
 .gw-pending-rule {
+  display: block;
+  margin-top: var(--gw-space-2);
   color: var(--paper);
   text-decoration: underline;
   text-underline-offset: 2px;
@@ -1447,6 +1608,13 @@ gw-figure {
 .gw-state-reported-zero {
   background: linear-gradient(to top, var(--paper) 0 3px, transparent 3px 100%);
   border-color: var(--paper);
+}
+
+/* Filed, but by the lease: the reported green, qualified by the paper half so the key cannot
+   show two rows with one swatch and two different subjects (M1). */
+.gw-state-lease-reported {
+  background: linear-gradient(to bottom, var(--oil) 0 50%, var(--paper) 50% 100%);
+  border-color: var(--oil);
 }
 
 .gw-state-no-report {
@@ -1979,9 +2147,42 @@ a {
 /* The stylesheet had no media query at all: below 940 px the card left the viewport and at
    390 px it sat at x -550, so tapping a lateral appeared to do nothing. */
 @media (max-width: 900px) {
+  /* No rail here: a 519 px rail beside a 301 px map is worse than a sheet, and the tablet
+     posture is a map-first posture. The template is reset rather than left standing, or a
+     hidden sheet's column would still take 389 px out of the map at 820. */
+  main[data-rail],
+  main[data-drawer],
+  main[data-rail][data-drawer] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* Three stops the gate can photograph and the keyboard can reach, not a drag-anywhere
+     height nobody can regress-test. Peek is a pixel because it is sized by the identity
+     block, which does not grow with the viewport; the other two are viewport-relative
+     because they are sized by how much of the record a reader wants. The top stop is
+     exactly the single stop that shipped before this, so only two of the three are new. */
+  /* Declared on the body rather than on main, so the coach mark can read it too: it is in the
+     header, outside main, and a custom property only inherits down its own subtree. One
+     source of truth for the three stops, and main inherits it unchanged. */
+  body {
+    --gw-sheet-h: 78dvh;
+  }
+
+  body:has(#gw-main[data-sheet-snap="peek"]) {
+    --gw-sheet-h: 160px;
+  }
+
+  body:has(#gw-main[data-sheet-snap="half"]) {
+    --gw-sheet-h: 46dvh;
+  }
+
+  body:has(#gw-main[data-sheet-snap="full"]) {
+    --gw-sheet-h: 78dvh;
+  }
+
   #gw-card,
-  #gw-drawer,
-  main[data-drawer="open"] #gw-card {
+  #gw-drawer {
+    position: absolute;
     top: auto;
     bottom: 0;
     left: 0;
@@ -1993,11 +2194,81 @@ a {
     border-left: 0;
     border-right: 0;
     border-bottom: 0;
+    border-top: 1px solid var(--hairline);
     padding-bottom: env(safe-area-inset-bottom);
   }
 
+  /* The card is the sheet the snap points size; the drawer keeps the one stop it had. The
+     top 44 px are the grab bar's, reserved here so the strip sits inside the sheet rather
+     than over the map above it and the peek stop still measures 160. */
+  #gw-card {
+    height: var(--gw-sheet-h);
+    max-height: var(--gw-sheet-h);
+    padding-top: 44px;
+    transition: height 160ms ease;
+  }
+
+  /* A snap is worth easing; a drag is not, or the sheet lags the finger holding it. */
+  main[data-sheet-drag] #gw-card {
+    transition: none;
+  }
+
   /* Both open at this width: the drawer's higher stacking context covers the card, which
-     is the topmost-layer rule the Escape handler already follows. */
+     is the topmost-layer rule the Escape handler already follows. The card's grab bar goes
+     with the card, so it cannot sit over the layer that covers it. */
+  main[data-drawer="open"] #gw-rail-chrome {
+    display: none;
+  }
+
+  /* The strip rides the sheet's top edge, above the card and under the drawer, on the
+     ladder rather than on a raw number. */
+  #gw-rail-chrome {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: calc(var(--gw-sheet-h) - 44px);
+    height: 44px;
+    padding: 0 var(--gw-space-3);
+    background: none;
+    border-left: 0;
+    border-bottom: 0;
+    z-index: var(--gw-z-drawer);
+  }
+
+  /* Collapse is the desktop rail's affordance; the sheet has three stops instead. Scoped
+     through the parent because `#gw-rail-chrome button` is (1,0,1) and a bare id is (1,0,0):
+     the shorter selector lost and the phone shipped a collapse control it has no posture for. */
+  #gw-rail-chrome #gw-rail-toggle {
+    display: none;
+  }
+
+  #gw-rail-grab {
+    display: flex;
+    flex: 1 1 auto;
+    align-items: center;
+    align-self: stretch;
+    justify-content: center;
+    cursor: ns-resize;
+    touch-action: none;
+  }
+
+  #gw-rail-grab::before {
+    content: "";
+    width: 44px;
+    height: 4px;
+    background: var(--hairline);
+    border-radius: var(--gw-radius-pill);
+  }
+
+  /* The existing 44 px rules reach .gw-controls button, .gw-mode-switch and .gw-mode-btn,
+     which are the header cluster and the surface switch. A section disclosure, the rail's
+     own controls and a basis chip match none of them and need their own. */
+  #gw-rail-chrome button,
+  .gw-section-toggle,
+  .gw-card-chip {
+    min-height: 44px;
+    min-width: 44px;
+  }
 
   #gw-header {
     gap: var(--gw-space-3);
@@ -2074,22 +2345,32 @@ a {
    the brand went back to `flex: 0 1 auto` and the strapline came back and clipped -- so a
    signed-in owner at 820, a rung on the project's own ladder, read `glas…` / `— NO NAK`, worse
    than the string that was just fixed one rung above.
-   Scoped to a session rather than to the width, which is the real condition: signed out the
-   rail has no Sign-out control and 820 already held. Above 620, because below it the wordmark
-   shrinks and then the brand text goes entirely, which is that posture's own answer. */
+   gate-v078 N9: that round keyed the pair on the session, and "signed out 820 already held"
+   was wrong -- it read `— NO NAKED NUM`, with no ellipsis to say so, on every surface this
+   project shoots. The rules that stop the brand paying for the rail are the answer at both
+   postures and are unscoped here; only hiding the strap stays scoped, because signed out there
+   is no Sign-out control to make room for and the line fits. Above 620, because below it the
+   wordmark shrinks and then the brand text goes entirely, which is that posture's own answer. */
 @media (min-width: 621px) and (max-width: 900px) {
   #gw-header:has(#gw-logout-btn:not([hidden])) .gw-strap {
     display: none;
   }
 
-  #gw-header:has(#gw-logout-btn:not([hidden])) .gw-brand {
+  .gw-brand {
     flex: none;
   }
 
   /* The search shrinks rather than disappears: it is the only elastic thing on the rail, and a
      field a reader can still see and type in is worth more than the 40 px a collapse would buy. */
-  #gw-header:has(#gw-logout-btn:not([hidden])) .gw-search-input {
+  .gw-search-input {
     width: min(9rem, 17vw);
+  }
+
+  /* And the line completes: with the brand no longer the item that shrinks it fits on one row,
+     and where it does not it takes a second rather than being cut mid-word. */
+  .gw-strap {
+    white-space: normal;
+    overflow: visible;
   }
 }
 
@@ -2215,4 +2496,143 @@ a {
   .gw-hint::before {
     display: none;
   }
+
+  /* With a well open the bottom is the sheet's, not the canvas's: docked where it was, the
+     coach covered the chart's x-axis at the full stop and the operator line at peek, which is
+     one of the four things peek exists to show (gate N5). It rides above the sheet's current
+     height and moves with the stop, because the stop is a variable and not a number. */
+  body:has(#gw-main[data-rail="open"]) .gw-hint {
+    bottom: calc(var(--gw-sheet-h) + var(--gw-space-3) + 44px);
+  }
+}
+
+/* The allocation band: a second strip, in its own vocabulary and its own prefix.
+   One string-keyed record for two vocabularies collides on the first shared token, and the
+   same is true of one CSS namespace — `withheld` is already a null-semantics class and is a
+   plausible allocation class in a later jurisdiction. Two bands that cannot be told apart in
+   the DOM is the failure this prefix exists against. */
+/* The allocation rows sit inside the state strip, so they inherit the gutters align() writes
+   on it and are drawn to the plot's own width. A sibling strip inherited neither. */
+.gw-alloc-row {
+  margin-top: 2px;
+}
+
+.gw-alloc-cells {
+  height: 0.6rem;
+}
+
+.gw-alloc-mark {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 2px;
+  border: 1px solid var(--hairline);
+  background: var(--hairline);
+  padding: 0;
+}
+
+.gw-alloc-cells .gw-alloc-mark {
+  flex: 1 1 0;
+  width: auto;
+  height: 100%;
+  min-width: 0;
+  border: 0;
+  border-radius: 1px;
+}
+
+/* Observed and allocated are the distinction the band exists to draw, so they are the two
+   ends of the encoding: observed is solid and in the paper/slate pair, allocated is textured
+   and in the muted/amber pair. Nothing here is a severity colour. --ink is the surface token
+   and inverts with the theme, so a mark drawn in it is the strip: 1.09:1 dark, 1.12:1 light,
+   against the 3:1 floor a non-text mark has to clear (B2). */
+.gw-alloc-observed-single-well {
+  background: var(--slate);
+  border-color: var(--slate);
+}
+
+/* Two observed facts, so two encodings: one gas well on the lease, or one eligible well that
+   month. A shared swatch is one class to a reader who is reading the band rather than the key. */
+.gw-alloc-observed-gas-well {
+  background: linear-gradient(to bottom, var(--paper) 0 50%, var(--slate) 50% 100%);
+  border-color: var(--slate);
+}
+
+.gw-alloc-equal-share {
+  background: repeating-linear-gradient(
+    135deg,
+    var(--muted) 0 2px,
+    var(--paper) 2px 4px
+  );
+  border-color: var(--muted);
+}
+
+/* A well the regulator calls plugged with no date, still drawing a share. It is the one
+   eligibility term with no date behind it, so it is the one mark that carries the warning
+   colour the rest of the band does not use. */
+.gw-alloc-after-status-change {
+  background: repeating-linear-gradient(
+    135deg,
+    var(--amber) 0 2px,
+    var(--paper) 2px 4px
+  );
+  border-color: var(--amber);
+}
+
+.gw-alloc-excluded-after-plug {
+  background: linear-gradient(to top, var(--muted) 0 2px, transparent 2px 100%);
+  border-color: var(--muted);
+}
+
+.gw-alloc-unallocated,
+.gw-alloc-unknown {
+  background: repeating-linear-gradient(
+    45deg,
+    var(--muted),
+    var(--muted) 2px,
+    transparent 2px,
+    transparent 4px
+  );
+  border-color: var(--muted);
+}
+
+.gw-alloc-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 0.35rem 0 0;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+/* Months inside the regulator's own completeness lag. The Commission states production
+   records are substantially complete after about six months, so the tail of every Texas chart
+   is systematically under-filed — and a reader sees a decline, not an incompleteness, unless
+   the months say which they are. */
+.gw-month-incomplete {
+  opacity: 0.55;
+  box-shadow: inset 0 -2px 0 0 var(--amber);
+}
+
+/* The border says "read me"; the colour is the chip's own. --ink is the near-black in this
+   palette, not the text colour: setting it here painted the share invisible on the panel, which
+   is what the 390 px shot showed and no unit test could have. */
+/* inline-block on both: a border is painted once per line box, so an inline chip that wraps
+   mid-content reads as two chips -- one of them a bordered "100%" with nothing to say what
+   of, which is a naked number on the surface built against them (M4). */
+.gw-alloc-share,
+.gw-alloc-coverage {
+  border-color: var(--amber);
+  display: inline-block;
+}
+
+.gw-alloc-coverage {
+  margin: 0.35rem 0 0;
+}
+
+/* How the number was arrived at, beside the state and never after it. The band says it across
+   the series; this is the one place a reader is reading a single number. */
+.gw-readout-alloc {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--muted);
 }

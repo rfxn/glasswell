@@ -20,13 +20,17 @@ import { setSessionState, setStatus, setVintage, toast } from "./chrome/status.t
 import { highlight } from "./glossary/index.ts";
 import { termIndex } from "./glossary/store.ts";
 import "./glossary/gw-term.ts";
-import { renderLineageDrawer } from "./lineage/drawer.ts";
 // Type-only, so it emits no import edge and the map stays out of the entry chunk.
 import type { MapHandle } from "./map/map.ts";
 import { createSearch } from "./search/search.ts";
 
 const mapHost = required("gw-map");
 const cardHost = required("gw-card");
+const railChrome = required("gw-rail-chrome");
+const railToggle = required("gw-rail-toggle");
+const railStripName = required("gw-rail-strip-name");
+const railLocate = required("gw-rail-locate");
+const railGrab = required("gw-rail-grab");
 const drawerHost = required("gw-drawer");
 const keyHost = required("gw-key-host");
 const exploreHost = required("gw-explore");
@@ -51,6 +55,16 @@ let renderGeneration = 0;
 let unmountExplorer: (() => void) | undefined;
 let unmountStatusPage: (() => void) | undefined;
 let hadSession = false;
+// Collapse is a reader's affordance and never a state the app chooses, so it is per session
+// and never in the URL: a shared link opens the rail, because the link's purpose is the well.
+let railCollapsed = false;
+let railWell = "";
+let railPoint: { lon: number; lat: number } | null = null;
+// The well the card host is currently showing, which is not the same question as which well
+// the URL names once a popstate has replayed the state.
+let mountedWell: string | null = null;
+let sheetWired = false;
+const sheetWidth = window.matchMedia("(max-width: 900px)");
 
 function required(id: string): HTMLElement {
   const element = document.getElementById(id);
@@ -58,19 +72,121 @@ function required(id: string): HTMLElement {
   return element;
 }
 
+/**
+ * The rail's posture, in one place. `data-rail` drives the grid template, so a hidden rail
+ * reserves no column from Explore or from a map with no well open. Collapsed yields to an
+ * open drawer, which needs the rail's column to stack in.
+ */
+function applyRail(): void {
+  const open = !cardHost.hidden;
+  const collapsed = open && railCollapsed && shell.getAttribute("data-drawer") !== "open";
+  shell.setAttribute("data-rail", open ? (collapsed ? "collapsed" : "open") : "closed");
+  railChrome.hidden = !open;
+  const named = railWell || "the well card";
+  railToggle.setAttribute("aria-expanded", String(!collapsed));
+  railToggle.setAttribute("aria-label", collapsed ? `Expand ${named}` : `Collapse ${named}`);
+  railStripName.textContent = railWell;
+  // §9: a reader arriving by landmark hears which well, not that there is a card somewhere.
+  cardHost.setAttribute("aria-label", railWell ? `Well card: ${railWell}` : "Well card");
+  railLocate.hidden = railPoint === null;
+  railLocate.setAttribute("aria-label", `Centre the map on ${named}`);
+  railGrab.hidden = !sheetWidth.matches;
+  if (!open || !sheetWidth.matches || sheetWired) return;
+  sheetWired = true;
+  // The gesture and the slider are the phone posture's alone, so a desktop reader who never
+  // sees a grab bar never downloads the module that drives it.
+  void import("./card/sheet.ts").then(({ wireSheet }) => wireSheet(shell, railGrab));
+}
+
+railToggle.addEventListener("click", () => {
+  railCollapsed = !railCollapsed;
+  applyRail();
+});
+
+// Unconditionally, unlike the opening fly-to: this is the reader's own control for putting a
+// well back in view, which matters in a rail because the map can be panned away from a card
+// that is still open.
+railLocate.addEventListener("click", () => {
+  if (railPoint) flyTo({ ...railPoint, zoom: 12 });
+});
+
+sheetWidth.addEventListener("change", () => applyRail());
+
+// The card is the only module that knows what a section is; this one is the only writer of
+// app state. SECTION_SET_EVENT, as a literal for the same reason the dispatch above is.
+document.addEventListener("gw-section-set", (event) => {
+  const { id, mode } = (event as CustomEvent<{ id: string | null; mode: "push" | "replace" }>)
+    .detail;
+  commit({ section: id }, mode);
+});
+
+// card/chart -> here, for the same reason the section event exists: main is the single writer
+// of app state, and a control that changes what a figure IS -- the window a brush leaves, the
+// basis a normalisation applies -- has to reach the URL so the link is shareable and the
+// server answers it on reload. `replace`, never `push`: a drag is not a navigation.
+document.addEventListener("gw-param-set", (event) => {
+  const { params } = (event as CustomEvent<{ params: Record<string, string | null> }>).detail;
+  const extra = { ...state.extra };
+  for (const [key, value] of Object.entries(params)) {
+    if (value === null) delete extra[key];
+    else extra[key] = [value];
+  }
+  commit({ extra }, "replace");
+});
+
 function commit(next: Partial<AppState>, mode: "push" | "replace" = "push"): void {
   state = { ...state, ...next };
   writeState(state, mode);
 }
 
-function showWell(api10: string | null, mode: "push" | "replace" = "push"): void {
-  commit({ well: api10 }, mode);
+/**
+ * `chosen` is a reader picking a well: from the map, from search, from a link. A replay is
+ * not a choice, and the difference is the whole of §2.2a -- the section belongs to the entry
+ * the reader is returning to, so back to another well restores the section it recorded.
+ */
+function showWell(
+  api10: string | null,
+  mode: "push" | "replace" = "push",
+  chosen = true,
+): void {
+  // A section-only popstate must not tear the card down. followHistory replays the well on
+  // every entry, renderWellCard begins by replacing every child of the host, and the reader
+  // would lose every lazily loaded section, every disclosure they opened and their place in
+  // the scroll -- and every section would be requested again. Same well, already mounted: the
+  // state is committed and the card is told which section the URL now names.
+  // Against the well that is mounted, not against state.well: followHistory assigns the new
+  // state before it replays, so on a popstate state.well is already the well being asked for
+  // and would answer "unchanged" every time.
+  const previous = mountedWell;
+  const same =
+    previous === api10 && api10 !== null && !cardHost.hidden && cardHost.childElementCount > 0;
+  // Choosing a different well is choosing a different card, so a section named for the last
+  // one does not survive it. A first mount is not a change and keeps the one a deep link
+  // asked for, and a replay keeps what its own history entry recorded.
+  const carried = chosen && previous !== null && previous !== api10 ? { section: null } : {};
+  commit({ well: api10, ...carried }, mode);
+  if (same) {
+    // card/sections.ts's SECTION_EVENT, kept as a literal so this module carries no import
+    // edge into the card chunk it is deliberately split from. sections.test.ts holds the two
+    // spellings together.
+    document.dispatchEvent(new CustomEvent("gw-section", { detail: { id: state.section } }));
+    return;
+  }
   wellSelected(api10);
   if (!api10) {
     cardHost.hidden = true;
     cardHost.replaceChildren();
+    railWell = "";
+    railPoint = null;
+    mountedWell = null;
+    applyRail();
     return;
   }
+  // The api10 until the card's own heading lands: the rail's controls are named from the
+  // start rather than reading "the well card" for the length of a fetch.
+  railWell = api10;
+  railPoint = null;
+  mountedWell = api10;
   const source = pendingSource;
   // Loaded on the first well opened, not by every reader who loads the app: the card is the
   // largest module on the entry path and a reader who never clicks a dot never needs it. The
@@ -92,9 +208,16 @@ function showWell(api10: string | null, mode: "push" | "replace" = "push"): void
         onLocated: (point) => {
           const opening = source === "url" && deepLinkNeedsCamera;
           if (opening) deepLinkNeedsCamera = false;
+          railPoint = point;
+          applyRail();
           if (source === "search" || opening) flyTo({ ...point, zoom: 12 });
         },
       });
+    })
+    .then(() => {
+      if (state.well !== api10) return;
+      railWell = cardHost.querySelector("h2")?.textContent ?? api10;
+      applyRail();
     })
     .catch((error: unknown) => {
       // A chunk that will not load is the one failure the card cannot report itself. Silence
@@ -111,12 +234,31 @@ function showWell(api10: string | null, mode: "push" | "replace" = "push"): void
 function openExplain(handle: string | null, mode: "push" | "replace" = "push"): void {
   commit({ explain: handle }, mode);
   shell.setAttribute("data-drawer", handle ? "open" : "closed");
+  applyRail();
   if (!handle) {
     drawerHost.hidden = true;
     drawerHost.replaceChildren();
     return;
   }
-  void renderLineageDrawer(drawerHost, handle, { onClose: () => openExplain(null) });
+  // Loaded on the first handle a reader opens, not by every reader who loads the app: the
+  // drawer renders only after a click most readers never make, and the entry chunk is what
+  // every first paint pays for. The guard is showWell's, for the same reason — the chunk can
+  // land after the reader has closed the drawer or opened another handle, and `state.explain`
+  // is the selection of record.
+  void import("./lineage/drawer.ts")
+    .then(({ renderLineageDrawer }) => {
+      if (state.explain !== handle) return undefined;
+      return renderLineageDrawer(drawerHost, handle, {
+        onClose: () => openExplain(null),
+        returnTo: railWell || null,
+      });
+    })
+    .catch((error: unknown) => {
+      // The drawer reports its own request failures; a chunk that will not load is the one
+      // failure it cannot, and silence here is a handle that opened nothing.
+      if (state.explain === handle) openExplain(null, "replace");
+      toast(`Lineage ${handle} could not be opened: ${String(error)}`);
+    });
 }
 
 /**
@@ -243,7 +385,7 @@ async function followHistory(): Promise<void> {
   if (next.view !== previousView) await renderView();
   if (generation !== historyGeneration) return;
   if (next.view === "map") {
-    showWell(next.well, "replace");
+    showWell(next.well, "replace", false);
     openExplain(next.explain, "replace");
   } else {
     hideMapOverlays();
@@ -256,6 +398,10 @@ function hideMapOverlays(): void {
   drawerHost.hidden = true;
   drawerHost.replaceChildren();
   shell.setAttribute("data-drawer", "closed");
+  railWell = "";
+  railPoint = null;
+  mountedWell = null;
+  applyRail();
 }
 
 async function renderView(): Promise<void> {
@@ -412,6 +558,7 @@ async function start(): Promise<void> {
   });
 
   shell.setAttribute("data-drawer", "closed");
+  applyRail();
 
   // The map writes its own share parameters; mirror them so a later viewport commit,
   // which serialises the snapshot taken at boot, does not drop them.
@@ -427,7 +574,7 @@ async function start(): Promise<void> {
   // before that would fire into a bus the map has not joined.
   await renderView();
 
-  if (state.view === "map" && state.well) showWell(state.well, "replace");
+  if (state.view === "map" && state.well) showWell(state.well, "replace", false);
   if (state.view === "map" && state.explain) openExplain(state.explain, "replace");
   if (window.location.search === "") {
     window.history.replaceState(state, "", serializeState({ ...DEFAULT_STATE, ...state }));

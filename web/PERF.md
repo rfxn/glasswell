@@ -106,13 +106,70 @@ owed card mounts landed, and that is what it measures: `bridge.ts` is now reache
 explorer's shell chunk and into the entry. Verified rather than inferred — `gw-crossing`
 (`explore/bridge.ts:306`) appears in `index-*.js` and not in `shell-*.js`.
 
+**That paragraph stopped being true when the card was split and is corrected here.** `bridge.ts`
+is reached from `card/card.ts` and from nowhere the entry chunk carries, so it left the entry
+with the card. Re-measured on `7ff303c`: `gw-crossing` occurs **0** times in the chunk
+`dist/index.html` names and lives in `bridge-*.js`. Counted with `grep -o ... | wc -l` over the
+resolved chunk, because `grep -c` counts matching *lines* and a minified chunk is two of them.
+The conclusion the paragraph drew survives for a different reason — the card reaches `bridge.ts`
+through its own chunk — but the entry-path claim itself is stale and no budget decision should
+rest on it.
+
 ### The budgets
 
 | budget | B gzipped | headroom over measured |
 |---|---:|---|
-| entry chunk | 14,000 | +0.4% over 13,950 (v0.78; was +0.5% over 13,928 in v0.76) |
-| explorer route, map excluded | 75,000 | +4.9% over 71,511 |
+| entry chunk | 14,000 | +7.5% over 13,026 (v0.80 P0, drawer split; was +0.4% over 13,950 at v0.78 and +0.5% over 13,928 at v0.76) |
+| **entry stylesheet** | **7,400** | the ratcheted value: 7,367 measured at the card group's last phase plus 33 B. Was 7,420 — the 6,520 measured on the v0.77 tree plus the 900 B ceiling the rail was allowed to spend |
+| explorer route, map excluded | 79,700 | +0.9% over **78,971**, re-walked at the card group's last phase. The same build on the merge commit measures 76,110 (76,103 at the merge itself; the 7 B is the jitter above), so P5 and P6 spent **2,861 B**. Texas measured 76,412 on its own head and set 79,700; the card measured 74,544 on its own; neither number described the tree both landed in |
 | map chunk | 330,000 | +5.2% over 313,823 |
+
+**The fourth budget, and why it is the only one carrying deliberate slack.** The other three
+were set at about 5% over a measurement and ratchet downwards. `entryCssGzip` was set at
+**7,420 B**: the **6,520 B** measured on the v0.77 tree plus the **900 B** the well card's rail
+is allowed to spend on the grid, the collapse strip, three sheet snap points, ten section headers
+and the touch rules the card's own controls need. That ceiling is spent on purpose in this
+release and recovered at the end of it. **A budget carrying unspent slack has stopped being a
+ratchet, so the slack has an expiry.** The gap it closes is real: `bundle-budget.test.ts`
+resolves `assets/([\w.-]+\.js)` out of `dist/index.html` and matched no stylesheet at all, so a
+30 kB CSS addition passed every budget in the file.
+
+**The ratchet, and why it is not "measured + 5%".** The rule the card spec wrote was *ratchet to
+the measured value plus 5%*, which assumes the rail leaves most of its ceiling unspent. It did
+not: the stylesheet measures **7,367 B** at the card group's last phase, so the rail spent
+**860 of its 900 B** on the grid, the strip, the snap points, the section headers, the chart's
+own controls and three new sections. Measured + 5% is **7,735 B**, which is **315 B above the
+budget it was meant to tighten** — applying the formula would raise a budget §0 P-6 and §11's
+fourteenth non-goal both forbid raising. The ratchet takes back what is actually unspent
+instead: **7,420 → 7,400**, which is the measurement plus **33 B**, about five times the largest
+jitter this section records and 20 B of ceiling returned. The number a formula produces is not
+the number when the formula produces a raise; what the tree measures decides, and it is written
+down here rather than resolved silently.
+
+The v0.77 tree measured 6,520 B and this one measures 6,507; the stylesheet did not change
+between them and the 13 bytes are the jitter the paragraph above describes. The budget is the
+ruled 7,420 either way.
+
+**The explorer route's recorded number was two trains stale, and that mattered.** This table
+carried 71,511 B from the "Wells by ..." panel onward. Re-walked on `7ff303c` the same route
+measures **74,838 B**, so the headroom was **162 B** rather than 3,489. The v0.78 seam and the
+all-jurisdictions facet panel each spent some of it and neither re-recorded the total. It is
+re-measured here because a budget nobody re-walks is a number, not an instrument, and because
+P0's own change is the size that would have silently broken it.
+
+**Why the lineage drawer is cut from that route, and why cutting it is not a way of passing.**
+The number this budget protects is what a reader who lands on `?view=explore` downloads. Every
+chunk left on the route is fetched on landing; the five cuts are branches a reader reaches only
+by acting. The drawer became the sixth when it moved behind a dynamic import: `openExplain`
+runs at boot only behind `state.view === "map"` and `followHistory` takes its else-branch on
+every other view, so no Explore reader fetches it by landing, and one who clicks a handle
+fetches 1,376 B on the click rather than carrying 938 B of it in the entry chunk from the
+start. **Left uncut the walked total reads 75,284 B and the budget fails** — not because the
+reader downloads more, but because a 4 kB module gzips worse alone than inside a 40 kB chunk.
+That artifact is exactly what the card's own cut was added for in v0.73: a split always raises
+the walked total and always lowers what lands. Cut, the route measures **73,925 B**, which is
+**913 B less than the same walk on the base tree**, and it is the number a reader would
+recognise.
 
 The entry was re-measured again when the well card moved to a dynamic import. `card/card.ts`
 and everything only it reaches — `gw-figure`, `card/format.ts`, the completion and neighbour
@@ -121,6 +178,39 @@ panel that renders only after a well is clicked, and a reader who opens the expl
 clicks one. The card became its own 4.5 kB chunk and the entry fell 21,340 → 12,750 B. The
 explorer route is measured with the card cut, on the same ruling its neighbour and status-chip
 branches were already cut under: it only ever renders over the map.
+
+**Re-measured at v0.80's own head** (`feat/tx-lease-production`, the Texas fix round), because
+the figure the raise was argued from was not this tree's. The v0.79 note cited 71,511 B
+as the route before the band; the well-card track's P0 measured the same route at **74,838 B**
+at its own base and **76,438 B** uncut, so 71,511 was a stale before-figure and the 4,447 B the
+note attributes to the band is not the band's cost. What the route measures on this branch,
+by the test's own walk over `bridge`, `chart`, `gw-count`, `index`, `jurisdictions.generated`,
+`load`, `notes`, `series`, `shell` and `wells-by`, with the map, Status, card, neighbour and
+status-chip branches cut:
+
+| tree | explorer route, gzipped |
+|---|---:|
+| v0.79 note's cited before-figure (stale) | 71,511 |
+| `feat/well-card-2` P0, same walk at its base | 74,838 (76,438 uncut) |
+| **`feat/tx-lease-production` @ this head** | **76,412** |
+
+The budget stays at **79,700**, which is this measurement plus 4.3%. It is not re-derived
+upward to 76,412 + 4.9% = 80,156: a ratchet moves as far as a measurement forces it and no
+further, and the number above already fits with headroom in the band the other two budgets
+carry. `BUDGET_BYTES` will conflict with `feat/well-card-2` at the v0.81 train; the arithmetic
+here is what the integrator resolves it against.
+
+**Why the band is on the route at all**, which is the part of the v0.79 note that still
+stands: the chart chunk carries a second state band with its own six-class vocabulary, its own
+key, and the per-month class, divisor and completeness arrays behind them, and it sits on the
+route rather than behind a second dynamic import on purpose — it renders inside the plot, so a
+chart that had to fetch another chunk before it could say whether a point was observed or
+allocated would draw the number first and the label after it. That ordering is the one thing
+the band exists to prevent.
+
+*(The v0.79 note's figures — "71,511 → 75,958 B" and "measured + 4.9%" — are superseded by the
+table above and have been removed rather than left below their own correction: a reader who
+scrolled here first got the number the block above exists to retire.)*
 
 The budget was set from 12,750 B, measured before the review round that followed it. The
 stale-selection guard, the rejection handler and the per-detail warning grouping put the
@@ -309,6 +399,8 @@ single green check. Append; do not overwrite.
 
 | date | commit | entry gzip B | explorer route gzip B | map chunk gzip B | note |
 |---|---|---:|---:|---:|---|
+| 2026-09-02 | v0.80 P0 (`7ff303c` + the split) | **13,026** | **73,925** | 318,073 | The lineage drawer moved behind a dynamic import, which is what funds the well card's second generation. Measured on the same tree before and after: entry **13,947 → 13,026 gzip**, **921 B returned** (raw 40,254 → 36,539), against 53 B of headroom before it and 974 B after. `gw-chain` occurs **3** times in the entry chunk before and **0** after, counted with `grep -o` piped to `wc -l` over the chunk `dist/index.html` names, because `grep -c` counts lines and a minified chunk is two of them. The drawer is now `drawer-*.js`, 4,060 B raw / **1,376 B gzip**, fetched on the first handle a reader opens and by no reader who opens none. The explorer route is re-walked in the same act: **74,838 B** on the base tree against the 71,511 this file recorded, and **73,925 B** here with the drawer cut on the rule the paragraph above states. The entry stylesheet is unchanged at 6,507 B and gains the fourth budget in the same commit, at the ruled 7,420 B |
+| 2026-09-04 | v0.81 card P7 (`0d68f51`) | **13,666** | **78,971** | 325,643 | The card's second generation, measured at the group's last phase on a clean head and against the same build on the merge commit `7324027`, which is the only base that attributes anything: entry **13,576 → 13,666** (+90), explorer route **76,110 → 78,971** (+2,861), entry stylesheet **7,396 → 7,367** (-29), map chunk **325,642 → 325,643** (+1, the jitter class, and none of it this branch's). P5's chart controls and P6's peer, pools and export sections ride cut chunks (`chart`, `table`, `card`, `drawer`, `sheet`); what the route gained is the card's request layer and the shell that reaches them. The stylesheet **fell** across a group that added three sections, because the drawer's chrome moved to `lineage/drawer.css` while the rail's own rules stayed on the entry sheet. **The budget ratchets 7,420 → 7,400**, the measurement plus 33 B: measured + 5% is 7,735 and would be a 315 B raise, so the ratchet takes back what is unspent instead. Against the row below, the entry is +640 and the route +5,046 — most of that the Texas train's, which this row does not claim |
 | 2026-08-21 | `ff9a0ae` | 341,517 | — | — | one chunk; no split, no explorer |
 | 2026-08-21 | C0 | 38,498 | — | 302,369 | map moved behind a dynamic import |
 | 2026-08-21 | C11 | 44,192 | 62,817 | 313,823 | first measurement of the explorer route |

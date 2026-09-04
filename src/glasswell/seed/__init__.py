@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import psycopg
 
+from glasswell.seed.conformance_basin_context import (
+    BASIN_CONTEXT_RULES,
+    seed_conformance_basin_context,
+)
 from glasswell.seed.conformance_basins import BASIN_RULES, seed_conformance_basins
 from glasswell.seed.conformance_c115b import (
     C115B_RULES,
@@ -31,7 +35,17 @@ from glasswell.seed.conformance_status_classes import (
     STATUS_CLASS_RULES,
     seed_conformance_status_classes,
 )
-from glasswell.seed.conformance_tx import TX_RULES, seed_conformance_tx
+from glasswell.seed.conformance_status_history import (
+    HISTORY_RULE_IDS,
+    STATUS_HISTORY,
+    seed_conformance_status_history,
+)
+from glasswell.seed.conformance_tx import (
+    ALLOCATION_RULES,
+    TX_RULES,
+    seed_conformance_allocation,
+    seed_conformance_tx,
+)
 from glasswell.seed.conformance_typecurve import TYPECURVE_RULES, seed_conformance_typecurve
 from glasswell.seed.conformance_vintage import VINTAGE_RULES, seed_conformance_vintage
 from glasswell.seed.features import FEATURE_SPECS, FEATURE_VERSION, seed_features
@@ -61,6 +75,8 @@ from glasswell.seed.schedules import (
 from glasswell.seed.status_classes import STATUS_CLASSES, seed_status_classes
 
 __all__ = [
+    "ALLOCATION_RULES",
+    "BASIN_CONTEXT_RULES",
     "BASIN_RULES",
     "C115B_RULES",
     "CO_RULES",
@@ -70,6 +86,7 @@ __all__ = [
     "FORMATION_ALIASES",
     "FRACFOCUS_RULES",
     "GLOSSARY_SEED_PATH",
+    "HISTORY_RULE_IDS",
     "JOBS",
     "JOB_SOURCES",
     "JURISDICTIONS",
@@ -89,11 +106,14 @@ __all__ = [
     "SOURCES",
     "STATUS_CLASSES",
     "STATUS_CLASS_RULES",
+    "STATUS_HISTORY",
     "TX_RULES",
     "TYPECURVE_RULES",
     "VINTAGE_RULES",
     "load_glossary_seed",
     "seed_all",
+    "seed_conformance_allocation",
+    "seed_conformance_basin_context",
     "seed_conformance_basins",
     "seed_conformance_c115b",
     "seed_conformance_fracfocus",
@@ -106,6 +126,7 @@ __all__ = [
     "seed_conformance_producing",
     "seed_conformance_schedules",
     "seed_conformance_status_classes",
+    "seed_conformance_status_history",
     "seed_conformance_tx",
     "seed_conformance_typecurve",
     "seed_conformance_vintage",
@@ -130,6 +151,11 @@ def seed_all(connection: psycopg.Connection) -> dict[str, int]:
     # numbers differ from the second's, which is the only thing the idempotence check has to
     # go on.
     return {
+        # First of all, and for the reason the block above gives twice over: one of its five
+        # rule ids carries the `cr_tx_` prefix seed_conformance_tx counts on, so seeded after
+        # it the first run's number would differ from the second's. It registers the boundary
+        # source it is filed under, exactly as the seeder below it does.
+        "conformance_rules_basin_context": seed_conformance_basin_context(connection),
         "conformance_rules_tx": seed_conformance_tx(connection),
         "conformance_rules_land": seed_conformance_land(connection),
         "conformance_rules_c115b": seed_conformance_c115b(connection),
@@ -142,6 +168,11 @@ def seed_all(connection: psycopg.Connection) -> dict[str, int]:
         # and the number seed_sources returns is a registry total.
         "conformance_rules_basins": seed_conformance_basins(connection),
         "sources": seed_sources(connection),
+        # After seed_sources, which registers the Montana PRU file this rule is filed
+        # under, and before the Montana seeder, whose count is a registry total over the
+        # mt_ source prefix: seeded after it, the first run's number would differ from
+        # the second's.
+        "conformance_rules_allocation": seed_conformance_allocation(connection),
         # Straight after seed_sources, which is the first point at which every source a cadence
         # rule can be filed under exists. It goes here rather than last because the four
         # seeders below count by source-id prefix and a cadence rule carries one of those
@@ -174,6 +205,9 @@ def seed_all(connection: psycopg.Connection) -> dict[str, int]:
         # nm_ocd_ source ids and the count seed_conformance_nm returns is a registry total over
         # that prefix. Seeded after it, the first run's number would differ from the second's.
         "conformance_rules_nm_wells": seed_conformance_nm_wells(connection),
+        # Same place, same reason: one nm_ocd_wellhistory row. It must also land before
+        # seed_jurisdictions, whose rule insert is guarded on the conformance row existing.
+        "conformance_rules_status_history": seed_conformance_status_history(connection),
         "conformance_rules_nm": seed_conformance_nm(connection),
         "conformance_rules_mt": seed_conformance_mt(connection),
         "nm_stream_map": seed_nm_streams(connection),

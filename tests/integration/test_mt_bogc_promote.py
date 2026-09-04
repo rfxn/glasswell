@@ -251,10 +251,13 @@ def test_every_promoted_row_carries_a_resolvable_derivation(db, promoted):
 
 
 def test_the_promotion_derivation_records_the_liquids_basis_and_the_state(db, promoted):
+    """Scoped to the production promotions: a membership row has no volume, so a liquids basis
+    on its derivation would be a claim about a number it does not carry."""
     params = query(
         db,
         "select distinct params ->> 'liquids_basis', params ->> 'state_code'"
-        "  from lineage.derivations where operation = 'canonical.promote'",
+        "  from lineage.derivations where operation = 'canonical.promote'"
+        "   and output_dataset = 'canonical.production_monthly'",
     )
     assert params == [("oil+condensate", "25")]
 

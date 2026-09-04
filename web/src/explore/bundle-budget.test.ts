@@ -22,9 +22,26 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 // because the card and its tail — figures, formatting, the completion and neighbour panels —
 // had been riding it for every reader, including one who never opens a well. Re-tightened for
 // the same reason the chart's move was: leaving 9 kB of slack in place would stop it ratcheting.
+// The fourth budget closes a gap the other three left open: the resolver below reads `.js`
+// out of `dist/index.html` and nothing has ever measured the stylesheet beside it, so a
+// 30 kB CSS addition passed all three. Set once at 7,420 B — the 6,520 B measured on the
+// v0.77 tree plus the 900 B the well card's rail is allowed to spend — and ratcheted at the
+// end of the v0.81 card group. The rail spent 860 of its 900 B, so measured + 5 % is 7,735
+// and would be a 315 B raise: the ratchet takes the unspent ceiling back instead, to 7,400,
+// which is the 7,367 measured on this head plus 33 B — about five times the largest jitter
+// §3 records. Spending the ceiling was deliberate; raising it is a failed exit.
+// Re-measured on the MERGED tree at the v0.81 card merge, which is the first walk that carries
+// both trains: the Texas allocation band (which raised the route from 74,838 to 76,412 on its
+// own head) and the card's six cuts. The route measured 76,103 B there, so the budget stays at
+// the 79,700 B the Texas train set and the merge raises nothing. Neither branch's own number
+// describes the tree they land in. Re-walked at the card group's last phase, with P5's chart
+// controls and P6's three sections landed: 78,971 B, which is 729 B of headroom rather than
+// 3,597. The chart, table, peer, pools and export modules all ride cut chunks; what grew on
+// the route is the card's request layer and the shell that reaches it.
 const BUDGET_BYTES = {
   entryGzip: 14_000,
-  explorerRouteGzip: 75_000,
+  entryCssGzip: 7_400,
+  explorerRouteGzip: 79_700,
   mapChunkGzip: 330_000,
 };
 
@@ -91,10 +108,37 @@ const entryChunks = (): string[] =>
     (match) => match[1]!,
   );
 
+/** The same resolution one extension along, because the stylesheet ships on the same document. */
+const entryStyles = (): string[] =>
+  [...readFileSync(join(dist, "index.html"), "utf8").matchAll(/assets\/([\w.-]+\.css)/g)].map(
+    (match) => match[1]!,
+  );
+
 describe("what the explorer's shell costs the reader", () => {
   it("keeps the entry chunk inside its budget", () => {
     const measured = entryChunks().reduce((sum, name) => sum + gzip(name), 0);
     expect(measured, `entry chunk ${measured} B gzipped`).toBeLessThanOrEqual(BUDGET_BYTES.entryGzip);
+  });
+
+  it("keeps the entry stylesheet inside its budget", () => {
+    const styles = entryStyles();
+    expect(styles, "index.html names no stylesheet").not.toHaveLength(0);
+    const measured = styles.reduce((sum, name) => sum + gzip(name), 0);
+    expect(measured, `entry stylesheet ${measured} B gzipped`).toBeLessThanOrEqual(
+      BUDGET_BYTES.entryCssGzip,
+    );
+  });
+
+  it("keeps the lineage drawer out of the entry chunk", () => {
+    // The same structural shape as the maplibre assertion below: the drawer opens on a click
+    // that most readers never make, and a static import from any module the entry reaches
+    // would put its 7.9 kB of source back on every first paint. Counted with a global match
+    // rather than `grep -c`, which counts lines and answers 1 for a minified chunk.
+    for (const name of entryChunks()) {
+      const source = readFileSync(join(dist, "assets", name), "utf8");
+      const occurrences = source.match(/gw-chain/g)?.length ?? 0;
+      expect(occurrences, `${name} carries the lineage drawer`).toBe(0);
+    }
   });
 
   it("keeps the explorer route, other surfaces excluded, inside its budget", () => {
@@ -112,6 +156,23 @@ describe("what the explorer's shell costs the reader", () => {
     // it rode inside the entry chunk, so an explorer reader was measured — and charged — for a
     // panel that only ever renders over the map. Cutting it is the same ruling as its children.
     const card = named("card");
+    // The lineage drawer is the sixth, and it is cut on the sentence above rather than on the
+    // map-only one: it renders over both surfaces, and it is downloaded over neither until the
+    // reader clicks a handle. `openExplain` runs at boot only behind `state.view === "map"`
+    // (main.ts's `start`), and `followHistory` takes its else-branch on every other view, so no
+    // reader reaches it by landing. Cutting it is what keeps this number meaning first paint:
+    // moving a module out of the entry chunk always raises the walked total, because a 4 kB
+    // chunk gzips worse alone than inside a 40 kB one, while the bytes the reader downloads on
+    // landing fall. That is the trap the card's own cut was added for in v0.73.
+    const drawer = named("drawer");
+    // The bottom sheet's gesture is cut on the map-only ruling, not the drawer's: the card
+    // never renders over Explore, so the branch that sizes it never runs here.
+    const sheet = named("sheet");
+    // The chart's table alternative, cut on the drawer's own ruling: it is fetched when a
+    // reader presses `Table` and by nobody who lands. Left uncut the walked total rises by
+    // about 500 B while what a reader downloads on landing falls, which is the split artifact
+    // the paragraph above describes.
+    const table = named("table");
     const route = reach(
       [...entryChunks(), named("shell")],
       (name) =>
@@ -119,7 +180,10 @@ describe("what the explorer's shell costs the reader", () => {
         name === status ||
         name === neighbors ||
         name === statusChip ||
-        name === card,
+        name === card ||
+        name === drawer ||
+        name === sheet ||
+        name === table,
     );
     const measured = route.reduce((sum, name) => sum + gzip(name), 0);
 
@@ -132,6 +196,8 @@ describe("what the explorer's shell costs the reader", () => {
     expect(route, "the well-card status chip is not on the explorer route").not.toContain(
       statusChip,
     );
+    expect(route, "the lineage drawer is not on the explorer route").not.toContain(drawer);
+    expect(route, "the well card's bottom sheet is not on the explorer route").not.toContain(sheet);
     expect(measured, `explorer route ${measured} B gzipped over ${route.join(", ")}`).toBeLessThanOrEqual(
       BUDGET_BYTES.explorerRouteGzip,
     );

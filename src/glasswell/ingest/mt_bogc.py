@@ -100,6 +100,17 @@ class GrainReport:
 
 
 @dataclass(frozen=True, slots=True)
+class MembershipReport:
+    derivation_id: str
+    pairs: int = 0
+    rows_appended: int = 0
+    lease_units: int = 0
+    wells: int = 0
+    sentinel_rows: int = 0
+    wells_without_a_unit: int = 0
+
+
+@dataclass(frozen=True, slots=True)
 class IngestReport:
     manifest_id: str
     source_key: str
@@ -107,6 +118,7 @@ class IngestReport:
     unchanged: bool
     well: GrainReport | None = None
     pru: GrainReport | None = None
+    membership: MembershipReport | None = None
 
 
 def liquids_basis() -> str:
@@ -857,6 +869,10 @@ def ingest_archive(
         member=PRU_MEMBER, staged=pru_staged, counts=pru_counts,
     )
 
+    membership = promote_lease_membership(
+        run, manifest=manifest, parse_rules=well_parse, sentinel=sentinel
+    )
+
     for source_id, grain in ((SOURCE_ID, well), (PRU_SOURCE_ID, pru)):
         record_vintage_day(
             connection,
@@ -879,6 +895,129 @@ def ingest_archive(
         unchanged=fetched.unchanged,
         well=well,
         pru=pru,
+        membership=membership,
+    )
+
+
+_MT_MEMBERSHIP_PAIRS = f"""
+select distinct api_wellno, lease_unit
+  from {WELL_STAGING}
+ where manifest_id = %(manifest_id)s
+   and lease_unit is not null and btrim(lease_unit) <> ''
+"""
+
+_MT_SENTINEL_ROWS = f"""
+select count(*) from {WELL_STAGING}
+ where manifest_id = %(manifest_id)s and btrim(lease_unit) = %(sentinel)s
+"""
+
+_INSERT_MT_MEMBERSHIP = """
+insert into canonical.lease_membership
+    (jurisdiction_code, lease_key, api10, link_role, source_id, effective_from,
+     source_manifest_id, derivation_id)
+values ('MT', %(lease_key)s, %(api10)s, 'filing_derived', %(source_id)s, %(effective_from)s,
+        %(manifest_id)s, %(derivation_id)s)
+on conflict do nothing
+"""
+
+
+def promote_lease_membership(
+    run: IngestRun,
+    *,
+    manifest: Any,
+    parse_rules: Sequence[ConformanceRule],
+    sentinel: str,
+) -> MembershipReport:
+    """Montana's well-to-lease-unit membership, promoted into canonical before anything reads it.
+
+    The lease unit exists only on `staging.mt_bogc_well.lease_unit`, and a mart reading staging
+    is the breach `marts/producing.py:9-10` names -- so the back-test that scores the allocation
+    method against Montana cannot reach it until it is here.
+
+    `link_role` is `filing_derived` and not `canonical_crosswalk`: this is read off the
+    production file's own column, while Texas's rows are a crosswalk table the regulator
+    publishes. Calling both a published crosswalk would misdescribe half the table on the day
+    it ships.
+
+    The `-999` sentinel is nulled and never keyed. Treating it as data would mint a lease named
+    -999 that aggregates unrelated wells across the whole state, which is exactly what
+    `cr_mt_lease_unit_sentinel_1` exists to prevent.
+    """
+    connection = run.connection
+    identity = api10_identity(rule_for_family(parse_rules, IDENTITY_FAMILY))
+    with connection.cursor() as cursor:
+        cursor.execute(_MT_SENTINEL_ROWS, {"manifest_id": manifest.manifest_id,
+                                           "sentinel": sentinel})
+        sentinel_rows = int(cursor.fetchone()[0])
+        cursor.execute(_MT_MEMBERSHIP_PAIRS, {"manifest_id": manifest.manifest_id})
+        staged = cursor.fetchall()
+
+    pairs: set[tuple[str, str]] = set()
+    unidentified = 0
+    for api_wellno, lease_unit in staged:
+        unit = (lease_unit or "").strip()
+        if unit == sentinel or not unit:
+            continue
+        api10 = identity.normalize(api_wellno)
+        if api10 is None:
+            unidentified += 1
+            continue
+        pairs.add((unit, api10))
+
+    with derive(
+        "canonical.promote",
+        output=OutputSpec(
+            store="postgres",
+            dataset="canonical.lease_membership",
+            partition={"manifest_id": manifest.manifest_id, "jurisdiction_code": "MT"},
+        ),
+        params={
+            "link_role": "filing_derived",
+            "sentinel_rule": rule_for_family(parse_rules, SENTINEL_FAMILY).rule_id
+            if any(rule.rule_family == SENTINEL_FAMILY for rule in parse_rules)
+            else None,
+            "sentinel_rows": sentinel_rows,
+            "merge_forbidden": True,
+        },
+        inputs=[
+            InputRef(
+                kind="manifest",
+                ref_id=manifest.manifest_id,
+                role="primary",
+                as_of_vintage=manifest.fetch_vintage,
+            )
+        ],
+    ) as context:
+        context.set_rows(len(pairs))
+        context.set_output_hash(
+            hash_payload({"pairs": sorted(f"{unit}/{api10}" for unit, api10 in pairs)})
+        )
+
+    with connection.cursor() as cursor:
+        cursor.executemany(
+            _INSERT_MT_MEMBERSHIP,
+            [
+                {
+                    "lease_key": unit,
+                    "api10": api10,
+                    "source_id": SOURCE_ID,
+                    "effective_from": manifest.fetch_vintage,
+                    "manifest_id": manifest.manifest_id,
+                    "derivation_id": context.derivation_id,
+                }
+                for unit, api10 in sorted(pairs)
+            ],
+        )
+        appended = max(cursor.rowcount, 0)
+
+    return MembershipReport(
+        derivation_id=context.derivation_id,
+        pairs=len(pairs),
+        rows_appended=appended,
+        lease_units=len({unit for unit, _ in pairs}),
+        wells=len({api10 for _, api10 in pairs}),
+        sentinel_rows=sentinel_rows,
+        wells_without_a_unit=unidentified,
     )
 
 

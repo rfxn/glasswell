@@ -1,5 +1,12 @@
 import type { Figure } from "../api/envelope.ts";
 
+/**
+ * What stands where a value is not served, in ASCII. The shipped-literal lint the release
+ * schedules refuses an em-dash, and three surfaces each spelled their own; the state beside it
+ * is what says which absence it is, and this only holds the column open.
+ */
+export const ABSENT_MARK = "--";
+
 export interface NullSemanticsMark {
   label: string;
   className: string;
@@ -27,6 +34,15 @@ const MARKS: Record<string, NullSemanticsMark> = {
     className: "gw-state-withheld",
     title: "The regulator withheld this month, usually a confidential well.",
   },
+  // The subject is the lease-month, not this well's month. A series of shares labelled
+  // `reported` says the opposite of the mark three words to its right (M1).
+  lease_reported: {
+    label: "lease reported",
+    className: "gw-state-lease-reported",
+    title:
+      "The operator filed this month for the lease. This well's number is its share of that" +
+      " filing, not a report about this well.",
+  },
 };
 
 /** The four states the API distinguishes; they are never collapsed into one another. */
@@ -36,6 +52,170 @@ export const NULL_SEMANTICS_STATES = [
   "withheld",
   "no_report",
 ] as const;
+
+export interface AllocationMark {
+  label: string;
+  className: string;
+  title: string;
+  allocated: boolean;
+}
+
+/**
+ * A second record, a second lookup and a second CSS prefix, deliberately.
+ *
+ * One string-keyed record for two vocabularies collides on the first shared token, and
+ * `withheld` is already in the null-semantics one and is a plausible allocation-class name in
+ * a later jurisdiction. Two vocabularies that can never be told apart in the DOM is the defect
+ * this shape exists against.
+ */
+const ALLOCATION_MARKS: Record<string, AllocationMark> = {
+  observed_gas_well: {
+    label: "observed · gas lease",
+    className: "gw-alloc-observed-gas-well",
+    title: "One gas well on the lease, so the lease volume is this well's. Not allocated.",
+    allocated: false,
+  },
+  observed_single_well_lease: {
+    label: "observed · one well",
+    className: "gw-alloc-observed-single-well",
+    title: "One eligible well on the lease that month, so the lease volume is this well's.",
+    allocated: false,
+  },
+  allocated_equal_share: {
+    label: "allocated",
+    className: "gw-alloc-equal-share",
+    title:
+      "An equal share of the lease volume among the wells eligible that month. An estimate," +
+      " not a reported figure (cr_tx_allocation_v0_1).",
+    allocated: true,
+  },
+  allocated_after_status_change: {
+    label: "allocated, status changed",
+    className: "gw-alloc-after-status-change",
+    title:
+      "The regulator records this well as plugged but filed no plugging date, so it still" +
+      " takes a share and the month says so rather than disappearing (cr_tx_allocation_v0_1).",
+    allocated: true,
+  },
+  excluded_after_plug: {
+    label: "excluded after plug",
+    className: "gw-alloc-excluded-after-plug",
+    title:
+      "The month is after this well's filed plugging date, so it takes no share and the" +
+      " share was redistributed among the wells still eligible (cr_tx_allocation_v0_1).",
+    allocated: true,
+  },
+  unallocated: {
+    label: "unallocated",
+    className: "gw-alloc-unallocated",
+    title:
+      "Lease volume with no eligible well to carry it. It is in the conservation ledger with" +
+      " its cause, and is served as no well's production.",
+    allocated: true,
+  },
+};
+
+export interface RestatementMark {
+  label: string;
+  className: string;
+  title: string;
+}
+
+/**
+ * The third vocabulary, with the third record, the third lookup and the third CSS prefix.
+ *
+ * `gw-state-*` is the null semantics, `gw-alloc-*` is the allocation class, and this is
+ * whether the month was restated. Not merged into either: one string-keyed record for two
+ * vocabularies collides on the first shared token. And not `gw-vintage-*`, which the chart
+ * already ships for the disclosure and its list in the same subtree.
+ */
+const RESTATEMENT_MARKS: Record<string, RestatementMark> = {
+  latest_capture: {
+    label: "latest capture",
+    className: "gw-restate-latest",
+    title: "Read at the newest report vintage in this window.",
+  },
+  earlier_capture: {
+    label: "earlier capture",
+    className: "gw-restate-earlier",
+    title:
+      "Read at an older report vintage than the rest of this window: the later pulls did not" +
+      " re-report this month. It says which capture the number came from, and not that the" +
+      " operator re-filed it -- the wire carries one vintage per drawn point, so a restatement" +
+      " nobody captured is a claim this mark must not make.",
+  },
+};
+
+/**
+ * Which capture a month was read at. Deliberately not "restated": the served point carries one
+ * report vintage, so a month filed twice and a month pulled twice are the same shape on the
+ * wire, and a mark that called either one a restatement would be asserting what it cannot see.
+ */
+export function restatement(state: string): RestatementMark {
+  return (
+    RESTATEMENT_MARKS[state] ?? {
+      label: state,
+      className: "gw-restate-unknown",
+      title: state,
+    }
+  );
+}
+
+/** The six classes the allocation serves, in the order the legend lists them. */
+export const ALLOCATION_CLASSES = [
+  "observed_gas_well",
+  "observed_single_well_lease",
+  "allocated_equal_share",
+  "allocated_after_status_change",
+  "excluded_after_plug",
+  "unallocated",
+] as const;
+
+/**
+ * The mark for one allocation class. A class this record does not know is labelled with its own
+ * name rather than silently dropped: an unlabelled band reads as an observation.
+ */
+export function allocationClass(state: string): AllocationMark {
+  return (
+    ALLOCATION_MARKS[state] ?? {
+      label: state,
+      className: "gw-alloc-unknown",
+      title: state,
+      allocated: true,
+    }
+  );
+}
+
+/**
+ * What follows the class: the divisor where one division produced the number, the count of
+ * shares where more than one did, and nothing where neither applies.
+ *
+ * A wellbore on two leases sums two shares, and summing their divisors states a division that
+ * never happened. The per-lease divisor is on each share's own `lk` handle.
+ */
+export function shareDetail(eligibleWells: number | null, shares: number | null): string {
+  if (shares !== null && shares > 1) return ` · ${String(shares)} shares summed`;
+  if (eligibleWells !== null && eligibleWells > 1) return ` over ${String(eligibleWells)} wells`;
+  return "";
+}
+
+/**
+ * How a figure was arrived at, in one word, wherever a granularity reaches the DOM.
+ *
+ * An allocation estimate that reads as an observation is the defect the whole track exists
+ * against, so this is a primitive rather than a sentence written at each call site.
+ */
+export function granularityLabel(granularity: string | null): string {
+  if (granularity === "lease_allocated") return "allocated";
+  if (granularity === "well_observed") return "observed";
+  if (granularity === "lease_reported") return "reported at the lease";
+  return granularity ?? "";
+}
+
+/** Whether a served granularity means the figure is an estimate rather than an observation. */
+export function isAllocated(granularity: string | null): boolean {
+  return granularity === "lease_allocated";
+}
 
 /** Thousands separators without ever parsing the decimal as a float (SB-07 §4.4). */
 export function formatValue(value: string): string {
@@ -115,7 +295,7 @@ export function formatVolume(value: string): string {
 }
 
 export function formatVintage(vintage: string | null): string {
-  return vintage ?? "—";
+  return vintage ?? ABSENT_MARK;
 }
 
 /**

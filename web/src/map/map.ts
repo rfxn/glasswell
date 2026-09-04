@@ -822,8 +822,10 @@ export function createMap(
       selection.select(api10);
     },
     flyTo(point) {
-      // Land the well in the strip the card does not cover, not under it.
-      const padding = { top: 0, bottom: 0, left: 0, right: Math.min(520, container.clientWidth / 2) };
+      // Nothing reserved on the right any more: the card is a column beside the map, not a
+      // panel over it, so holding back half the canvas would land the well in the left third
+      // of the column it should sit in the middle of.
+      const padding = { top: 0, bottom: 0, left: 0, right: 0 };
       // The caller's zoom is a floor: a search from the basin pulls in, a search at z14 stays.
       const zoom = Math.max(map.getZoom(), point.zoom ?? 11);
       const target = { center: [point.lon, point.lat] as [number, number], zoom, padding };

@@ -82,6 +82,26 @@
   reason: >-
     How many cohorts fall in each support band. A count of rows in this response, taken over
     figures that each carry their own handle, not a measured quantity of its own.
+- pointer: /cap/limit
+  reason: >-
+    The cut a status history was taken at. A property of the response, not of the well: New
+    Mexico holds 15,590 distinct filed effective dates across its population and its fullest
+    single well carries 15 of them, 248 wells carry more than ten, and ten is a readable
+    answer with the remainder counted beside it.
+- pointer: /cap/returned
+  reason: How many status-history rows this response carries.
+- pointer: /cap/total
+  reason: >-
+    How many effective-dated headers the well carries at this vintage. Served so a short list
+    is never read as a short life; a count of rows in this response's own population, not a
+    measured petroleum quantity.
+- pointer: /cap/withheld
+  reason: Status-history rows the cap held back. Never rows nobody has.
+- pointer: /basin_context/basin_overlap
+  reason: >-
+    How many published basin polygons contain this well's answering geometry. A count of
+    boundary rows, served so a reader can see where the publisher's own polygons overlap;
+    not a measured petroleum quantity.
 - pointer: /occurrence_count
   reason: How many fetches re-presented this rejected row (SB-07 §8.1).
 - pointer: /*/occurrence_count
@@ -259,3 +279,29 @@
   reason: >-
     Where a jurisdiction's Wells row sits in the layer panel. A real per-row integer that
     ranks layers, not a measurement of anything: disposal wells sit between two of them.
+
+# --- the allocation, and what is method rather than measurement ---------------
+# An allocated share is a figure and carries a handle like any other. What is exempt
+# here is the arithmetic that produced it — a divisor is part of the method — and the
+# registry key the residual ledgers are reported for.
+- pointer: /series/oil_bbl_eligible_wells_by_month/*
+  reason: >-
+    Divisor. The count of wells a share was computed over is part of the method, not a
+    measured quantity of anything.
+- pointer: /series/gas_mcf_eligible_wells_by_month/*
+  reason: >-
+    Divisor. The count of wells a share was computed over is part of the method, not a
+    measured quantity of anything.
+- pointer: /series/oil_bbl_shares_by_month/*
+  reason: >-
+    Cardinality. The count of lease records a point was summed over is part of the method,
+    not a measured quantity of anything; each share carries its own handle.
+- pointer: /series/gas_mcf_shares_by_month/*
+  reason: >-
+    Cardinality. The count of lease records a point was summed over is part of the method,
+    not a measured quantity of anything; each share carries its own handle.
+- pointer: /blocks/*/degraded_at
+  reason: >-
+    The threshold the Status check compares the unallocated share against, read from
+    cr_tx_allocation_v0_1's own spec. A parameter of the decision, not an observation the
+    ledger stands behind; the share beside it is the figure.

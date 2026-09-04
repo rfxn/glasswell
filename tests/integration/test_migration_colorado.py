@@ -19,7 +19,12 @@ from psycopg.rows import dict_row
 from glasswell.db.migrate import discover_migrations
 from glasswell.seed import seed_all
 from glasswell.seed.conformance_co import CO_RULE_IDS, CO_STATUS_MAP, DOCUMENTED_UNMAPPED_CLASS
-from glasswell.seed.jurisdictions import CO_REGISTERED_ON, COLORADO, COLORADO_DECISIONS
+from glasswell.seed.jurisdictions import (
+    CO_REGISTERED_ON,
+    COLORADO,
+    COLORADO_DECISIONS,
+    JURISDICTION_RULES,
+)
 from glasswell.seed.schedules import CO_JOBS, DEPENDENCIES, JOB_SOURCES, JOBS, SCHEDULES
 
 pytestmark = pytest.mark.integration
@@ -102,14 +107,28 @@ def test_the_registration_resolves_with_its_identity_derived(db: psycopg.Connect
 def test_the_registered_decisions_are_exactly_the_ones_the_registration_declares(
     db: psycopg.Connection,
 ) -> None:
-    """M-19's set equality: a rule added to the seed and forgotten in the migration reddens."""
+    """M-19's set equality: a rule added to the seed and forgotten in the migration reddens.
+
+    Against the seed's one writer, `JURISDICTION_RULES`, rather than against
+    `COLORADO_DECISIONS` alone: the thirteen the registration was founded with are what
+    migration 077 writes and what that tuple mirrors, and a later track registering a decision
+    for Colorado at the same clock appends it beside them. Both halves are asserted, so a
+    founding decision dropped from either copy still reddens here.
+    """
     with db.cursor() as cursor:
         cursor.execute(
             "select decision from lineage.jurisdiction_rules where jurisdiction_code = 'CO'"
         )
         resident = {row[0] for row in cursor.fetchall()}
 
-    assert resident == {str(row["decision"]) for row in COLORADO_DECISIONS}
+    founding = {str(row["decision"]) for row in COLORADO_DECISIONS}
+    seeded = {
+        str(row["decision"])
+        for row in JURISDICTION_RULES
+        if str(row["jurisdiction_code"]) == "CO"
+    }
+    assert founding <= seeded
+    assert resident == seeded
 
 
 def test_every_colorado_rule_carries_its_publication_evidence(db: psycopg.Connection) -> None:
@@ -311,7 +330,12 @@ def test_the_mart_table_and_its_view_are_installed_with_their_grants(
 
 
 def test_all_four_schedule_tables_carry_colorado(db: psycopg.Connection) -> None:
-    """N-32: the rows are written by both writers, so a deploy that seeds nothing schedules."""
+    """N-32: the rows are written by both writers, so a deploy that seeds nothing schedules.
+
+    Scoped to this migration's own effective date. `079_scheduler_observe.sql` supersedes all
+    six with observing rows at a later one, and an unscoped read would silently start counting
+    that correction as though it were part of this registration.
+    """
     job_ids = [str(job["job_id"]) for job in CO_JOBS]
     with db.cursor() as cursor:
         cursor.execute(
@@ -326,8 +350,8 @@ def test_all_four_schedule_tables_carry_colorado(db: psycopg.Connection) -> None
         sources = cursor.fetchone()[0]
         cursor.execute(
             "select job_id, rule_id, trigger, launch_mode from lineage.job_schedules"
-            " where job_id = any(%s)",
-            (job_ids,),
+            " where job_id = any(%s) and effective_from = %s",
+            (job_ids, CO_REGISTERED_ON),
         )
         schedules = cursor.fetchall()
         cursor.execute(
@@ -341,6 +365,9 @@ def test_all_four_schedule_tables_carry_colorado(db: psycopg.Connection) -> None
     assert sources == sum(len(JOB_SOURCES[job_id]) for job_id in job_ids if job_id in JOB_SOURCES)
     assert len(schedules) == 6
     assert all(rule_id is not None for _job, rule_id, _trigger, _mode in schedules)
+    # This migration's own rows, read at its own effective date: 079 appends a supersession
+    # that resolves observe over every one of them, and job_schedules is append-only, so what
+    # 077 registered has to still be here to be superseded.
     assert {mode for *_rest, mode in schedules} == {"launch"}
     assert edges == len([edge for edge in DEPENDENCIES if edge[0] in set(job_ids)])
     assert edges == 5

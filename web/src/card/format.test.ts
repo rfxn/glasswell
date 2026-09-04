@@ -211,6 +211,17 @@ describe("the null-semantics key", () => {
     expect(marks.every((mark) => mark.label.length > 0 && mark.title.length > 0)).toBe(true);
     expect(marks.every((mark) => mark.className !== "gw-state-unknown")).toBe(true);
   });
+
+  it("knows the lease's filing as its own state, not as this well's report", () => {
+    // The four above are what a well-grain jurisdiction emits. A lease-grain one emits a
+    // fifth, and labelling it `reported` says the well reported a number it never filed.
+    const mark = nullSemantics("lease_reported");
+
+    expect(mark.label).toBe("lease reported");
+    expect(mark.className).toBe("gw-state-lease-reported");
+    expect(mark.className).not.toBe(nullSemantics("reported").className);
+    expect(mark.title).toContain("share");
+  });
 });
 
 

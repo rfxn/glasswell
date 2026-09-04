@@ -10,7 +10,12 @@ const ENTRY = "src/main.ts";
 
 // `import type` is erased before it reaches the bundler, so it is not an edge in this graph —
 // which is what lets main.ts name MapHandle while the module stays out of the entry chunk.
-const NAMED_IMPORT = /(?:^|\n)\s*(?:import|export)\s+(?!type\s)([\s\S]*?)\sfrom\s+["']([^"']+)["']/g;
+// The body is `[^;]*?` and not `[\s\S]*?` because a statement terminator is the one character
+// that cannot appear inside one: with the wider class a side-effect `import "x";` followed by
+// an `import type ... from "y"` matched across both and reported `y` as a static edge. It did
+// that here the moment the lineage drawer's import left main.ts and stopped sitting between
+// the two, and reported src/map/map.ts as statically imported when nothing imports it.
+const NAMED_IMPORT = /(?:^|\n)\s*(?:import|export)\s+(?!type\s)([^;]*?)\sfrom\s+["']([^"']+)["']/g;
 const SIDE_EFFECT_IMPORT = /(?:^|\n)\s*import\s+["']([^"']+)["']/g;
 
 function moduleEdges(source: string): string[] {

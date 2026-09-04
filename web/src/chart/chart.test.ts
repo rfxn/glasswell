@@ -271,3 +271,577 @@ describe("report vintage, one layer down", () => {
     expect(host.querySelector("details.gw-vintages")).toBeNull();
   });
 });
+
+function allocated(pm: string[]): ProductionData {
+  const base = production(pm);
+  return {
+    ...base,
+    granularity: "lease_allocated",
+    series: {
+      ...base.series,
+      // What the allocated arm serves: the subject of the state band is the lease-month,
+      // and the well's own month was never reported at all.
+      oil_bbl_null_semantics: pm.map(() => "lease_reported"),
+      gas_mcf_null_semantics: pm.map(() => "lease_reported"),
+      oil_bbl_granularity_by_month: pm.map((_, index) =>
+        index === 0 ? "well_observed" : "lease_allocated",
+      ),
+      oil_bbl_allocation_class_by_month: pm.map((_, index) => {
+        if (index === 0) return "observed_single_well_lease";
+        if (index === 1) return "allocated_after_status_change";
+        if (index === 2) return "excluded_after_plug";
+        return "allocated_equal_share";
+      }),
+      oil_bbl_eligible_wells_by_month: pm.map((_, index) => (index === 0 ? "1" : "3")),
+      oil_bbl_shares_by_month: pm.map(() => "1"),
+      gas_mcf_granularity_by_month: pm.map(() => "well_observed"),
+      gas_mcf_allocation_class_by_month: pm.map(() => "observed_gas_well"),
+      gas_mcf_eligible_wells_by_month: pm.map(() => "1"),
+      gas_mcf_shares_by_month: pm.map(() => "1"),
+    },
+    allocation: {
+      model_id: "alloc_v0_2026_09",
+      rule_id: "cr_tx_production_grain_1",
+      leases: ["G-08-000303", "O-08-000101"],
+      membership_vintage: "2026-08-27",
+      incomplete_from: pm[pm.length - 1] ?? null,
+      error_bounds: { outcome: "not_measured", measured_by_rule: "cr_alloc_v0_error_bounds_1" },
+    },
+  };
+}
+
+const allocatedChart = toChartSeries(allocated(months("2024-01", 6)));
+
+describe("the allocation band", () => {
+
+  it("draws no second band on a jurisdiction that reports at the well", () => {
+    renderChart(host, dense, callbacks);
+
+    expect(host.querySelector(".gw-alloc-row")).toBeNull();
+    expect(host.querySelector(".gw-alloc-key")).toBeNull();
+  });
+
+  it("draws a second band in its own vocabulary where a class reached the wire", () => {
+    renderChart(host, allocatedChart, callbacks);
+    // Inside the state strip, not beside it: `align` writes the plot's gutters onto that
+    // element as custom properties, and a sibling inherits neither — which is a band drawn to
+    // a different width from the plot it sits under.
+    const strip = host.querySelector(".gw-state-strip");
+    const rows = strip?.querySelectorAll(".gw-alloc-row") ?? [];
+
+    expect(rows.length).toBe(2);
+    // A second record, a second lookup and a second prefix: one string-keyed record for two
+    // vocabularies collides on the first shared token.
+    expect(strip?.querySelectorAll(".gw-alloc-mark").length).toBe(12);
+  });
+
+  it("gives each month the class it was actually arrived at under", () => {
+    renderChart(host, allocatedChart, callbacks);
+    const row = host.querySelectorAll(".gw-alloc-row")[0];
+    const marks = [...(row?.querySelectorAll(".gw-alloc-mark") ?? [])];
+
+    expect(marks[0]?.className).toContain("gw-alloc-observed-single-well");
+    expect(marks[1]?.className).toContain("gw-alloc-after-status-change");
+    expect(marks[2]?.className).toContain("gw-alloc-excluded-after-plug");
+    expect(marks[3]?.className).toContain("gw-alloc-equal-share");
+  });
+
+  it("names the divisor on a mark, so a share is never a bare number", () => {
+    renderChart(host, allocatedChart, callbacks);
+    const marks = [...host.querySelectorAll(".gw-alloc-row .gw-alloc-mark")];
+
+    expect(marks[3]?.getAttribute("title")).toContain("over 3 wells");
+    // One eligible well is not a division, so nothing is claimed about one.
+    expect(marks[0]?.getAttribute("title")).not.toContain("over");
+  });
+
+  it("keys the classes this well's band drew, and not the ones it never hit", () => {
+    // Six entries under a band showing one class made the band read as a component that had
+    // failed to draw the other five.
+    renderChart(host, allocatedChart, callbacks);
+    const key = host.querySelector(".gw-alloc-key");
+
+    // Four on the oil row and one on the gas row; `unallocated` is the sixth and no month
+    // of this well is one.
+    expect(key?.querySelectorAll(".gw-alloc-mark").length).toBe(5);
+    expect(key?.textContent).toContain("excluded after plug");
+    expect(key?.textContent).not.toContain("unallocated");
+  });
+
+  it("keys one class where the series carries one, not the whole vocabulary", () => {
+    const gasLease = toChartSeries(observedGasLease(months("2024-01", 6)));
+    renderChart(host, gasLease, callbacks);
+    const key = host.querySelector(".gw-alloc-key");
+
+    expect(key?.querySelectorAll(".gw-alloc-mark").length).toBe(1);
+    expect(key?.textContent).toContain("observed · gas lease");
+  });
+
+  it("writes no em-dash into a label a reader is served", () => {
+    renderChart(host, allocatedChart, callbacks);
+    const labelled = [...host.querySelectorAll("[title], [aria-label]")].flatMap((node) => [
+      node.getAttribute("title") ?? "",
+      node.getAttribute("aria-label") ?? "",
+    ]);
+
+    expect(labelled.filter((text) => text.includes("\u2014"))).toEqual([]);
+    expect(host.querySelector(".gw-alloc-cells")?.getAttribute("aria-label")).toContain(
+      "arrived at:",
+    );
+  });
+
+  it("shades the months inside the completeness lag in both bands", () => {
+    renderChart(host, allocatedChart, callbacks);
+    const shaded = host.querySelectorAll(".gw-month-incomplete");
+
+    // The last month of each of the four rows: two streams, each with a state band and an
+    // allocation band. The gas column is observed and still carries a class, because
+    // "observed" is one of the six things the band has to be able to say.
+    expect(shaded.length).toBe(4);
+  });
+
+  it("says a plugged well's month is a share rather than letting it read as reported", () => {
+    renderChart(host, allocatedChart, callbacks);
+    const marks = [...host.querySelectorAll(".gw-alloc-row .gw-alloc-mark")];
+
+    expect(marks[1]?.getAttribute("title")).toContain("allocated, status changed");
+  });
+
+  it("says it in the readout too, which is where a reader reads one number", () => {
+    // The band says it across the whole series. The readout is where a share would otherwise
+    // sit beside the word "reported" with nothing to say it is an estimate, and that is the
+    // one place a reader is looking hardest.
+    renderChart(host, allocatedChart, callbacks);
+    const rows = [...host.querySelectorAll(".gw-readout-row")];
+    const oil = rows.find((row) => (row as HTMLElement).dataset["stream"] === "oil");
+
+    expect(oil?.querySelector(".gw-readout-alloc")?.textContent).toContain("allocated");
+    expect(oil?.querySelector(".gw-readout-alloc")?.textContent).toContain("over 3 wells");
+  });
+
+  it("leaves the readout alone on a jurisdiction that reports at the well", () => {
+    renderChart(host, dense, callbacks);
+
+    expect(host.querySelector(".gw-readout-alloc")).toBeNull();
+  });
+});
+
+/** A gas lease with one well on it: every month observed, one class in the whole series. */
+function observedGasLease(pm: string[]): ProductionData {
+  const base = allocated(pm);
+  return {
+    ...base,
+    series: {
+      ...base.series,
+      oil_bbl_granularity_by_month: pm.map(() => "well_observed"),
+      oil_bbl_allocation_class_by_month: pm.map(() => "observed_gas_well"),
+      oil_bbl_eligible_wells_by_month: pm.map(() => "1"),
+      gas_mcf_allocation_class_by_month: pm.map(() => "observed_gas_well"),
+    },
+  };
+}
+
+/** The 21.9 percent of Texas API-10s that carry more than one lease record. */
+function dualLease(pm: string[]): ProductionData {
+  const base = allocated(pm);
+  return {
+    ...base,
+    series: {
+      ...base.series,
+      // What the wire serves for a summed point: the class collapses to the safe one, and
+      // there is no divisor, because no one division produced the number.
+      gas_mcf_granularity_by_month: pm.map(() => "lease_allocated"),
+      gas_mcf_allocation_class_by_month: pm.map(() => "allocated_equal_share"),
+      gas_mcf_eligible_wells_by_month: pm.map(() => null),
+      gas_mcf_shares_by_month: pm.map(() => "2"),
+    },
+  };
+}
+
+describe("a wellbore whose month is the sum of two leases", () => {
+  const dual = toChartSeries(dualLease(months("2024-01", 6)));
+
+  it("counts the shares instead of stating a divisor that divided nothing", () => {
+    renderChart(host, dual, callbacks);
+    const rows = [...host.querySelectorAll(".gw-readout-row")];
+    const gas = rows.find((row) => (row as HTMLElement).dataset["stream"] === "gas");
+    const how = gas?.querySelector(".gw-readout-alloc")?.textContent ?? "";
+
+    expect(how).toContain("2 shares summed");
+    expect(how).not.toContain("over");
+  });
+
+  it("says the same thing in the band's tooltip, which is where a month is read", () => {
+    renderChart(host, dual, callbacks);
+    const rows = [...host.querySelectorAll(".gw-alloc-row")];
+    const marks = [...(rows[1]?.querySelectorAll(".gw-alloc-mark") ?? [])];
+
+    expect(marks[0]?.getAttribute("title")).toContain("2 shares summed");
+    expect(marks[0]?.getAttribute("title")).not.toContain("wells");
+  });
+
+  it("keeps the divisor where one lease really was divided", () => {
+    renderChart(host, dual, callbacks);
+    const rows = [...host.querySelectorAll(".gw-readout-row")];
+    const oil = rows.find((row) => (row as HTMLElement).dataset["stream"] === "oil");
+
+    expect(oil?.querySelector(".gw-readout-alloc")?.textContent).toContain("over 3 wells");
+  });
+});
+
+describe("the two bands name two subjects", () => {
+  it("says the first band is the lease's filing, not this well's month", () => {
+    renderChart(host, allocatedChart, callbacks);
+    const names = [...host.querySelectorAll(".gw-state-row .gw-state-name")].map(
+      (node) => node.textContent,
+    );
+
+    // Two rows per stream: what the lease filed, and how this well's share was arrived at.
+    expect(names).toEqual(["Oil · lease", "Gas · lease", "Oil · how", "Gas · how"]);
+    // The gutter is 58 px wide and clips with an ellipsis, so the subject is two words and
+    // the sentence rides in the title.
+    const subject = host.querySelector(".gw-state-row .gw-state-name");
+    expect(subject?.getAttribute("title")).toContain("share of that filing");
+  });
+
+  it("never stands the bare word reported beside a share in the readout", () => {
+    renderChart(host, allocatedChart, callbacks);
+    const rows = [...host.querySelectorAll(".gw-readout-row")];
+    const oil = rows.find((row) => (row as HTMLElement).dataset["stream"] === "oil");
+
+    expect(oil?.querySelector(".gw-readout-state")?.textContent?.trim()).toBe("lease reported");
+    expect(oil?.querySelector(".gw-readout-alloc")?.textContent).toContain("allocated");
+  });
+
+  it("keys the state it drew, so no mark on the band is a colour to guess at", () => {
+    renderChart(host, allocatedChart, callbacks);
+    const key = host.querySelector(".gw-state-key");
+
+    expect(key?.textContent).toContain("lease reported");
+    expect(key?.querySelectorAll(".gw-state-mark").length).toBe(5);
+  });
+
+  it("leaves the four-state key and the plain row name on an observed jurisdiction", () => {
+    renderChart(host, dense, callbacks);
+    const names = [...host.querySelectorAll(".gw-state-row .gw-state-name")].map(
+      (node) => node.textContent,
+    );
+
+    expect(names).toEqual(["Oil", "Gas"]);
+    expect(host.querySelectorAll(".gw-state-key .gw-state-mark").length).toBe(4);
+  });
+});
+
+describe("the stream toggles", () => {
+  beforeEach(() => renderChart(host, sparse, callbacks));
+
+  it("makes every stream a two-state control that says which state it is in", () => {
+    const toggles = [...host.querySelectorAll<HTMLButtonElement>(".gw-stream-toggle")];
+
+    expect(toggles.map((each) => each.textContent)).toEqual(["Oil (bbl)", "Gas (mcf)"]);
+    expect(toggles.every((each) => each.getAttribute("aria-pressed") === "true")).toBe(true);
+  });
+
+  it("takes a stream off the plot, the band and the readout together", () => {
+    const oil = host.querySelector<HTMLButtonElement>(".gw-stream-toggle");
+    oil?.click();
+
+    expect(host.querySelector(".gw-stream-toggle")?.getAttribute("aria-pressed")).toBe("false");
+    expect(host.querySelectorAll(".gw-state-row").length).toBe(1);
+    expect(host.querySelector(".gw-series-readout")?.textContent).not.toContain("Oil");
+  });
+
+  it("brings it back, because a toggle a reader cannot undo is a delete", () => {
+    host.querySelector<HTMLButtonElement>(".gw-stream-toggle")?.click();
+    host.querySelector<HTMLButtonElement>(".gw-stream-toggle")?.click();
+
+    expect(host.querySelectorAll(".gw-state-row").length).toBe(2);
+    expect(host.querySelector(".gw-stream-toggle")?.getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("refuses to hide the last stream on the plot rather than drawing an empty axis", () => {
+    const toggles = [...host.querySelectorAll<HTMLButtonElement>(".gw-stream-toggle")];
+    toggles[0]?.click();
+    const last = host.querySelectorAll<HTMLButtonElement>(".gw-stream-toggle")[1];
+
+    expect(last?.disabled).toBe(true);
+    expect(last?.title).toContain("only stream");
+  });
+});
+
+describe("the log control, and the zero it cannot draw", () => {
+  beforeEach(() => renderChart(host, sparse, callbacks));
+
+  it("is a two-state control that starts linear", () => {
+    const scale = host.querySelector<HTMLButtonElement>(".gw-scale-toggle");
+
+    expect(scale?.getAttribute("aria-pressed")).toBe("false");
+    expect(scale?.textContent).toContain("Log");
+  });
+
+  it("states per stream how many drawn months read zero once log is on", () => {
+    host.querySelector<HTMLButtonElement>(".gw-scale-toggle")?.click();
+    const note = host.querySelector(".gw-log-zeros")?.textContent ?? "";
+
+    // Per stream, because a well can be zero on water and not on oil, and one combined count
+    // would be wrong for two of the three.
+    expect(note).toContain("Oil");
+    expect(note).toContain("1 month");
+    expect(note).toContain("log axis cannot place");
+    expect(note).not.toContain("withheld");
+  });
+
+  it("keeps a zero month in the band and out of the line", () => {
+    host.querySelector<HTMLButtonElement>(".gw-scale-toggle")?.click();
+
+    // The band still carries every month of the window, zero included: the state is a fact
+    // about the month, and the log axis is a fact about the drawing.
+    expect(host.querySelector(".gw-state-row")?.querySelectorAll(".gw-state-mark").length).toBe(6);
+    const marks = [...(host.querySelector(".gw-state-row")?.querySelectorAll(".gw-state-mark") ?? [])];
+    expect(marks[0]?.className).toContain("reported-zero");
+  });
+
+  it("goes back to linear, where the zero is a point again", () => {
+    const scale = () => host.querySelector<HTMLButtonElement>(".gw-scale-toggle");
+    scale()?.click();
+    scale()?.click();
+
+    expect(scale()?.getAttribute("aria-pressed")).toBe("false");
+    expect(host.querySelector(".gw-log-zeros")).toBeNull();
+  });
+});
+
+describe("brushing a range, and the total that follows it", () => {
+  const brushed = vi.fn();
+  beforeEach(() => {
+    brushed.mockClear();
+    renderChart(host, sparse, { ...callbacks, onBrush: brushed });
+  });
+
+  const band = (): HTMLElement => host.querySelector(".gw-state-cells") as HTMLElement;
+  const cells = (): HTMLElement[] => [...band().querySelectorAll<HTMLElement>(".gw-state-mark")];
+  const drag = (from: number, to: number): void => {
+    const marks = cells();
+    marks[from]?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    marks[to]?.dispatchEvent(new PointerEvent("pointerenter", { bubbles: true }));
+    marks[to]?.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
+  };
+
+  it("narrows the window to the months the reader dragged over", () => {
+    drag(1, 3);
+
+    const note = host.querySelector(".gw-window-note")?.textContent ?? "";
+    expect(note).toContain("Nov 2025");
+    expect(note).toContain("Jan 2026");
+    expect(host.querySelector(".gw-state-row")?.querySelectorAll(".gw-state-mark").length).toBe(3);
+  });
+
+  it("says the window is a selection and offers the way out of it", () => {
+    drag(1, 3);
+
+    const selected = host.querySelector(".gw-window-selected");
+    expect(selected?.textContent).toContain("Selected");
+    const clear = host.querySelector<HTMLButtonElement>(".gw-window-clear");
+    expect(clear).not.toBeNull();
+    clear?.click();
+    expect(host.querySelector(".gw-window-selected")).toBeNull();
+    expect(host.querySelector(".gw-state-row")?.querySelectorAll(".gw-state-mark").length).toBe(6);
+  });
+
+  it("hands the range to the card, so the URL can carry it and the server can answer it", () => {
+    drag(1, 3);
+
+    expect(brushed).toHaveBeenCalledWith("2025-11", "2026-01");
+    host.querySelector<HTMLButtonElement>(".gw-window-clear")?.click();
+    expect(brushed).toHaveBeenLastCalledWith(null, null);
+  });
+
+  it("draws a running total over the selection, with its own scope on the same line", () => {
+    drag(1, 3);
+    const total = host.querySelector(".gw-running-total")?.textContent ?? "";
+
+    expect(total).toContain("Running total");
+    expect(total).toContain("3 months shown");
+    expect(total).toContain("3 reported");
+    expect(total).not.toContain("withheld");
+  });
+
+  it("gives the running total no handle at all, and says where provenance is", () => {
+    drag(1, 3);
+    const row = host.querySelector(".gw-running-total") as HTMLElement;
+
+    // M-7, the owner's ruling: a client sum that borrowed one point's ⌾ would name the sum's
+    // provenance and open a different number's chain.
+    expect(row.querySelectorAll(".gw-handle").length).toBe(0);
+    expect(row.querySelector("gw-figure")).toBeNull();
+    expect(row.textContent).toContain("computed on this page from the 3 points shown");
+    expect(row.textContent).toContain("each point's ⌾ is beside it");
+  });
+
+  it("counts the classes of the months it summed, not the ones it did not", () => {
+    // The first month of the fixture reads zero, so a brush that includes it says so.
+    drag(0, 2);
+    const total = host.querySelector(".gw-running-total")?.textContent ?? "";
+
+    expect(total).toContain("1 reported zero");
+  });
+});
+
+describe("the per-lateral-foot control", () => {
+  const changed = vi.fn();
+  const control = (over: Record<string, unknown> = {}) => ({
+    normalization: { on: false, available: true, onChange: changed, ...over },
+  });
+
+  beforeEach(() => changed.mockClear());
+
+  it("asks the server for the arm rather than dividing here", () => {
+    renderChart(host, sparse, callbacks, control());
+    const toggle = host.querySelector<HTMLButtonElement>(".gw-normalize-toggle");
+
+    expect(toggle?.getAttribute("aria-pressed")).toBe("false");
+    toggle?.click();
+    expect(changed).toHaveBeenCalledWith(true);
+  });
+
+  it("says which state it is in, so a normalised plot is never a surprise", () => {
+    renderChart(host, sparse, callbacks, control({ on: true }));
+
+    expect(host.querySelector(".gw-normalize-toggle")?.getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("states the reason where no divisor is served rather than offering a dead control", () => {
+    renderChart(
+      host,
+      sparse,
+      callbacks,
+      control({ available: false, reason: "cr_mt_paths_length_scope_1 withholds it" }),
+    );
+    const toggle = host.querySelector<HTMLButtonElement>(".gw-normalize-toggle");
+
+    expect(toggle?.disabled).toBe(true);
+    expect(toggle?.title).toContain("cr_mt_paths_length_scope_1");
+    toggle?.click();
+    expect(changed).not.toHaveBeenCalled();
+  });
+
+  it("is absent where the card offers no control at all", () => {
+    renderChart(host, sparse, callbacks);
+
+    expect(host.querySelector(".gw-normalize-toggle")).toBeNull();
+  });
+});
+
+describe("as filed versus as restated, stated rather than toggled", () => {
+  const restated = (): ReturnType<typeof toChartSeries> => {
+    const pm = months("2026-01", 4);
+    const data = production(pm);
+    return toChartSeries({
+      ...data,
+      series: {
+        ...data.series,
+        oil_bbl_report_vintage: pm.map((_, index) => (index === 0 ? "2026-07-01" : "2026-08-20")),
+      },
+    });
+  };
+
+  it("says how many vintages the window holds and over what range", () => {
+    renderChart(host, restated(), callbacks);
+    const summary = host.querySelector("details.gw-vintages summary")?.textContent ?? "";
+
+    expect(summary).toContain("2");
+    expect(summary).toContain("2026-07-01");
+    expect(summary).toContain("2026-08-20");
+  });
+
+  it("says one vintage means no restatement was captured, not that none happened", () => {
+    renderChart(host, sparse, callbacks);
+    const summary = host.querySelector("details.gw-vintages summary")?.textContent ?? "";
+
+    expect(summary).toContain("one");
+    expect(summary).toContain("no restatement captured");
+  });
+
+  it("names the earliest vintage as glasswell's own capture rather than the filing", () => {
+    renderChart(host, restated(), callbacks);
+    const details = host.querySelector("details.gw-vintages")?.textContent ?? "";
+
+    expect(details).toContain("when glasswell first captured this month");
+    expect(details).not.toContain("as first filed");
+  });
+
+  it("marks the month read at an older capture, in its own row and its own prefix", () => {
+    renderChart(host, restated(), callbacks);
+    const row = host.querySelector(".gw-restate-row");
+
+    // Three vocabularies, three records, three prefixes: `gw-state-*`, `gw-alloc-*` and this.
+    expect(row).not.toBeNull();
+    expect(row?.querySelectorAll(".gw-restate-earlier").length).toBe(1);
+    expect(row?.querySelectorAll(".gw-vintage-earlier").length).toBe(0);
+    expect(row?.querySelectorAll(".gw-restate-latest").length).toBe(3);
+  });
+
+  it("says which capture it means, and never that the operator re-filed the month", () => {
+    // The wire carries one report vintage per drawn point, so a month filed twice and a month
+    // pulled twice are the same shape: a mark reading "restated" would assert what it cannot
+    // see, which is the failure the whole section is written against.
+    renderChart(host, restated(), callbacks);
+    const mark = host.querySelector(".gw-restate-earlier");
+
+    expect(mark?.getAttribute("title")).toContain("older report vintage");
+    expect(mark?.getAttribute("title")).toContain("not that the operator re-filed it");
+    expect(host.querySelector(".gw-restate-row")?.textContent).not.toContain("restated");
+  });
+
+  it("draws no capture row where every month came from one pull", () => {
+    renderChart(host, sparse, callbacks);
+
+    expect(host.querySelector(".gw-restate-row")).toBeNull();
+  });
+});
+
+describe("the table alternative", () => {
+  // Fetched on the press: the chart chunk rides the explorer route, and a table nobody opened
+  // is not something every Explore reader should download.
+  const press = async (): Promise<void> => {
+    const before = host.querySelector(".gw-table-toggle")?.getAttribute("aria-pressed");
+    host.querySelector<HTMLButtonElement>(".gw-table-toggle")?.click();
+    for (let tick = 0; tick < 20; tick += 1) {
+      if (host.querySelector(".gw-table-toggle")?.getAttribute("aria-pressed") !== before) return;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+  };
+
+  beforeEach(() => renderChart(host, sparse, callbacks));
+
+  it("offers the same months as rows, and says which view is on", async () => {
+    expect(host.querySelector(".gw-table-toggle")?.getAttribute("aria-pressed")).toBe("false");
+
+    await press();
+
+    expect(host.querySelector(".gw-table-toggle")?.getAttribute("aria-pressed")).toBe("true");
+    expect(host.querySelectorAll(".gw-series-table tbody tr").length).toBe(6);
+    expect(host.querySelector(".gw-chart-plot")).toBeNull();
+  });
+
+  it("keeps the state key beside the table, because the words are the same words", async () => {
+    await press();
+
+    expect(host.querySelector(".gw-state-key")).not.toBeNull();
+  });
+
+  it("goes back to the plot", async () => {
+    await press();
+    await press();
+
+    expect(host.querySelector(".gw-chart-plot")).not.toBeNull();
+    expect(host.querySelector(".gw-series-table")).toBeNull();
+  });
+
+  it("carries the window's own months, not the whole record", async () => {
+    renderChart(host, dense, callbacks);
+    await press();
+
+    expect(host.querySelectorAll(".gw-series-table tbody tr").length).toBe(60);
+  });
+});

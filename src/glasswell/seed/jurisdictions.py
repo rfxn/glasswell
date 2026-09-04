@@ -13,11 +13,17 @@ from datetime import date
 
 import psycopg
 
+from glasswell.seed.conformance_basin_context import BASIN_CONTEXT
 from glasswell.seed.conformance_co import (
     CLASSED_COUNT,
     CO_STATUS_MAP,
     DOCUMENTED_COUNT,
     PLANNED_SHARE,
+)
+from glasswell.seed.conformance_status_history import (
+    CO_HISTORY_RULE_ID,
+    NM_HISTORY_RULE_ID,
+    STATUS_HISTORY,
 )
 
 # Valid time and knowledge time of the founding registrations. The integrator repoints this
@@ -49,6 +55,21 @@ GRAIN_EVIDENCE_TAG = "UNRELEASED"
 # Spelled out, not computed: the release gate greps for the literal, and a placeholder it
 # cannot see is a placeholder that ships.
 GRAIN_EVIDENCE_COMMIT = "0000000000000000000000000000000000000000"
+
+# Knowledge time of the Texas supersession that registers the allocation. Strictly later than
+# every published_at Texas already carries, or it does not resolve and Texas goes on serving the
+# registration that says it has no production. Neither founding + 1 nor RESTATED_ON + 1: a
+# standing gate plants a rival registration on each of those instants.
+#
+# Independent of the conformance rules' published_vintage, and free to sit ahead of the host's
+# today: load_jurisdictions reads max(published_at) as its knowledge cut rather than the host
+# clock, which is why the v0.78 restatement shipped a day ahead of the host and resolved. The
+# vintage is the clock that must never lead the host; this one is not (gate-tx H-9).
+TX_SUPERSEDED_ON = date(2026, 9, 6)
+TX_SUPERSEDED_EVIDENCE_TAG = "v0.80"
+# Spelled out rather than computed, for the reason the restatement's is: release.py scans this
+# file for the quoted placeholder and cannot see an expression that evaluates to it.
+TX_SUPERSEDED_EVIDENCE_COMMIT = "ed585501d39c75ed7cc6f4056ec7836067b4a5c1"
 
 # Colorado's own clock, named separately so the integrator can repoint it on its own train.
 # It is registered after the presentation columns exist, so it is founded whole: there is no
@@ -341,6 +362,32 @@ COLORADO: dict[str, object] = {
 
 JURISDICTIONS: tuple[dict[str, object], ...] = (*FOUNDING_JURISDICTIONS, COLORADO)
 
+# Texas, corrected. Derived from the row it supersedes rather than restated beside it: the whole
+# claim is that only the three named facts moved, and a hand copy of twenty-eight columns is a
+# claim a reader cannot check. source_ids is complete rather than curated -- the parity gate
+# holds it to every lineage.sources row carrying the jurisdiction -- so the PDQ dump joins it.
+TEXAS_SUPERSESSION: dict[str, object] = {
+    **next(row for row in FOUNDING_JURISDICTIONS if row["jurisdiction_code"] == "TX"),
+    "source_ids": (
+        "tx_g10_gse10",
+        "tx_gis_wells_county",
+        "tx_pdq_dsv",
+        "tx_w10_wlf607",
+        "tx_wellbore_ewa_csv",
+    ),
+    "liquids_basis": "oil+condensate",
+    "rationale": (
+        "Served from the RRC county GIS layers, the Wellbore Query export and the PDQ dump."
+        " Texas files production at the lease, so the well-level series is an allocation: the"
+        " lease volume is promoted at its native grain and the per-well share is a mart figure"
+        " carrying its class, its model id and its error-bounds outcome. The liquids basis is"
+        " oil plus condensate because the two columns are disjoint populations keyed by"
+        " OIL_GAS_CODE, which is why a reader comparing to the RRC's published crude figure"
+        " will find glasswell higher."
+    ),
+}
+
+
 # The founding rows, for the migration mirror and the parity gate. Named for what they restate
 # rather than for what they hold, which reads backwards on first grep: they are `JURISDICTIONS`
 # as v0.76 published them, before the seven presentation columns. Derived, never restated --
@@ -451,6 +498,23 @@ JURISDICTION_RULES: tuple[dict[str, object], ...] = (
      "rule_id": "cr_nd_length_source_1"},
     {"jurisdiction_code": "TX", "decision": "length_source",
      "rule_id": "cr_tx_length_source_1"},
+    # The polygon answer, one rule per jurisdiction. A new decision rather than a repoint of
+    # basin_scope: that rule decides whether the ingest writes canonical.wells.basin at all and
+    # is still true, and these decide what the published boundaries say about the same well.
+    {"jurisdiction_code": "ND", "decision": BASIN_CONTEXT, "rule_id": "cr_nd_basin_context_1"},
+    {"jurisdiction_code": "TX", "decision": BASIN_CONTEXT, "rule_id": "cr_tx_basin_context_1"},
+    {"jurisdiction_code": "MT", "decision": BASIN_CONTEXT, "rule_id": "cr_mt_basin_context_1"},
+    {"jurisdiction_code": "NM", "decision": BASIN_CONTEXT, "rule_id": "cr_nm_basin_context_1"},
+    {"jurisdiction_code": "CO", "decision": BASIN_CONTEXT, "rule_id": "cr_co_basin_context_1",
+     "effective_from": CO_REGISTERED_ON, "published_at": CO_REGISTERED_ON},
+    # The two jurisdictions whose header effective_from is the regulator's own valid time, and
+    # the whole of what emits links.history. One rule each, under each one's own source, and
+    # registered at each one's own clock: Colorado's registration was founded at its own
+    # instant and jurisdiction_rules carries a composite foreign key onto it, so a row at the
+    # restatement's clock would point at no registration.
+    {"jurisdiction_code": "NM", "decision": STATUS_HISTORY, "rule_id": NM_HISTORY_RULE_ID},
+    {"jurisdiction_code": "CO", "decision": STATUS_HISTORY, "rule_id": CO_HISTORY_RULE_ID,
+     "effective_from": CO_REGISTERED_ON, "published_at": CO_REGISTERED_ON},
     {"jurisdiction_code": "ND", "decision": "neighbors_scope",
      "rule_id": "cr_nd_neighbors_scope_1"},
     {"jurisdiction_code": "MT", "decision": "neighbors_scope",
@@ -483,6 +547,48 @@ GRAIN_RESTATEMENTS: tuple[dict[str, object], ...] = tuple(
 GRAIN_JURISDICTION_RULES: tuple[dict[str, object], ...] = tuple(
     row for row in JURISDICTION_RULES
     if str(row["jurisdiction_code"]) in GRAIN_RESTATED_CODES
+)
+
+# The nine decisions the Texas registration carries after the supersession. Five are carried
+# forward: dropping length_source or basin_scope would silently remove Texas's lateral-length
+# measurement and its basin CRS from the tile mart, which no test would catch because the mart
+# would go on running with a default.
+TX_SUPERSEDED_RULES: tuple[dict[str, object], ...] = (
+    {"jurisdiction_code": "TX", "decision": "status_vocabulary",
+     "rule_id": "cr_tx_status_vocab_1"},
+    {"jurisdiction_code": "TX", "decision": "identity", "rule_id": "cr_tx_api10_build_1"},
+    {"jurisdiction_code": "TX", "decision": "absence:operator",
+     "rule_id": "cr_tx_operator_absence_1"},
+    {"jurisdiction_code": "TX", "decision": "basin_scope", "rule_id": "cr_tx_basin_scope_1"},
+    {"jurisdiction_code": "TX", "decision": "length_source",
+     "rule_id": "cr_tx_length_source_1"},
+    {"jurisdiction_code": "TX", "decision": "production_grain",
+     "rule_id": "cr_tx_production_grain_1"},
+    {"jurisdiction_code": "TX", "decision": "liquids", "rule_id": "cr_tx_liquids_basis_1"},
+    {"jurisdiction_code": "TX", "decision": "geometry_provenance",
+     "rule_id": "cr_tx_geometry_provenance_1"},
+    # The allocation is what decides Texas writes a well-grain row, so it is the rule the
+    # cumulative scope names. The basis is allocated and every figure built from it says so.
+    {"jurisdiction_code": "TX", "decision": "cumulatives_scope",
+     "rule_id": "cr_tx_allocation_v0_1"},
+)
+
+# The registrations appended after the restatement, each at its own clock. A registration that
+# supersedes another carries the whole of what it supersedes, so it is one row and not two.
+SUPERSESSIONS: tuple[dict[str, object], ...] = (TEXAS_SUPERSESSION,)
+
+# Which rule rows are serving after this train. JURISDICTION_RULES is what the restatement
+# declared; a jurisdiction superseded since then declares its own set, and a reader with no
+# database resolves the pair here rather than the answer being spelled in two places.
+SUPERSEDED_RULE_SETS: dict[str, tuple[dict[str, object], ...]] = {"TX": TX_SUPERSEDED_RULES}
+
+SERVING_JURISDICTION_RULES: tuple[dict[str, object], ...] = (
+    *(
+        row
+        for row in JURISDICTION_RULES
+        if str(row["jurisdiction_code"]) not in SUPERSEDED_RULE_SETS
+    ),
+    *(rule for rules in SUPERSEDED_RULE_SETS.values() for rule in rules),
 )
 
 PREFIXES = frozenset(str(row["identity_prefix"]) for row in JURISDICTIONS)
@@ -593,6 +699,16 @@ def grain_restatement_parameters(row: dict[str, object]) -> dict[str, object]:
     )
 
 
+def texas_supersession_parameters() -> dict[str, object]:
+    """Texas at the clock that registers the allocation, on its own evidence pair."""
+    return registration_parameters(
+        TEXAS_SUPERSESSION,
+        published_at=TX_SUPERSEDED_ON,
+        evidence_tag=TX_SUPERSEDED_EVIDENCE_TAG,
+        evidence_commit=TX_SUPERSEDED_EVIDENCE_COMMIT,
+    )
+
+
 def rule_parameters(
     row: dict[str, object], *, published_at: date = REGISTERED_ON
 ) -> dict[str, object]:
@@ -609,11 +725,12 @@ def rule_parameters(
 def seed_jurisdictions(connection: psycopg.Connection) -> int:
     """Idempotent by contract: seed_all runs on every deploy. Returns the registry total.
 
-    Three clocks, three rule sets: the founding instant keeps the decisions v0.76 knew about,
-    the presentation restatement carries those plus the ones that train registered, and the
-    grain restatement carries Montana's and New Mexico's again with their production-grain
-    decision. Writing a new row at an instant that was already published would be an edit to
-    what was published, spelled as an append.
+    Four clocks, four rule sets: the founding instant keeps the decisions v0.76 knew about,
+    the presentation restatement carries those plus the ones that train registered, the grain
+    restatement carries Montana's and New Mexico's again with their production-grain decision,
+    and the Texas supersession carries the whole of Texas again with its allocation. Writing a
+    new row at an instant that was already published would be an edit to what was published,
+    spelled as an append.
     """
     with connection.cursor() as cursor:
         cursor.executemany(_INSERT_CODE, JURISDICTION_CODES)
@@ -622,7 +739,8 @@ def seed_jurisdictions(connection: psycopg.Connection) -> int:
             [registration_parameters(row) for row in JURISDICTION_RESTATEMENTS]
             + [restatement_parameters(row) for row in FOUNDING_JURISDICTIONS]
             + [colorado_parameters()]
-            + [grain_restatement_parameters(row) for row in GRAIN_RESTATEMENTS],
+            + [grain_restatement_parameters(row) for row in GRAIN_RESTATEMENTS]
+            + [texas_supersession_parameters()],
         )
         cursor.executemany(
             _INSERT_RULE,
@@ -631,6 +749,10 @@ def seed_jurisdictions(connection: psycopg.Connection) -> int:
             + [
                 rule_parameters(row, published_at=GRAIN_RESTATED_ON)
                 for row in GRAIN_JURISDICTION_RULES
+            ]
+            + [
+                rule_parameters(row, published_at=TX_SUPERSEDED_ON)
+                for row in TX_SUPERSEDED_RULES
             ],
         )
         # The refresh trigger for every registered read-time map, attached from the registry
