@@ -1,12 +1,7 @@
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 
-import {
-  ABSENT_MARK,
-  NULL_SEMANTICS_STATES,
-  formatMonth,
-  nullSemantics,
-} from "../card/format.ts";
+import { NULL_SEMANTICS_STATES, formatMonth, nullSemantics } from "../card/format.ts";
 import { explainHandle } from "../chrome/handle.ts";
 import { THEME_EVENT } from "../chrome/theme.ts";
 import { labelElement } from "../glossary/gw-term.ts";
@@ -446,7 +441,7 @@ function readoutRow(row: ReadoutRow, callbacks: ChartCallbacks): HTMLElement {
   value.setAttribute("data-no-glossary", "");
   // A month nobody measured states the state instead of a number: a gap is not a zero, and a
   // withheld volume is not this well's production (SB-05 §3.2).
-  value.textContent = row.value === null ? ABSENT_MARK : `${row.value} ${row.unit}`;
+  value.textContent = row.value === null ? "—" : `${row.value} ${row.unit}`;
 
   const state = document.createElement("span");
   state.className = "gw-readout-state";
