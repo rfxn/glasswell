@@ -84,6 +84,7 @@ export const JURISDICTION_LIST: readonly GeneratedJurisdiction[] = [
       length_scope: "cr_mt_paths_length_scope_2",
       liquids: "cr_mt_liquids_policy_1",
       neighbors_scope: "cr_mt_neighbors_scope_1",
+      production_grain: "cr_mt_bogc_pool_rollup_1",
       status_vocabulary: "cr_mt_gis_status_vocab_1",
     },
   },
