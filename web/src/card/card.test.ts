@@ -230,6 +230,17 @@ describe("a Texas well while the allocated mart is empty", () => {
     expect(host.textContent).not.toContain("No cumulative: not in the snapshot.");
   });
 
+  // The detail is written for a machine-readable `problem` field, where a lowercase opening is
+  // correct; the CUMULATIVE section's only prose is that field rendered verbatim, so it opened
+  // the section with "no cumulative for 4200300002 yet." (gate-tx-shots V-nit).
+  it("opens the section's prose with a capital", async () => {
+    await render();
+    const prose = host.querySelector<HTMLElement>(".gw-well-cumulatives .gw-empty");
+
+    expect(prose?.textContent?.startsWith(`No cumulative for ${API10} yet.`)).toBe(true);
+    expect(host.textContent).not.toContain(`no cumulative for ${API10}`);
+  });
+
   it("leaves an observed well drawing its chart", async () => {
     await renderWellCard(host, API10, callbacks);
 

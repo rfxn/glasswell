@@ -616,7 +616,7 @@ async function loadWellCumulatives(
       // outside the mart's scope or inside a jurisdiction whose mart the last refresh skipped,
       // and "not in the snapshot" said the first about the second (gate-tx H-10-W, H-10-C).
       host.replaceChildren(
-        emptyState(error.problem.detail ?? "No cumulative: not in the snapshot."),
+        emptyState(asProse(error.problem.detail ?? "No cumulative: not in the snapshot.")),
       );
       host.dataset["state"] = "empty";
       return;
@@ -627,6 +627,13 @@ async function loadWellCumulatives(
     host.setAttribute("aria-busy", "false");
   }
 }
+
+// A `problem` detail is written for a machine-readable field and opens lowercase. This is the
+// one place one is reused as a section's prose, and it is already a whole sentence.
+function asProse(detail: string): string {
+  return detail.charAt(0).toUpperCase() + detail.slice(1);
+}
+
 
 function cumulativesBody(
   data: WellCumulatives,
