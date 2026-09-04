@@ -314,9 +314,11 @@ schema `marts`, so `glasswell_pipeline` needs `create` there. Migration 009 gran
 `usage`; the privilege was applied by hand on this host during P7 and is now held by a
 migration (DR-21), which is what makes a rebuild on a fresh database possible.
 
-`GLASSWELL_RAW_ROOT=/data/raw` has to be exported for **manual** ingest commands. The
-`glasswell-ingest` unit supplies it, so the runbook in `fix-data-truth-status.md` omits it
-and a hand-run fetch would otherwise write the raw zone to a relative `data/raw`.
+`GLASSWELL_RAW_ROOT=/data/raw` has to be exported for **manual** ingest commands, and a fetch
+without it now refuses rather than guessing: it used to fall back to the relative `data/raw`,
+which resolved against the caller's working directory. The `glasswell-ingest` unit and every
+unit `scheduler/units.py` renders supply it from `/etc/glasswell/app.env`; a hand-run command
+does not.
 
 ## Postgres tuning
 

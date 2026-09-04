@@ -693,6 +693,11 @@ def load(
             member.to_dict() for member in member_inventory(path)
         ],
     )
+    # A completed fetch is a fact and the parse is a separate outcome, so the manifest is
+    # committed the moment the bytes are placed. Held to the end of load(), a refusal below
+    # rolled it back and left 3.65 GB sealed on disk with no row naming it -- and because
+    # stage_payload() reuses a slot only through owning_slot(), the re-run placed a second copy.
+    connection.commit()
     manifest = fetched.manifest
     members = member_inventory(fetched.payload_path)
     if restage:

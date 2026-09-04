@@ -42,6 +42,25 @@ class DeterminismViolation(LineageError):
         self.observed_sha256 = observed_sha256
 
 
+class RawRootUnset(LineageError):
+    """No raw zone was named, and there is no default a production write may be given.
+
+    The fallback was `data/raw`, resolved against the process's working directory: the same
+    ingest wrote to a different filesystem depending on where the operator stood, and the
+    same-device precheck then passed for the wrong device. A source-tree default cannot replace
+    it either, because the deployed host is an editable install from `/opt/glasswell/src` and
+    would silently write the raw zone off `/data`.
+    """
+
+    def __init__(self, variable: str) -> None:
+        super().__init__(
+            f"{variable} is not set and no raw root was passed, so there is nowhere to write"
+            " the raw zone. Declare it -- the deployed host carries it in"
+            " /etc/glasswell/app.env -- or pass --raw-root."
+        )
+        self.variable = variable
+
+
 class ManifestConflict(LineageError):
     """The same bytes were registered under a different source slot.
 

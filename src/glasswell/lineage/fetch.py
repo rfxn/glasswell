@@ -23,7 +23,7 @@ from psycopg.rows import dict_row
 
 from glasswell.lineage.audit import emit
 from glasswell.lineage.capture import current_session, derive
-from glasswell.lineage.errors import ManifestConflict
+from glasswell.lineage.errors import ManifestConflict, RawRootUnset
 from glasswell.lineage.fetch_attempts import sanitized_failure_detail, source_poll
 from glasswell.lineage.ftp import FTP, download_ftp, remote_path_from_url
 from glasswell.lineage.manifests import owning_slot, register_manifest
@@ -34,7 +34,6 @@ RAW_ROOT_ENV = "GLASSWELL_RAW_ROOT"
 # SB-01 §1.2: the EMNRD page publishes the address as an image, so the pin is a config line and
 # a move is an audit event. Recorded on every ftp_anon manifest so the pin's provenance travels.
 HOST_RESOLVED_FROM = "pinned_config"
-DEFAULT_RAW_ROOT = Path("data/raw")
 MANIFEST_FILENAME = "manifest.json"
 SHA256_MANIFEST_FILENAME = "MANIFEST.sha256"
 PAYLOAD_STEM = "payload"
@@ -67,10 +66,18 @@ class _Download:
 
 
 def resolve_raw_root(explicit: Path | str | None = None) -> Path:
-    """Explicit argument, then `GLASSWELL_RAW_ROOT`, then a repo-local default — never /srv."""
+    """Explicit argument, then `GLASSWELL_RAW_ROOT`, and otherwise a refusal.
+
+    There is no default. `data/raw` used to be one and it was relative, so it resolved against
+    whatever directory the operator was standing in -- `/` under systemd-run, a home directory
+    by hand -- and the raw zone silently landed on a different filesystem each time.
+    """
     if explicit is not None:
         return Path(explicit)
-    return Path(os.environ.get(RAW_ROOT_ENV) or DEFAULT_RAW_ROOT)
+    declared = os.environ.get(RAW_ROOT_ENV)
+    if not declared:
+        raise RawRootUnset(RAW_ROOT_ENV)
+    return Path(declared)
 
 
 def _slug(source_key: str) -> str:

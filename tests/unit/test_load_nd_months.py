@@ -227,6 +227,7 @@ def test_one_unreachable_workbook_does_not_end_the_walk(monkeypatch, tmp_path, c
             progress=progress,
             stop=threading.Event(),
             polite_seconds=0,
+            raw_root=str(tmp_path),
         )
 
     assert seen == [(2015, 5), (2015, 6), (2015, 7)]
@@ -237,7 +238,7 @@ def test_one_unreachable_workbook_does_not_end_the_walk(monkeypatch, tmp_path, c
     assert "404 Not Found" in capsys.readouterr().out
 
 
-def test_a_stop_request_ends_the_walk_at_a_month_boundary(monkeypatch):
+def test_a_stop_request_ends_the_walk_at_a_month_boundary(monkeypatch, tmp_path):
     stop = threading.Event()
 
     def ingest(year: int, month: int):
@@ -254,6 +255,7 @@ def test_a_stop_request_ends_the_walk_at_a_month_boundary(monkeypatch):
             progress=progress,
             stop=stop,
             polite_seconds=3600,
+            raw_root=str(tmp_path),
         )
 
     assert seen == [(2015, 5)]
@@ -261,7 +263,7 @@ def test_a_stop_request_ends_the_walk_at_a_month_boundary(monkeypatch):
     assert connection.commits == 1
 
 
-def test_a_resume_run_walks_only_what_is_missing(monkeypatch):
+def test_a_resume_run_walks_only_what_is_missing(monkeypatch, tmp_path):
     seen = _patch_ingest(monkeypatch, lambda *_: FakeReport())
     connection = FakeConnection([("2015_05.xlsx",), ("2015_06.xlsx",)])
 
@@ -273,13 +275,14 @@ def test_a_resume_run_walks_only_what_is_missing(monkeypatch):
             stop=threading.Event(),
             polite_seconds=0,
             resume=True,
+            raw_root=str(tmp_path),
         )
 
     assert seen == [(2015, 7), (2015, 8)]
     assert summary.skipped == 2
 
 
-def test_a_walk_that_crosses_utc_midnight_reads_both_knowledge_days_back(monkeypatch):
+def test_a_walk_that_crosses_utc_midnight_reads_both_knowledge_days_back(monkeypatch, tmp_path):
     """A session's vintage is its own open time, so a walk over midnight spans two of them and
     the summary has to name both; folding them into the day the walk started loses one."""
     _patch_sessions(monkeypatch, [BEFORE_MIDNIGHT, AFTER_MIDNIGHT])
@@ -295,6 +298,7 @@ def test_a_walk_that_crosses_utc_midnight_reads_both_knowledge_days_back(monkeyp
             progress=progress,
             stop=threading.Event(),
             polite_seconds=0,
+            raw_root=str(tmp_path),
         )
 
     parameters = connection.cursors[0].executed[0][1]

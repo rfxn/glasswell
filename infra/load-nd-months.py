@@ -266,7 +266,8 @@ def _arguments(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--raw-root",
         default=os.environ.get(RAW_ROOT_ENV),
-        help="where fetched workbooks land; defaults to $GLASSWELL_RAW_ROOT, then data/raw",
+        help="where fetched workbooks land; $GLASSWELL_RAW_ROOT otherwise, and the"
+        " fetcher refuses without one",
     )
     parser.add_argument("--polite-seconds", type=int, default=POLITE_SECONDS)
     parser.add_argument(

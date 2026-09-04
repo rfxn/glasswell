@@ -10,6 +10,7 @@ and what happens to a lease this deployment does not hold.
 from __future__ import annotations
 
 import zipfile
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 
@@ -30,6 +31,7 @@ from glasswell.lineage.capture import lineage_session
 from glasswell.lineage.store import PostgresRecorder
 from glasswell.seed import seed_all
 from glasswell.seed.conformance_tx import PDQ_MEMBER_LAYOUT
+from tests.support.fakes import FixedClock
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "tx_pdq"
 SAMPLE = FIXTURES / "PDQ_DSV_sample.zip"
@@ -293,6 +295,89 @@ def test_a_member_whose_header_moved_promotes_nothing_at_all(
         seeded,
         "select count(*) from canonical.production_monthly where source_id = 'tx_pdq_dsv'",
     ) == 0
+
+
+def test_a_refused_stage_still_records_the_fetch_it_completed(
+    seeded, raw_root: Path, lineage_env, tmp_path: Path
+) -> None:
+    """A completed fetch is a fact and the parse is a separate outcome.
+
+    Held to the end of load(), the manifest rolled back with the refusal and left the archive
+    sealed on disk with no row naming it -- which is what happened on 2026-09-04 to 3.65 GB
+    that no re-run can reach, because stage_payload() reuses a slot only through owning_slot()
+    and owning_slot() reads lineage.manifests.
+    """
+    seeded.commit()  # the environments row the fixture planted, so the rollback below is the load's
+    drifted = tmp_path / "drifted.zip"
+    with zipfile.ZipFile(SAMPLE) as source, zipfile.ZipFile(drifted, "w") as target:
+        for name in source.namelist():
+            text = source.read(name).decode()
+            if name == LEASE_CYCLE_MEMBER:
+                header, _, body = text.partition("\n")
+                text = header + "}INVENTED_COLUMN\n" + body
+            target.writestr(name, text)
+
+    with lineage_session(
+        recorder=PostgresRecorder(seeded), environment=lineage_env
+    ), client_for(drifted) as client, pytest.raises(ArchiveFormatError):
+        tx_pdq.load(
+            seeded,
+            url=f"https://example.invalid/{SOURCE_KEY}",
+            raw_root=raw_root,
+            client=client,
+            expect_bytes=drifted.stat().st_size,
+        )
+    seeded.rollback()
+
+    recorded = rows(
+        seeded,
+        "select sha256, storage_uri from lineage.manifests where source_id = 'tx_pdq_dsv'",
+    )
+    assert len(recorded) == 1
+    assert Path(recorded[0][1]).is_file()
+    assert scalar(
+        seeded, "select count(*) from staging.tx_pdq_well_completion"
+    ) == 0
+
+
+def test_the_re_run_after_a_refusal_reuses_the_slot_it_already_paid_for(
+    seeded, raw_root: Path, lineage_env, tmp_path: Path
+) -> None:
+    """There is no resume -- the portal ignores Range -- so a re-run spends the whole fetch
+    again. What it must not do is place a second 3.65 GB copy beside the first."""
+    seeded.commit()  # the environments row the fixture planted, so the rollback below is the load's
+    drifted = tmp_path / "drifted.zip"
+    with zipfile.ZipFile(SAMPLE) as source, zipfile.ZipFile(drifted, "w") as target:
+        for name in source.namelist():
+            text = source.read(name).decode()
+            if name == LEASE_CYCLE_MEMBER:
+                header, _, body = text.partition("\n")
+                text = header + "}INVENTED_COLUMN\n" + body
+            target.writestr(name, text)
+
+    # Two clocks a minute apart: the artifact directory carries the fetch time to the second,
+    # so two runs inside one second would collide into the same slot and prove nothing.
+    for minute in (11, 12):
+        with lineage_session(
+            recorder=PostgresRecorder(seeded),
+            environment=lineage_env,
+            clock=FixedClock(datetime(2026, 9, 4, 19, minute, 0, tzinfo=UTC)),
+        ), client_for(drifted) as client, pytest.raises(ArchiveFormatError):
+            tx_pdq.load(
+                seeded,
+                url=f"https://example.invalid/{SOURCE_KEY}",
+                raw_root=raw_root,
+                client=client,
+                expect_bytes=drifted.stat().st_size,
+            )
+        seeded.rollback()
+
+    placed = sorted((raw_root / "tx_pdq_dsv" / "pdq-dsv-zip").iterdir())
+
+    assert len(placed) == 1
+    assert scalar(
+        seeded, "select count(*) from lineage.manifests where source_id = 'tx_pdq_dsv'"
+    ) == 1
 
 
 def test_the_run_reports_what_it_promoted(promoted) -> None:

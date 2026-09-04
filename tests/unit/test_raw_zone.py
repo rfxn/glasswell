@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
+from glasswell.lineage.errors import RawRootUnset
 from glasswell.lineage.fetch import (
-    DEFAULT_RAW_ROOT,
     RAW_ROOT_ENV,
     _artifact_directory,
     _extension,
@@ -24,13 +24,35 @@ def test_the_raw_root_prefers_the_explicit_argument(monkeypatch):
     assert resolve_raw_root("/tmp/somewhere") == Path("/tmp/somewhere")
 
 
-def test_the_raw_root_falls_back_to_the_environment_then_a_local_default(monkeypatch):
+def test_the_raw_root_falls_back_to_the_environment(monkeypatch):
     monkeypatch.setenv(RAW_ROOT_ENV, "/srv/glasswell/raw")
     assert resolve_raw_root() == Path("/srv/glasswell/raw")
-    monkeypatch.delenv(RAW_ROOT_ENV)
-    # Never /srv by default: a test run must not be able to write the production raw zone (C1).
-    assert resolve_raw_root() == DEFAULT_RAW_ROOT
-    assert not str(DEFAULT_RAW_ROOT).startswith("/")
+
+
+def test_an_undeclared_raw_root_refuses_rather_than_writing_beside_the_operator(
+    monkeypatch, tmp_path
+):
+    """The default was `data/raw`, resolved against the process's working directory, so the
+    same ingest wrote to a different filesystem depending on where it was started -- `/` under
+    systemd-run, a home directory by hand -- and `.incoming`'s same-device precheck then passed
+    for the wrong device. A production write has no default."""
+    monkeypatch.delenv(RAW_ROOT_ENV, raising=False)
+    monkeypatch.chdir(tmp_path)
+
+    with pytest.raises(RawRootUnset, match=RAW_ROOT_ENV) as refusal:
+        resolve_raw_root()
+
+    assert "/etc/glasswell/app.env" in str(refusal.value)
+    assert not (tmp_path / "data").exists()
+
+
+def test_an_empty_declaration_is_not_a_declaration(monkeypatch):
+    """An EnvironmentFile that carries `GLASSWELL_RAW_ROOT=` sets it to the empty string, and
+    Path("") is the working directory again."""
+    monkeypatch.setenv(RAW_ROOT_ENV, "")
+
+    with pytest.raises(RawRootUnset):
+        resolve_raw_root()
 
 
 @pytest.mark.parametrize(
