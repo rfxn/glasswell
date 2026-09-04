@@ -13,6 +13,7 @@ while another's codes sit in the same class.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +28,8 @@ from glasswell.lineage.status_classes import load_status_classes
 from glasswell.seed.conformance_status_classes import (
     ABSENCE_BASIS_RULE_ID,
     CLASS_DOMAIN_RULE_ID,
+    CONTRAST_EXCEPTIONS,
+    CONTRAST_EXCEPTIONS_ROUTED_TO,
 )
 from glasswell.seed.status_classes import DOMAIN_EFFECTIVE_FROM, STATUS_CLASSES, class_parameters
 from glasswell.status_resolution import served_vocabularies, status_map_classes
@@ -267,6 +270,52 @@ def jurisdiction_words(connection: psycopg.Connection) -> set[str]:
         if row.identity_prefix is not None:
             words.add(row.identity_prefix)
     return words
+
+
+# The client's own contrast gate, read where it is written. A `Record<string, readonly
+# string[]>` object literal, parsed rather than imported because the two tiers do not share a
+# loader; the same shape `test_jurisdiction_seed.py` reads `status.ts` with.
+CONTRAST_GATE = Path(__file__).resolve().parents[2] / "web/src/map/status-contrast.test.ts"
+_CARRIED_FORWARD = re.compile(
+    r"CARRIED_FORWARD: Readonly<Record<string, readonly string\[\]>> = \{(.*?)\n\};", re.S
+)
+_EXCEPTION = re.compile(r'(\w+):\s*\[(.*?)\]', re.S)
+
+
+def carried_forward_in_the_client() -> dict[str, list[str]]:
+    block = _CARRIED_FORWARD.search(CONTRAST_GATE.read_text(encoding="utf-8"))
+    assert block, "the client contrast gate no longer declares CARRIED_FORWARD by that name"
+    return {
+        name: [value.strip().strip('"') for value in values.split(",") if value.strip()]
+        for name, values in _EXCEPTION.findall(block.group(1))
+    }
+
+
+def test_the_published_bar_states_the_classes_it_does_not_hold_for(
+    seeded: psycopg.Connection,
+) -> None:
+    """H-11: a reader resolving this rule was told the domain clears 3:1 against four
+    backgrounds, and for three of twelve classes on the light theme that is false.
+
+    The exceptions are published beside the bar and held equal to the client gate that carries
+    them, so the two lists are one decision rather than two that agree by coincidence.
+    """
+    with seeded.cursor() as cursor:
+        cursor.execute(
+            "select spec from lineage.conformance_rules where rule_id = %s",
+            (CLASS_DOMAIN_RULE_ID,),
+        )
+        spec = cursor.fetchone()[0]
+
+    assert spec["min_contrast_ratio"] == 3.0
+    assert spec["min_contrast_exceptions"] == CONTRAST_EXCEPTIONS
+    assert spec["min_contrast_exceptions_routed_to"] == CONTRAST_EXCEPTIONS_ROUTED_TO
+    assert carried_forward_in_the_client() == CONTRAST_EXCEPTIONS
+    # Not vacuous: every substrate named is one the rule says the bar is measured against.
+    for substrates in spec["min_contrast_exceptions"].values():
+        assert substrates
+        for where in substrates:
+            assert where in {"dark panel", "dark map", "light panel", "light map"}
 
 
 def test_the_domains_own_rules_resolve_at_conformance(client: TestClient) -> None:

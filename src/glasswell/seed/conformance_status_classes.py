@@ -58,6 +58,18 @@ MAX_ABSENCE_SHARE = 0.30
 SOURCE_ID = "nd_mpr_xlsx"
 FILING_ANCHOR = True
 
+# The three the bar does not hold for, with the substrates they fail on, published beside the
+# bar itself: a reader resolving this rule was told the domain clears 3:1 against four
+# backgrounds, and for three of twelve classes on the light theme that is false. Every one of
+# these colours is byte-identical to what shipped before this track, so they are carried
+# forward rather than caused here, and the palette question is routed to BRAND.md.
+CONTRAST_EXCEPTIONS: dict[str, list[str]] = {
+    "active": ["light map"],
+    "confidential": ["light panel", "light map"],
+    "permitted": ["light panel", "light map"],
+}
+CONTRAST_EXCEPTIONS_ROUTED_TO = "BRAND.md"
+
 STATUS_CLASS_RULES: tuple[dict[str, object], ...] = (
     {
         "rule_id": CLASS_DOMAIN_RULE_ID,
@@ -73,6 +85,8 @@ STATUS_CLASS_RULES: tuple[dict[str, object], ...] = (
             # colour is a served datum, so the bar it has to clear is one too.
             "min_contrast_ratio": 3.0,
             "contrast_measured_against": ["#121A21", "#0E151B", "#FFFFFF", "#F2F5F8"],
+            "min_contrast_exceptions": dict(CONTRAST_EXCEPTIONS),
+            "min_contrast_exceptions_routed_to": CONTRAST_EXCEPTIONS_ROUTED_TO,
             "module_function": "glasswell.lineage.status_classes:load_status_classes",
             "source_is_filing_anchor": FILING_ANCHOR,
             "contract_note": (
@@ -105,6 +119,12 @@ STATUS_CLASS_RULES: tuple[dict[str, object], ...] = (
             " class and 2.94:1 for expired against the dark panel, which is the substrate the"
             " app opens on; the absence class was the least legible mark on a canvas this same"
             " decision turns it into a first-class row of."
+            " Three of the twelve do not clear it on the light theme and are named in"
+            " min_contrast_exceptions with the substrates they fail on rather than left to a"
+            " reader to discover: active on the light map, confidential and permitted on both"
+            " light substrates. Every one of those values is byte-identical to what shipped"
+            " before this decision, so they are carried forward rather than caused by it, and"
+            " the palette question they raise is routed to BRAND.md."
         ),
         "evidence_url": "https://glasswell.rpx.sh/conformance",
     },

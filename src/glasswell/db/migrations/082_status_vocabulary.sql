@@ -79,6 +79,13 @@ select 'cr_status_class_domain_1', 'cr_status_class_domain', null, 'nd_mpr_xlsx'
            'min_contrast_ratio', 3.0,
            'contrast_measured_against',
                jsonb_build_array('#121A21', '#0E151B', '#FFFFFF', '#F2F5F8'),
+           'min_contrast_exceptions',
+               jsonb_build_object('active', jsonb_build_array('light map'),
+                                  'confidential',
+                                      jsonb_build_array('light panel', 'light map'),
+                                  'permitted',
+                                      jsonb_build_array('light panel', 'light map')),
+           'min_contrast_exceptions_routed_to', 'BRAND.md',
            'module_function', 'glasswell.lineage.status_classes:load_status_classes',
            'source_is_filing_anchor', true,
            'contract_note', 'a declaration the serving path reads, not a frame transformation:'
@@ -104,7 +111,12 @@ select 'cr_status_class_domain_1', 'cr_status_class_domain', null, 'nd_mpr_xlsx'
        ' map substrates. The values carried across measured 2.19:1 for the absence class and'
        ' 2.94:1 for expired against the dark panel, which is the substrate the app opens on;'
        ' the absence class was the least legible mark on a canvas this same decision turns it'
-       ' into a first-class row of.',
+       ' into a first-class row of. Three of the twelve do not clear it on the light theme and'
+       ' are named in min_contrast_exceptions with the substrates they fail on rather than left'
+       ' to a reader to discover: active on the light map, confidential and permitted on both'
+       ' light substrates. Every one of those values is byte-identical to what shipped before'
+       ' this decision, so they are carried forward rather than caused by it, and the palette'
+       ' question they raise is routed to BRAND.md.',
        'https://glasswell.rpx.sh/conformance',
        'glasswell.lineage.status_classes:load_status_classes', date '2026-09-03'
  where exists (select 1 from lineage.sources where source_id = 'nd_mpr_xlsx')
