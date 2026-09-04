@@ -723,15 +723,15 @@ def _storage_check(
     )
 
 
-# The root filesystem matters because PGDATA sits on it, so the check follows PGDATA rather
-# than "/" and carries an absolute floor as well as the ratio: on the sizes this host is
-# planned at, 10 % of the disk is well below the room a Texas-scale load or a restage needs.
+# The check follows PGDATA, and 10 % of a disk this size is below the room a load needs.
 def _root_storage_check(observed_at: datetime) -> StatusCheck:
     floor = os.environ.get(PGDATA_FLOOR_ENV, "")
     return _storage_check(
         "root_storage",
-        "System storage",
-        Path(os.environ.get(PGDATA_ENV, DEFAULT_PGDATA)),
+        "PostgreSQL storage",
+        # `or`, not a get() default: an Environment= line with an empty value would otherwise
+        # measure Path("."), the directory the collector happens to run in.
+        Path(os.environ.get(PGDATA_ENV) or DEFAULT_PGDATA),
         observed_at,
         # A malformed value keeps the default: this guard is lowered by setting a byte count,
         # never by mistyping one.

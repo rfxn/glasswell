@@ -290,6 +290,18 @@ def _statvfs(blocks: int, available: int, frsize: int = 4096):
     return lambda _path: SimpleNamespace(f_blocks=blocks, f_bavail=available, f_frsize=frsize)
 
 
+def _recorded_storage_check(monkeypatch: pytest.MonkeyPatch) -> dict[str, tuple | dict]:
+    recorded: dict[str, tuple | dict] = {}
+
+    def _record(*args, **kwargs) -> StatusCheck:
+        recorded["args"] = args
+        recorded["kwargs"] = kwargs
+        return StatusCheck(id="root_storage", label="Recorded", state="ok", detail="Read.")
+
+    monkeypatch.setattr(status_collector, "_storage_check", _record)
+    return recorded
+
+
 def test_root_storage_refuses_on_the_floor_the_ratio_alone_would_have_passed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -324,14 +336,7 @@ def test_a_floor_that_is_not_a_byte_count_keeps_the_default_rather_than_dropping
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     observed_at = datetime(2026, 9, 4, 21, 0, tzinfo=UTC)
-    recorded: dict[str, tuple | dict] = {}
-
-    def _record(*args, **kwargs) -> StatusCheck:
-        recorded["args"] = args
-        recorded["kwargs"] = kwargs
-        return StatusCheck(id="root_storage", label="System storage", state="ok", detail="Read.")
-
-    monkeypatch.setattr(status_collector, "_storage_check", _record)
+    recorded = _recorded_storage_check(monkeypatch)
     monkeypatch.delenv(status_collector.PGDATA_ENV, raising=False)
     monkeypatch.setenv(status_collector.PGDATA_FLOOR_ENV, "sixty gibibytes")
 
@@ -345,7 +350,21 @@ def test_a_floor_that_is_not_a_byte_count_keeps_the_default_rather_than_dropping
     }
 
 
-def test_the_status_unit_configures_both_names_the_collector_reads(monkeypatch) -> None:
+def test_a_configured_path_that_is_empty_falls_back_to_the_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed_at = datetime(2026, 9, 4, 21, 0, tzinfo=UTC)
+    recorded = _recorded_storage_check(monkeypatch)
+    # An `Environment=GLASSWELL_STATUS_PGDATA=` line with nothing after it: Path("") is
+    # Path("."), which measures whatever directory the collector happens to run in.
+    monkeypatch.setenv(status_collector.PGDATA_ENV, "")
+
+    status_collector._root_storage_check(observed_at)
+
+    assert recorded["args"][2] == status_collector.DEFAULT_PGDATA
+
+
+def test_the_status_unit_configures_both_names_the_collector_reads() -> None:
     unit = (
         Path(__file__).resolve().parents[2] / "infra" / "systemd" / "glasswell-status.service"
     ).read_text(encoding="utf-8")
