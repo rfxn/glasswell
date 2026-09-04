@@ -178,12 +178,15 @@ def test_nothing_the_montana_marts_publish_claims_a_length(refreshed):
 def test_a_geometry_with_no_well_row_still_tiles_unstyled(refreshed):
     db, _ = refreshed
 
+    # Its class is the absence class rather than a null, which is the same answer every other
+    # surface gives it: the operator and the completion year stay null because those are
+    # absences of a value, where the class is a class with a row behind it.
     assert rows(
         db,
         "select operator_name, status_canonical, completion_year from marts.mt_wells_tile"
         " where api10 = %s",
         (MT_ORPHAN,),
-    ) == [(None, None, None)]
+    ) == [(None, "unmapped", None)]
 
 
 def test_the_point_layer_carries_a_completion_year_and_never_a_spud_one(refreshed):

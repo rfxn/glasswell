@@ -131,7 +131,11 @@ def test_a_tx_feature_carries_the_status_the_legend_paints_with(refreshed, seede
         for (status,) in rows(seeded, "select distinct status_canonical from lineage.tx_status_map")
     }
     assert painted
-    assert painted <= known
+    # The absence class is not in the map, and it is not supposed to be: no mapping produces it,
+    # which is what makes it the absence class. It reaches the tile because the projection reads
+    # resolved_status(), whose third arm is the domain's own row, so a well the RRC filed no
+    # status for is drawn as a class rather than as a null the canvas has to guess at.
+    assert painted <= known | {"unmapped"}
 
 
 def test_the_refresh_cites_the_tx_length_rule_and_the_datum_rule(refreshed, seeded):  # noqa: F811

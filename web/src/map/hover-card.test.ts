@@ -384,3 +384,43 @@ describe("the hover card's accessibility contract", () => {
     expect(seen).toHaveBeenCalledWith("drv_cell_1");
   });
 });
+
+describe("the disposal line names the regulator that filed the code", () => {
+  it("names each jurisdiction's own, and its rule only where one is registered", () => {
+    // §11 exit 11's positive half: a Montana, a Texas and a New Mexico disposal well each name
+    // their own regulator. Before this they named nothing at all -- the codebook is North
+    // Dakota's, so the whole line was hidden for the other three, and the visual gate
+    // photographed a Texas injector saying only `Service`.
+    const card = createHoverCard();
+    const seen: Record<string, string> = {};
+    for (const [code, api10] of [
+      ["ND", "3305399804"],
+      ["TX", "4238399802"],
+      ["NM", "3001599803"],
+      ["MT", "2508399804"],
+    ]) {
+      card.show({ api10, well_type_reported: "WI" }, { x: 0, y: 0 });
+      seen[code!] = card.element.textContent ?? "";
+    }
+
+    for (const code of ["ND", "TX", "NM", "MT"]) {
+      expect(seen[code], code).toContain(`well_type WI as ${code} filed it`);
+    }
+    // The class and its rule only where the regulator published a codebook, which is one of
+    // the four: asserting NDIC's membership over a Texas code is the claim nobody made.
+    expect(seen["ND"]).toContain("Disposal / injection");
+    expect(seen["ND"]).toContain("cr_nd_well_type_disposal_1");
+    for (const code of ["TX", "NM", "MT"]) {
+      expect(seen[code], code).not.toContain("Disposal / injection");
+      expect(seen[code], code).toContain(`no injection codebook is registered for ${code}`);
+      expect(seen[code], code).not.toContain("cr_nd_well_type_disposal_1");
+    }
+  });
+
+  it("says nothing at all for a code no registered codebook classes", () => {
+    const card = createHoverCard();
+    card.show({ api10: "3305399804", well_type_reported: "OG" }, { x: 0, y: 0 });
+
+    expect(card.element.textContent).not.toContain("well_type");
+  });
+});

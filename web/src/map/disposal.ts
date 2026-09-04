@@ -74,3 +74,18 @@ export function disposalType(properties: Record<string, unknown>): string | null
   const book = disposalCodebook(String(properties["api10"] ?? ""));
   return book !== null && book.codes.includes(value) ? value : null;
 }
+
+/**
+ * The code a feature filed that some registered codebook classes as injection, whatever its own
+ * registration publishes. Null where the code is in nobody's codebook.
+ *
+ * The distinction `disposalType` cannot make on its own. A Texas well filing `WI` is one a
+ * reader can see is an injector, and saying nothing about it is an absence presented as a fact.
+ * What is not knowable is whether the RRC means by `WI` what the NDIC means by it, so the class
+ * and its rule are stated only where the feature's own regulator has published one.
+ */
+export function injectionCandidate(properties: Record<string, unknown>): string | null {
+  const value = properties["well_type_reported"];
+  if (typeof value !== "string") return null;
+  return DISPOSAL_WELL_TYPES.includes(value) ? value : null;
+}
