@@ -1,3 +1,5 @@
+import "./drawer.css";
+
 import { ApiError, getEnvelope } from "../api/client.ts";
 import { focusPanel } from "../chrome/overlays.ts";
 import { unwrap } from "../api/envelope.ts";
