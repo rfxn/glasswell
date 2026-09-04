@@ -68,7 +68,7 @@
   align-items: center;
   gap: var(--gw-space-2);
   margin: 0.2rem 0 0;
-  color: var(--cyan);
+  color: var(--cyan-text);
   font-size: var(--gw-fs-micro);
 }
 
@@ -140,7 +140,9 @@
 /* The third vocabulary's own prefix: `gw-state-*` is the null semantics, `gw-alloc-*` the
    allocation class, and these say whether the month was filed more than once. */
 .gw-restate-latest {
-  background: var(--hairline-strong);
+  /* The default mark is 31 of 32 cells on a typical well, and the hairline it used painted at
+     1.56:1 against the strip: a band that reads as empty with one amber square in it. */
+  background: var(--slate);
 }
 
 .gw-restate-earlier {
@@ -205,8 +207,12 @@
 .gw-series-table thead th.gw-table-month {
   position: sticky;
   left: 0;
+  z-index: 1;
   background: var(--panel);
   padding-right: 0.6rem;
+  /* The right edge says "covered": a figure scrolled half under an opaque month column read as
+     a whole number (`000 mcf` for 10100.000 mcf), and the shadow is what marks the clip. */
+  box-shadow: 6px 0 6px -6px rgb(0 0 0 / 0.65);
 }
 
 

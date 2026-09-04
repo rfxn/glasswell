@@ -799,58 +799,80 @@ function stateKey(chart: ChartSeries, callbacks: ChartCallbacks): HTMLElement {
  * The four null-semantics states as one band per stream, aligned under the plot: a gap in the
  * line could be any of them, and the band says which without collapsing them into each other.
  */
-/** One row per stream that carries a restated month, and none where nothing was restated. */
-function restatementRows(
+/**
+ * The capture band: one row per stream whose drawn window holds a month read at an earlier
+ * capture, a key that says what the two marks mean in words, and one control under the band
+ * that re-reads the series at the earliest capture the window holds. None of it where the
+ * window holds no earlier capture: a band of "latest capture" marks says nothing.
+ */
+function captureBand(
   chart: ChartSeries,
   onVintage: ((asOf: string) => void) | undefined,
 ): HTMLElement[] {
-  return chart.columns
-    .filter((column) => column.mixedVintages)
-    .map((column) => {
-      const row = document.createElement("div");
-      row.className = "gw-state-row gw-restate-row";
-      const name = document.createElement("span");
-      name.className = "gw-state-name";
-      name.textContent = `${column.label} · capture`;
-      const cells = document.createElement("div");
-      cells.className = "gw-state-cells gw-restate-cells";
-      cells.setAttribute("role", "img");
-      cells.setAttribute(
-        "aria-label",
-        `Which months of ${column.label.toLowerCase()} were filed more than once`,
-      );
-      // Against the newest vintage in the window, which is the capture the rest of the line is
-      // drawn at: a month read at an older one is the fact this row exists to show.
-      const newest = [...column.vintages].filter(Boolean).sort().pop() ?? null;
-      const earlier = new Set<string>();
-      column.vintages.forEach((vintage, index) => {
-        const older = Boolean(vintage) && vintage !== newest;
-        if (older && vintage) earlier.add(vintage);
-        const mark = restatement(older ? "earlier_capture" : "latest_capture");
-        const cell = document.createElement("span");
-        cell.className = `gw-state-mark ${mark.className}`;
-        cell.setAttribute("data-index", String(index));
-        cell.title = `${chart.months[index] ?? ""} · ${mark.label}. ${mark.title}`;
-        cells.appendChild(cell);
-      });
-      row.append(name, cells);
-      // §4.3 item 3: the way to read the series as it stood at the earlier capture. It is a
-      // re-request, not a redraw, and the proof it is real is that every point's handle
-      // changes -- a different promotion, a different workbook.
-      const oldest = [...earlier].sort()[0];
-      if (oldest && onVintage) {
-        const read = document.createElement("button");
-        read.type = "button";
-        read.className = "gw-vintage-read";
-        read.textContent = `Read at ${oldest}`;
-        read.title =
-          `Request this series as of ${oldest}. Every point then resolves to the promotion` +
-          " that was in force at that capture.";
-        read.addEventListener("click", () => onVintage(oldest));
-        row.appendChild(read);
-      }
-      return row;
+  const rows: HTMLElement[] = [];
+  const earlier = new Set<string>();
+  for (const column of chart.columns) {
+    // Against the newest vintage in the window, which is the capture the rest of the line is
+    // drawn at: a month read at an older one is the fact this row exists to show.
+    const newest = [...column.vintages].filter(Boolean).sort().pop() ?? null;
+    const older = column.vintages.map((vintage) => Boolean(vintage) && vintage !== newest);
+    if (!older.some(Boolean)) continue;
+    const row = document.createElement("div");
+    row.className = "gw-state-row gw-restate-row";
+    const name = document.createElement("span");
+    name.className = "gw-state-name";
+    // A word that fits the name column at every width; "capture" is the key's word.
+    name.textContent = `${column.label} · read`;
+    const cells = document.createElement("div");
+    cells.className = "gw-state-cells gw-restate-cells";
+    cells.setAttribute("role", "img");
+    cells.setAttribute(
+      "aria-label",
+      `Which months of ${column.label.toLowerCase()} were read at an earlier capture`,
+    );
+    column.vintages.forEach((vintage, index) => {
+      if (older[index] && vintage) earlier.add(vintage);
+      const mark = restatement(older[index] ? "earlier_capture" : "latest_capture");
+      const cell = document.createElement("span");
+      cell.className = `gw-state-mark ${mark.className}`;
+      cell.setAttribute("data-index", String(index));
+      cell.title = `${chart.months[index] ?? ""} · ${mark.label}. ${mark.title}`;
+      cells.appendChild(cell);
     });
+    row.append(name, cells);
+    rows.push(row);
+  }
+  if (rows.length === 0) return rows;
+
+  const key = document.createElement("p");
+  key.className = "gw-state-key gw-restate-key";
+  for (const state of ["latest_capture", "earlier_capture"]) {
+    const described = restatement(state);
+    const item = document.createElement("span");
+    item.className = "gw-state-key-item";
+    const swatch = document.createElement("span");
+    swatch.className = `gw-state-mark ${described.className}`;
+    swatch.title = described.title;
+    item.append(swatch, described.label);
+    key.appendChild(item);
+  }
+  rows.push(key);
+  // §4.3 item 3: the way to read the series as it stood at the earliest capture the window
+  // holds. Once, under the band, because it is one request whichever stream's row it sits by;
+  // it is a re-request, not a redraw, and every point's handle changes with it.
+  const oldest = [...earlier].sort()[0];
+  if (oldest && onVintage) {
+    const read = document.createElement("button");
+    read.type = "button";
+    read.className = "gw-vintage-read";
+    read.textContent = `Read at ${oldest}`;
+    read.title =
+      `Request this series as of ${oldest}. Every point then resolves to the promotion` +
+      " that was in force at that capture.";
+    read.addEventListener("click", () => onVintage(oldest));
+    rows.push(read);
+  }
+  return rows;
 }
 
 function stateBand(
@@ -893,7 +915,7 @@ function stateBand(
   for (const row of allocationRows(chart)) wrapper.appendChild(row);
   // The third vocabulary, and only where it has something to say: a well nobody restated
   // carries no row at all rather than a row of "as filed" marks.
-  for (const row of restatementRows(chart, onVintage)) wrapper.appendChild(row);
+  for (const row of captureBand(chart, onVintage)) wrapper.appendChild(row);
   return wrapper;
 }
 

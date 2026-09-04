@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // uPlot draws to a 2d context happy-dom does not provide. The frame around the plot is the
@@ -257,6 +258,63 @@ describe("report vintage, one layer down", () => {
     const details = host.querySelector("details.gw-vintages");
     expect(details?.textContent).toContain("2026-08-20");
     expect(details?.textContent).not.toContain("2026-07-01");
+  });
+
+  it("keys the capture band on the page, in words, once", () => {
+    // The band's vocabulary lived in titles only, and a title is mouse-only. The key says what
+    // the two marks mean beside the band, the way the state key and the allocation key do.
+    renderChart(host, mixed(), callbacks);
+    const key = host.querySelector(".gw-restate-key");
+
+    expect(key?.textContent).toContain("latest capture");
+    expect(key?.textContent).toContain("earlier capture");
+    expect(host.querySelectorAll(".gw-restate-key")).toHaveLength(1);
+  });
+
+  it("names the row in a word that fits, and keeps the word capture for the key", () => {
+    renderChart(host, mixed(), callbacks);
+    const name = host.querySelector(".gw-restate-row .gw-state-name");
+
+    expect(name?.textContent).toBe("Oil · read");
+  });
+
+  it("offers the earlier read once, under the band, not once per stream", () => {
+    const pm = months("2026-01", 4);
+    const data = production(pm);
+    const threeStreams = toChartSeries({
+      ...data,
+      streams: ["oil", "gas", "water"],
+      series: {
+        ...data.series,
+        oil_bbl_report_vintage: pm.map((_, index) => (index === 0 ? "2026-07-01" : "2026-08-20")),
+        gas_mcf_report_vintage: pm.map((_, index) => (index === 0 ? "2026-07-01" : "2026-08-20")),
+        water_bbl: pm.map(() => "10"),
+        water_bbl_report_vintage: pm.map((_, index) => (index === 0 ? "2026-07-01" : "2026-08-20")),
+        water_bbl_null_semantics: pm.map(() => "reported"),
+      },
+      _lineage: {
+        ...data._lineage,
+        ...Object.fromEntries(pm.map((_, index) => [`series.water_bbl.${index}`, `drv_w${index}`])),
+      },
+      _units: { ...data._units, "series.water_bbl": "bbl" },
+    });
+    const vintage = vi.fn();
+    renderChart(host, threeStreams, { ...callbacks, onVintage: vintage });
+
+    expect(host.querySelectorAll(".gw-restate-row")).toHaveLength(3);
+    const reads = host.querySelectorAll<HTMLButtonElement>(".gw-vintage-read");
+    expect(reads).toHaveLength(1);
+    expect(reads[0]?.closest(".gw-restate-row")).toBeNull();
+    reads[0]?.click();
+    expect(vintage).toHaveBeenCalledWith("2026-07-01");
+  });
+
+  it("paints the default capture mark at a contrast a reader can see, in the stylesheet", () => {
+    // 31 of 32 cells on the ND well are this mark, and it painted at 1.56:1 in dark.
+    const css = readFileSync("src/chart/chart.css", "utf8");
+    const latest = css.match(/\.gw-restate-latest\s*\{[^}]*\}/)?.[0] ?? "";
+    expect(latest).not.toContain("--panel");
+    expect(latest).toMatch(/--(slate|ink|cyan|amber)/);
   });
 
   it("says nothing at all where the series carried no vintage", () => {
@@ -701,6 +759,27 @@ describe("brushing a range, and the total that follows it", () => {
     expect(total).toBe("Oil 99.451 bbl/kft");
   });
 
+  it("draws no capture band for a window that holds no earlier capture", () => {
+    // Brushing the restated month out of the window left three rows of "latest capture" and
+    // no control: a band drawn to say nothing.
+    const pm = months("2026-01", 4);
+    const data = production(pm);
+    const mixed = toChartSeries({
+      ...data,
+      series: {
+        ...data.series,
+        oil_bbl_report_vintage: pm.map((_, index) => (index === 0 ? "2026-07-01" : "2026-08-20")),
+      },
+    });
+    renderChart(host, mixed, { ...callbacks, onVintage: vi.fn() });
+    expect(host.querySelector(".gw-restate-row")).not.toBeNull();
+    drag(1, 3);
+
+    expect(host.querySelector(".gw-restate-row")).toBeNull();
+    expect(host.querySelector(".gw-restate-key")).toBeNull();
+    expect(host.querySelector(".gw-vintage-read")).toBeNull();
+  });
+
   it("counts the classes of the months it summed, not the ones it did not", () => {
     // The first month of the fixture reads zero, so a brush that includes it says so.
     drag(0, 2);
@@ -733,7 +812,11 @@ describe("the per-lateral-foot control", () => {
     expect(host.querySelector(".gw-normalize-toggle")?.getAttribute("aria-pressed")).toBe("true");
   });
 
-  it("states the reason where no divisor is served rather than offering a dead control", () => {
+  it("states the reason on the page where no divisor is served, and keeps the control reachable", () => {
+    // A reason that lives in a title on a disabled button is mouse-only: a disabled button is
+    // out of the tab order, so a keyboard reader never gets the sentence. The control stays
+    // focusable and says it is unavailable, and the reason is text beside it with the rule
+    // that decided it linked.
     renderChart(
       host,
       sparse,
@@ -879,6 +962,15 @@ describe("the table alternative", () => {
     await press();
 
     expect(host.querySelectorAll(".gw-series-table tbody tr").length).toBe(60);
+  });
+});
+
+describe("the selection label, in the stylesheet", () => {
+  it("uses the text-safe cyan, so the light theme clears 4.5:1 the day it is reachable", () => {
+    const css = readFileSync("src/chart/chart.css", "utf8");
+    const selected = css.match(/\.gw-window-selected\s*\{[^}]*\}/)?.[0] ?? "";
+    expect(selected).toContain("var(--cyan-text)");
+    expect(selected).not.toMatch(/var\(--cyan\)/);
   });
 });
 
