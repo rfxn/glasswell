@@ -164,8 +164,12 @@ def test_a_well_whose_class_resolves_nowhere_still_names_its_regulator(
     assert body["regulator_name"]
     assert body["regulator_url"]
     assert body["status_vocabulary_rule"]
-    # And the registry gap is a fact the card states rather than another state's rule to wear.
-    assert body["geometry_provenance_rule"] is None
+    # The rule the card shows is this jurisdiction's own or none at all, never a neighbour's.
+    # Texas registered `cr_tx_geometry_provenance_1` on the v0.80 train, so the assertion is
+    # the property rather than the gap that stood in for it: what the card must never do is
+    # wear North Dakota's rule over a Texas well.
+    provenance = body["geometry_provenance_rule"]
+    assert provenance is None or provenance.startswith("cr_tx_")
 
 
 def test_the_history_is_over_the_filed_code_and_not_over_the_canonical_class(

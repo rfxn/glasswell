@@ -8,6 +8,8 @@ not represent (N-1).
 
 from __future__ import annotations
 
+from datetime import date, timedelta
+
 from fastapi.testclient import TestClient
 
 from tests.contract.conftest import TX_API10
@@ -18,6 +20,9 @@ PENDING = "production_pending_allocation"
 # resolves the sentence the card used to show.
 SUPERSEDED_DISCLOSURE = "cr_tx_allocation_scope_1"
 ALLOCATION_RULE = "cr_tx_allocation_v0_1"
+# The successor: the rule that admits a well-level figure, and whose published vintage is the
+# knowledge cut the card's answer turns on.
+GRAIN_RULE = "cr_tx_production_grain_1"
 ERROR_RULE = "cr_alloc_v0_error_bounds_1"
 
 
@@ -240,9 +245,15 @@ def test_the_card_said_pending_until_the_day_the_allocation_was_published(
     a chart. Nothing about the answer changes retroactively, which is the whole point of
     publishing a rule separately from dating it.
     """
+    # The dates are read from the rule rather than written here: the v0.80 repoint moved the
+    # successor's published vintage to the tag it rides (2026-09-02 to 2026-09-04) and a test
+    # pinning the old literal asserts a boundary the registry no longer has.
+    published = date.fromisoformat(
+        envelope(client, f"/v1/conformance/{GRAIN_RULE}")["data"]["published_vintage"]
+    )
     path = f"/v1/wells/{TX_API10}"
-    before = envelope(client, path, as_of="2026-08-28")
-    after = envelope(client, path, as_of="2026-09-02")
+    before = envelope(client, path, as_of=(published - timedelta(days=1)).isoformat())
+    after = envelope(client, path, as_of=published.isoformat())
 
     assert PENDING in {warning["code"] for warning in before["meta"]["warnings"]}
     assert before["links"]["reporting_rule"] == f"/v1/conformance/{SUPERSEDED_DISCLOSURE}"
