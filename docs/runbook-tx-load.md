@@ -61,8 +61,11 @@ spent the download. The precheck refuses rather than discovering it at the end.
 
 There is no longer a fallback for the root itself: an undeclared raw zone refuses with
 `RawRootUnset` instead of resolving the relative `data/raw` against whatever directory the
-process was started in. Every unit below therefore passes it explicitly, and so must any
-hand-run ingest.
+process was started in. Every unit below that **reaches** the raw zone therefore passes it
+explicitly, and so must any hand-run ingest. Step 4's mart units do not, and that is correct:
+a mart reads canonical and writes a mart, and `IngestRun.raw_root` is resolved where it is
+reached rather than where a run opens, so a step that never touches the zone never asks for
+one.
 
 ```bash
 grep GLASSWELL_RAW_ROOT /etc/glasswell/app.env      # expect /data/raw

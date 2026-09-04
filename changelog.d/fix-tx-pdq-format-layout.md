@@ -20,3 +20,7 @@
       suffix that ignored their separators, so --layer all refused after staging
       the wells layer; member selection now compares case and separators on
       neither side, and the three member names are conformance rows
+- [Fix] A source whose artifact was fetched and never parsed is served as stale
+      rather than current: a refused stage records the refusal against its
+      manifest and leaves staging_load_ref unset, so a fetch that landed and a
+      parse that refused are two answers and not one

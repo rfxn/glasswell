@@ -53,7 +53,7 @@ Six members each, `}`-delimited, one header row, no enclosure, deflate:
 | `GP_DATE_RANGE_CYCLE_DATA_TABLE.dsv` | 1 | The window and the extract dates, in the five-column shape the manual declares |
 | `GP_DISTRICT_DATA_TABLE.dsv` | 15 | The district trap: `07}6E`, `08}7B`, `09}7C`, `10}08`, `11}8A`, `13}09`, `14}10`, `20}State Wide` — two vocabularies in one file |
 | `OG_LEASE_CYCLE_DATA_TABLE.dsv` | 12,120 over **1,000 leases**, 32 columns | The production grain |
-| `OG_WELL_COMPLETION_DATA_TABLE.dsv` | 1,000, 16 columns | The in-dump crosswalk |
+| `OG_WELL_COMPLETION_DATA_TABLE.dsv` | 1,004 wells over 999 leases, 16 columns | The in-dump crosswalk. More rows than leases because four leases carry more than one well — `O-08-000101` three, `O-08-000404`, `O-08-000505` and `O-08-000606` two each — and one lease (`O-08-000707`) has no well at all |
 | `OG_REGULATORY_LEASE_DW_DATA_TABLE.dsv` | 1,000 | The lease dimension |
 
 ## The headers, and why they are not the manual's
