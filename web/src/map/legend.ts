@@ -7,8 +7,7 @@ import { PRODUCING_CLASSES, PRODUCING_RULINGS, producingHref, producingNote } fr
 import type { ProducingCounts } from "./producing.ts";
 import { provenanceRules, provenanceUnregistered } from "./provenance.ts";
 import { disposalRegistrations, disposalRules } from "./disposal.ts";
-import { census, loadCensus, measuredWellCount } from "./census.ts";
-import { JURISDICTION_LIST } from "./jurisdictions.generated.ts";
+import { census, loadCensus, measuredWellCount, servedVocabularies } from "./census.ts";
 import { STATUS_VOCAB_RULES, statusClass, statusVocabulary } from "./status.ts";
 import type { StatusClass } from "./status.ts";
 import { statusSwatch } from "./swatch.ts";
@@ -628,13 +627,18 @@ export function createLegend(options: LegendOptions): LegendHandle {
       note.appendChild(ruleNode(entry));
     }
     note.appendChild(document.createTextNode("."));
-    // Registration data, so no state is named here; scoped to the rules this view was classed
-    // by and placed above the symbology clauses, because an unscoped tail states one basin's
-    // decoding rule over another and does it below the note's own fold.
+    // Served data, so no state is named here; scoped to the rules this view was classed by and
+    // placed above the symbology clauses, because an unscoped tail states one basin's decoding
+    // rule over another and does it below the note's own fold.
+    //
+    // Read from the census response rather than from the generated module, which is what put
+    // the note on the wire: a registration can change its sentence without a rebuild. The
+    // module keeps the presentation facts the layer panel needs before this fetch settles
+    // (R-4), and `test_jurisdiction_parity.py` holds the pair equal.
     const inView = new Set(vocabulary.map((entry) => entry.rule));
-    for (const entry of JURISDICTION_LIST) {
+    for (const entry of servedVocabularies()) {
       if (!entry.legendNote) continue;
-      if (!inView.has(entry.rules["status_vocabulary"] ?? "")) continue;
+      if (!inView.has(entry.rule)) continue;
       note.appendChild(document.createTextNode(` ${entry.legendNote}`));
     }
     const ringed = disposalRegistrations();

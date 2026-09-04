@@ -1007,15 +1007,35 @@ describe("the vocabulary the counts were classed by", () => {
   });
 
   it("states an in-view jurisdiction's sentence ahead of the general symbology clauses", () => {
+    // Seeded from the wire, not from the generated module: §3.1(a) put the note on the wire so
+    // a registration can change its sentence without a rebuild, and the module's copy is kept
+    // only for what the layer panel needs before the fetch settles (R-4).
     const co = JURISDICTION_LIST.find((entry) => entry.code === "CO")!;
+    const served = "Colorado's AL code is a vacated permit, not an abandoned well.";
+    resetCensus(
+      censusOf([
+        {
+          jurisdiction_code: "CO",
+          vocabulary: {
+            rule_id: co.rules["status_vocabulary"]!,
+            classes: ["active"],
+            legend_note: served,
+          },
+        },
+      ]),
+    );
     const legend = createLegend({ onFilter: () => {} });
     legend.setVocabulary([{ rule: co.rules["status_vocabulary"]!, href: null }]);
     const note = noteText(legend.element);
 
-    const sentence = note.indexOf(co.legendNote!);
+    const sentence = note.indexOf(served);
     const symbology = note.indexOf("Laterals are GIS bore geometry");
     expect(sentence).toBeGreaterThan(-1);
+    // And it is the served sentence, not the module's, which is the whole point: the two differ
+    // here on purpose and the wire wins.
+    expect(note).not.toContain(co.legendNote!);
     expect(symbology).toBeGreaterThan(sentence);
+    resetCensus();
   });
 });
 
