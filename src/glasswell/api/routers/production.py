@@ -943,6 +943,30 @@ def _allocated_response(
     )
 
 
+def pending_allocation_detail(grain_rule: str, model_rule: str | None) -> str:
+    """The disclosure's sentence, guarded the way the link beside it is guarded.
+
+    `model_rule` is read from the registration's cumulative scope, a different lookup from the
+    grain decision that routed the well here, so a registration carrying the second and not the
+    first resolves None -- and an interpolated None served "None is the rule that computes it"
+    (gate-tx D-1).
+    """
+    computes = (
+        f" {model_rule} is the rule"
+        " that computes it; the lease volumes it splits are promoted at their"
+        " native grain and are served as the lease's own."
+        if model_rule
+        else " The lease volumes are promoted at their native grain and are served as the"
+        " lease's own."
+    )
+    return (
+        "This well's regulator reports production at the lease"
+        f" ({grain_rule}), and the allocated mart holds no rows on this"
+        " instance, so no well-level figure is served rather than an empty series"
+        " that would read as nothing produced." + computes
+    )
+
+
 def _allocation_not_built(
     request: Request,
     connection: psycopg.Connection,
@@ -982,14 +1006,7 @@ def _allocation_not_built(
         warnings=[
             {
                 "code": "production_pending_allocation",
-                "detail": (
-                    "This well's regulator reports production at the lease"
-                    f" ({rule['rule_id']}), and the allocated mart holds no rows on this"
-                    " instance, so no well-level figure is served rather than an empty series"
-                    f" that would read as nothing produced. {model_rule} is the rule"
-                    " that computes it; the lease volumes it splits are promoted at their"
-                    " native grain and are served as the lease's own."
-                ),
+                "detail": pending_allocation_detail(rule["rule_id"], model_rule),
                 "pointer": "/production",
             }
         ],
