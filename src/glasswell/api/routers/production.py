@@ -713,6 +713,7 @@ def get_well_production(
             continue
         column = STREAM_COLUMNS[name]
         columns.append(column)
+        policy = stream_basis(name, state_code, registry=registry)
         derivations = {row["derivation_id"] for row in points.values()}
         if len(derivations) > 1:
             warnings.append(
@@ -757,12 +758,17 @@ def get_well_production(
             derivation=first["derivation_id"],
             selector=f"api10={api10}&col={column}",
             granularity=first["granularity"],
+            # The divisor joins the basis rather than replacing it: a per-foot oil figure still
+            # has to say oil means oil plus condensate, and a per-foot figure whose length
+            # method is not on the wire is a number a reader cannot reproduce.
             basis=(
-                stream_basis(name, state_code, registry=registry)
+                policy
                 if divisor is None
-                # The divisor is the basis: a per-foot figure whose length method is not on the
-                # wire is a number a reader cannot reproduce.
-                else f"per lateral foot · {divisor.feet} ft · {divisor.method}"
+                else " · ".join(
+                    part
+                    for part in (policy, f"per lateral foot · {divisor.feet} ft · {divisor.method}")
+                    if part
+                )
             ),
             point_handles=(
                 [

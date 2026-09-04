@@ -51,6 +51,12 @@ describe("the CSV an analyst takes away", () => {
     expect(csv).toContain(`# reproduce=${context.url}`);
   });
 
+  it("heads the file with the basis of every stream that has one", () => {
+    // The policy rides wherever the number does: a file of oil figures that does not say oil
+    // means oil plus condensate has dropped the sentence the chart frame shows beside them.
+    expect(csv).toContain("# basis oil=oil+condensate");
+  });
+
   it("has no running-total column, and says why", () => {
     // M-7's other half: a client sum in a file beside a handle column would read as a figure
     // with provenance.

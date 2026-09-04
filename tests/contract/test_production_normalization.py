@@ -61,6 +61,16 @@ def test_the_basis_names_the_divisor_and_the_method_it_was_measured_by(
     assert any(method in basis for method in ("geodesic", "projected"))
 
 
+def test_the_liquids_policy_survives_normalisation(client: TestClient) -> None:
+    """State the policy wherever the number appears: a per-foot oil figure still has to say
+    that oil means oil plus condensate, beside the divisor it now also carries."""
+    plain = client.get(PATH).json()["data"]["_basis"]["series.oil_bbl"]
+    basis = served(client)["data"]["_basis"]["series.oil_bbl"]
+
+    assert plain in basis
+    assert "per lateral foot" in basis
+
+
 def test_the_handle_changes_with_the_number_and_resolves_both_inputs(
     client: TestClient,
 ) -> None:

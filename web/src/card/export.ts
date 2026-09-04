@@ -40,6 +40,11 @@ export function toCsv(chart: ChartSeries, context: ExportContext): string {
     comment(`api10=${context.api10}`),
     comment(`grain=${context.grain}`),
     comment(`normalization=${context.normalization ?? "none"}`),
+    // The policy rides wherever the number does (R8): one line per stream the wire gave a
+    // basis, which is the liquids policy and, under normalisation, the divisor beside it.
+    ...chart.columns
+      .filter((column) => column.basis)
+      .map((column) => comment(`basis ${column.stream}=${column.basis}`)),
     comment(`as_of_resolved=${context.asOfResolved ?? "latest"}`),
     comment(`reproduce=${context.url}`),
     comment(
