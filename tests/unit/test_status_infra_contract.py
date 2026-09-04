@@ -7,6 +7,7 @@ without executing systemd or reading host credentials.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -22,6 +23,9 @@ DEPLOY = ROOT / "scripts" / "deploy.sh"
 VERIFY = INFRA / "verify.sh"
 SMOKE = ROOT / "scripts" / "smoke.sh"
 README = INFRA / "README.md"
+# What the collector reads at `status/collector.py:730-738`, and nothing else.
+UNIT_ENVIRONMENT = {"GLASSWELL_STATUS_PGDATA", "GLASSWELL_STATUS_PGDATA_MIN_BYTES"}
+CREDENTIAL_NAME = re.compile(r"KEY|SECRET|TOKEN|PASSWORD|DSN")
 
 
 def active_lines(path: Path) -> list[str]:
@@ -64,6 +68,16 @@ def test_service_loads_runtime_identity_without_putting_secrets_on_the_command_l
     assert "DATABASE" not in command
     assert "KEY" not in command
     assert "DSN" not in command
+
+
+def test_no_secret_bearing_name_can_enter_the_units_tracked_environment_lines():
+    names = {value.split("=", 1)[0] for value in settings(SERVICE, "Environment")}
+
+    # This unit is in git and installed 0644 root:root, so anything set here is public by
+    # construction — the reason the test above keeps credentials off ExecStart as well.
+    assert names == UNIT_ENVIRONMENT
+    # Live against whatever the set above grows into, not just against today's two names.
+    assert [name for name in UNIT_ENVIRONMENT if CREDENTIAL_NAME.search(name)] == []
 
 
 def test_service_is_bounded_and_only_the_state_directory_is_writable():
