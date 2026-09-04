@@ -27,7 +27,9 @@ describe("lineage drawer", () => {
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     const requested = String(fetchSpy.mock.calls[0]?.[0]);
     expect(requested).toContain("/v1/explain?h=");
-    expect(requested).toContain("depth=full");
+    // The served default, not `full`: a chain that always arrives complete makes `truncated`
+    // a marker nobody can see, and the way past it is a control beside the marker (N-12).
+    expect(requested).toContain("depth=3");
 
     const nodes = host.querySelectorAll(".gw-chain-node");
     expect(nodes).toHaveLength(3);
@@ -108,5 +110,35 @@ describe("lineage drawer", () => {
     const text = host.textContent ?? "";
     expect(text).toContain("lineage_unresolved");
     expect(text).toContain("unknown_id");
+  });
+});
+
+describe("a chain that stopped short", () => {
+  const truncated = {
+    ...explainEnvelope,
+    data: {
+      chains: [{ ...explainEnvelope.data.chains[0], truncated: true, depth: 3 }],
+    },
+  };
+
+  it("says it was truncated and offers the walk that finishes it", async () => {
+    const fetchSpy = vi.fn(stubFetch({ "/v1/explain": truncated }));
+    vi.stubGlobal("fetch", fetchSpy);
+    await renderLineageDrawer(host, OIL_HANDLE, noop);
+
+    expect(host.querySelector(".gw-drawer-summary")?.textContent).toContain("truncated");
+    const deeper = host.querySelector<HTMLButtonElement>(".gw-drawer-deeper");
+    expect(deeper?.textContent).toBe("Read the full chain");
+
+    deeper?.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(String(fetchSpy.mock.calls[1]?.[0])).toContain("depth=8");
+  });
+
+  it("offers nothing extra where the chain already reached its manifests", async () => {
+    vi.stubGlobal("fetch", vi.fn(stubFetch({ "/v1/explain": explainEnvelope })));
+    await renderLineageDrawer(host, OIL_HANDLE, noop);
+
+    expect(host.querySelector(".gw-drawer-deeper")).toBeNull();
   });
 });

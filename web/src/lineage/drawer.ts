@@ -42,11 +42,24 @@ export interface DrawerCallbacks {
   returnTo?: string | null;
 }
 
-/** S9: one /v1/explain call renders the whole chain, checksums included, at depth full. */
+/** The depth `/v1/explain` answers by default, which is what a reader gets on the first open. */
+export const DEFAULT_DEPTH = 3;
+/** What "read the full chain" asks for: deep enough for a mart over a mart over a promotion. */
+export const FULL_DEPTH = 8;
+
+/**
+ * S9: one /v1/explain call renders the chain, checksums included.
+ *
+ * At the served default rather than at `full`: a chain that arrives complete every time makes
+ * `truncated` a marker nobody can ever see, and the peer control's chain runs through a
+ * publication, a model dataset and a feature build before it reaches a manifest -- so the
+ * reader is told where it stopped and offered the walk that finishes it (N-12).
+ */
 export async function renderLineageDrawer(
   container: HTMLElement,
   handle: string,
   callbacks: DrawerCallbacks,
+  depth: number = DEFAULT_DEPTH,
 ): Promise<void> {
   container.hidden = false;
   container.replaceChildren(header(handle, callbacks), panelBody(loading()));
@@ -54,7 +67,7 @@ export async function renderLineageDrawer(
   try {
     const envelope = await getEnvelope<{ chains: Chain[] }>("/v1/explain", {
       h: handle,
-      depth: "full",
+      depth: String(depth),
     });
     const chain = unwrap(envelope).chains[0];
     if (!chain) {
@@ -65,6 +78,19 @@ export async function renderLineageDrawer(
       return;
     }
     const body = panelBody(summary(chain), nodeList(chain));
+    if (chain.truncated) {
+      // The marker is on the chain and the way past it is beside the marker: a reader told a
+      // chain stopped short and left there has been shown a limit rather than a lineage.
+      const deeper = document.createElement("button");
+      deeper.type = "button";
+      deeper.className = "gw-drawer-deeper";
+      deeper.textContent = "Read the full chain";
+      deeper.title = `Walk this chain to depth ${FULL_DEPTH} rather than ${depth}.`;
+      deeper.addEventListener("click", () => {
+        void renderLineageDrawer(container, handle, callbacks, FULL_DEPTH);
+      });
+      body.appendChild(deeper);
+    }
     container.replaceChildren(header(handle, callbacks), body);
     highlight(body, termIndex());
     focusPanel(container);

@@ -591,6 +591,20 @@ body {
   text-decoration: underline;
 }
 
+/* Beside the marker that says the chain stopped, because a limit shown without a way past it
+   is a limit rather than a lineage. */
+.gw-drawer-deeper {
+  margin-top: var(--gw-space-3);
+  padding: 0 var(--gw-space-2);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--gw-radius-pill);
+  background: none;
+  color: var(--cyan);
+  font: inherit;
+  font-size: var(--gw-fs-micro);
+  cursor: pointer;
+}
+
 /* The coach hangs out of the header into the canvas, and the card opens under exactly that
    corner: at 1600 it covered the well name outright. With a panel open it steps left of it
    and drops the tick, which would otherwise point at nothing. */
