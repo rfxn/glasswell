@@ -199,3 +199,55 @@ def test_the_response_links_to_both_rules_a_reader_would_want_next(
 
     assert links["allocation_rule"] == "/v1/conformance/cr_tx_allocation_v0_1"
     assert links["error_bounds_rule"] == "/v1/conformance/cr_alloc_v0_error_bounds_1"
+
+
+@pytest.fixture
+def with_another_jurisdictions_share(seeded) -> None:
+    """One allocated row outside the registration's own prefix.
+
+    Unreachable today -- only Texas declares `cumulatives_basis: allocated`, and the guard
+    admits only a declaring jurisdiction -- and the point of the fixture is that the code says
+    so rather than relying on it (gate-tx RV-2).
+    """
+    with seeded.cursor() as cursor:
+        cursor.execute(
+            "insert into marts.tx_allocated_production (api10, lease_key, production_month,"
+            " stream, volume, unit, allocation_class, granularity, allocation_model_id,"
+            " allocation_rule_id, eligible_wells, membership_vintage, incomplete_window,"
+            " error_bounds_outcome, error_rule_id, lease_derivation_id, snapshot_vintage,"
+            " derivation_id)"
+            " select '3305399999', 'O-99-999999', production_month, stream, volume, unit,"
+            "        allocation_class, granularity, allocation_model_id, allocation_rule_id,"
+            "        eligible_wells, membership_vintage, incomplete_window,"
+            "        error_bounds_outcome, error_rule_id, lease_derivation_id,"
+            "        snapshot_vintage, derivation_id"
+            "   from marts.tx_allocated_production limit 1"
+        )
+    seeded.commit()
+
+
+def test_the_conservation_block_refuses_rather_than_mixing_two_registrations(
+    client: TestClient, with_another_jurisdictions_share
+) -> None:
+    """RV-2. The ledger's grain is a lease-month no well carried, so it holds no api10 to scope
+    by: with another jurisdiction's rows in the mart, `share_unallocated` would be a scoped
+    numerator over an unscoped denominator -- arithmetically wrong rather than mislabelled."""
+    served = blocks(client)
+
+    conservation = served["conservation"]
+    assert conservation["outcome"] == "not_available"
+    assert conservation["rule_id"] == "cr_tx_allocation_v0_1"
+    assert "another jurisdiction's rows" in " ".join(conservation["reasons"])
+    assert "lease_months_total" not in conservation
+    # The crosswalk block has said so since H-2; the two now answer alike.
+    assert served["crosswalk"]["outcome"] == "not_available"
+
+
+def test_the_conservation_block_measures_where_the_mart_is_one_jurisdictions(
+    client: TestClient,
+) -> None:
+    """The other arm: nothing foreign in the mart, so the residual is served as before."""
+    conservation = blocks(client)["conservation"]
+
+    assert conservation["outcome"] == "measured"
+    assert int(conservation["lease_months_total"]["value"]) > 0

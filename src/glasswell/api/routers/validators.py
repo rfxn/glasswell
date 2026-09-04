@@ -76,10 +76,12 @@ select count(*) as lease_months,
  where left(api10, 2) = %(prefix)s
 """
 
-# The ledger, the crosswalk and the study carry no api10 -- the ledger's grain is a lease-month
-# no well carried, which is exactly the row an api10 predicate would drop. So they are served
-# only where the allocated mart holds nothing outside this registration's prefix: a second
-# lease-grain jurisdiction reading these tables gets a stated absence, never Texas's residuals.
+# The ledger and the crosswalk carry no api10 -- the ledger's grain is a lease-month no well
+# carried, which is exactly the row an api10 predicate would drop. So the two blocks that read
+# them are served only where the allocated mart holds nothing outside this registration's
+# prefix: a second lease-grain jurisdiction reading these tables gets a stated absence, never
+# Texas's residuals. The study is not in that set and needs no guard: it is keyed by the bed it
+# was measured on and says which bed that is.
 _FOREIGN_SHARES = """
 select count(*) as shares from marts.tx_allocated_production
  where left(api10, 2) <> %(prefix)s
@@ -206,6 +208,8 @@ def _conservation(
     *,
     prefix: str,
     identity_prefix: str,
+    foreign: int,
+    jurisdiction: str,
 ) -> dict[str, Any]:
     """V-1. The split is exact by construction, so the residual is a coverage measure.
 
@@ -213,6 +217,20 @@ def _conservation(
     than publishing, which is why nothing here reports one: what is served is how much volume
     had no eligible well to carry it, decomposed by cause.
     """
+    if foreign:
+        # The ledger's grain is a lease-month no well carried, so it holds no api10 to scope
+        # by: where the allocated mart holds another jurisdiction's rows, every count below
+        # would mix two registrations and `share_unallocated` would be arithmetically wrong --
+        # a scoped numerator over an unscoped denominator (gate-tx RV-2).
+        return {
+            "name": "conservation",
+            "outcome": "not_available",
+            "rule_id": ALLOCATION_RULE,
+            "reasons": [
+                "the allocation ledger holds another jurisdiction's rows, so no residual here"
+                f" is {jurisdiction}'s"
+            ],
+        }
     totals = rows(connection, _ALLOCATED_TOTALS, {"prefix": identity_prefix})
     ledger = rows(connection, _LEDGER, {})
     counts = rows(connection, _LEASE_MONTHS, {"prefix": identity_prefix})[0]
@@ -507,7 +525,12 @@ def allocation_validators(
     selector_prefix = f"jurisdiction={jurisdiction}"
     blocks = [
         _conservation(
-            connection, degraded_at, prefix=selector_prefix, identity_prefix=prefix
+            connection,
+            degraded_at,
+            prefix=selector_prefix,
+            identity_prefix=prefix,
+            foreign=foreign,
+            jurisdiction=jurisdiction,
         ),
         _crosswalk(connection, foreign=foreign, jurisdiction=jurisdiction),
         _independent_truth(connection),
