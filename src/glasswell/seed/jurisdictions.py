@@ -455,6 +455,11 @@ JURISDICTION_RULES: tuple[dict[str, object], ...] = (
      "rule_id": "cr_nd_neighbors_scope_1"},
     {"jurisdiction_code": "MT", "decision": "neighbors_scope",
      "rule_id": "cr_mt_neighbors_scope_1"},
+    # Registered at the grain instant rather than at the founding one: this decision was not
+    # known when Montana was founded, and 389 of its API-10s have been serving a summed figure
+    # with no rule beside it since. The row is what makes production.py name it.
+    {"jurisdiction_code": "MT", "decision": "production_grain",
+     "rule_id": "cr_mt_bogc_pool_rollup_1", "published_at": GRAIN_RESTATED_ON},
     # Which jurisdictions the per-well cumulative mart covers, as rows rather than as a tuple
     # in the mart. The rule each names is the one that decides whether the jurisdiction writes
     # a well-grain row at all: without one the mart would enter every well, match no month and

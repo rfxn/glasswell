@@ -46,6 +46,63 @@ LEASE_UNIT_SENTINEL = "-999"
 
 MT_RULES: tuple[dict[str, object], ...] = (
     {
+        # The decision Montana never registered, and the R8 violation that left open: 389 of
+        # its API-10s serve a summed figure today with no rule named beside it, no breakdown
+        # link and no aggregation warning, because production.py gates all three on a
+        # registered production_grain rule and Montana's lookup returns null.
+        "rule_id": "cr_mt_bogc_pool_rollup_1",
+        "source_id": WELL_SOURCE,
+        "stage": "conform",
+        "rule_kind": "code_ref",
+        "applies_to_fields": ["volume", "days_produced", "null_semantics"],
+        "spec": {
+            "module_function": "glasswell.ingest.mt_bogc:formation_promotion_records",
+            "version": "1",
+            "aggregation": "sum_over_pools",
+            "volume": "exact sum over the pool filings of the well-month-stream",
+            "days_produced": "maximum over the pool filings, never the sum",
+            "null_semantics": "reported unless every pool filing is absent, then no_report",
+            "contract_note": (
+                "one filing promotes as the well; two or more promote as one row per pool plus"
+                " a well row carrying their exact sum, disclosed as aggregation ="
+                " sum_over_pools"
+            ),
+            "api10_with_well_grain_rows": 20021,
+            "api10_with_any_summed_row": 389,
+            "api10_summed_only": 28,
+            "api10_summed_and_unsummed": 361,
+            "api10_never_summed": 19632,
+            "api10_summed_without_a_header_row": 11,
+        },
+        "code_ref": "glasswell.ingest.mt_bogc:formation_promotion_records",
+        "rule": (
+            "A Montana well that filed in more than one pool in a month is one row per pool"
+            " plus a well total that says it is a sum."
+        ),
+        "rationale": (
+            "The promotion has summed across pools since Montana landed and said so on the row"
+            " through aggregation = sum_over_pools; what was missing is the registered decision"
+            " the serving path reads, so the summed figure was served with no rule to cite, no"
+            " link to the pool filings behind it and no warning that it was a sum at all. That"
+            " is the naked-number failure in its plainest form, and it closes with rows rather"
+            " than with code: production.py already reads this decision and starts naming it"
+            " the moment it exists. Aggregation is a per-row attribute rather than a per-well"
+            " one, and the measurement has to be read that way or it does not add up. Measured"
+            " on the deployed spine on 2026-09-03, null-safe over"
+            " canonical.production_monthly's entity_type = 'well' rows: of Montana's 20,021"
+            " API-10s with well-grain rows, 389 carry at least one summed row, of which 28"
+            " carry summed rows only and 361 carry both kinds, and 19,632 never sum. A well"
+            " that filed in two pools one month and one the next is in the 361, which is why"
+            " the emission is per response window and not per well. Eleven of the 389 have"
+            " production rows and no canonical.wells_latest header, so 378 are servable; those"
+            " eleven are a spine gap rather than a grain one and are filed as such. Volume sums"
+            " exactly because the pool filings are disjoint observations of the same"
+            " wellbore-month; days do not sum, because a well cannot produce more days than the"
+            " month holds and the pool filings are concurrent."
+        ),
+        "evidence_url": PRODUCTION_URL,
+    },
+    {
         "rule_id": "cr_mt_host_pin_1",
         "source_id": WELL_SOURCE,
         "stage": "parse",

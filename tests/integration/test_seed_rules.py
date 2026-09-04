@@ -51,6 +51,9 @@ POLICY_RULES = tuple(sorted((
     # class means and how a consumer tells its two cases apart, and the share of a spine that
     # may legitimately resolve to it. All three are declarations the serving path and the host
     # check read, with no frame for an executor to transform.
+    # Montana's production grain: a decision the promotion has carried out since Montana
+    # landed and the registry never recorded, so the serving path had nothing to name.
+    "cr_mt_bogc_pool_rollup_1",
     "cr_status_class_domain_1",
     "cr_status_absence_basis_1",
     "cr_status_absence_share_1",

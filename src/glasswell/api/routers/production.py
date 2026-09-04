@@ -407,11 +407,13 @@ def get_well_production(
 
     registry = jurisdictions(connection)
     state_code = _state_code(connection, api10)
-    observed = _rows_in_window(
-        select_production(connection, as_of=as_of, api10=api10, entity_type="well"),
-        requested=requested,
-        window=window,
+    # Bound rather than inlined: the same rows answer two questions, and the second one is
+    # whether this well has a well-level series at all. `observed` narrows them to the streams
+    # and the months the request asked for; the pool-grain disclosure is about the well.
+    all_well_rows = select_production(
+        connection, as_of=as_of, api10=api10, entity_type="well"
     )
+    observed = _rows_in_window(all_well_rows, requested=requested, window=window)
     # A lease-reporting jurisdiction has no observed well-level series. An empty envelope here
     # reads as "nothing was produced"; the disclosure says what is actually true (DIR-3).
     lease_reported = lease_reporting_rule(
@@ -430,7 +432,13 @@ def get_well_production(
         warnings.append(pending_allocation(lease_reported))
     warnings.extend(
         _pool_grain_warning(
-            connection, api10, state_code, observed, as_of=as_of, registry=registry
+            connection,
+            api10,
+            state_code,
+            observed,
+            as_of=as_of,
+            registry=registry,
+            has_well_rows=bool(all_well_rows),
         )
     )
     columns: list[str] = []
@@ -835,6 +843,7 @@ def _pool_grain_warning(
     *,
     as_of: date | None,
     registry: JurisdictionRegistry,
+    has_well_rows: bool,
 ) -> list[dict[str, Any]]:
     """An empty well-level series over a well that filed at pool grain is not "no production".
 
@@ -842,9 +851,15 @@ def _pool_grain_warning(
     without this the card would render an empty chart for a producing well — the same DIR-3
     failure `pending_allocation` exists to prevent one jurisdiction upstream. The rule that
     decided it is named so the reader can resolve it.
+
+    `has_well_rows` is the whole of what this is really asking. `observed` is windowed and the
+    pool-row count is not, so a narrow window emptied one while the other stayed positive and a
+    North Dakota well with 408 well-grain rows was told that its regulator files per completion
+    pool and glasswell performs no rollup. It has a well-level series; the request asked about
+    twelve months it does not cover.
     """
     rule = rollup_rule(state_code, registry=registry)
-    if observed or not rule:
+    if observed or has_well_rows or not rule:
         return []
     if not rows(connection, _POOL_GRAIN_ROWS, {"api10": api10, "as_of": as_of})[0]["count"]:
         return []
