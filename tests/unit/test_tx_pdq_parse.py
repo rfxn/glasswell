@@ -14,11 +14,11 @@ from pathlib import Path
 import pytest
 
 from glasswell.ingest.tx_pdq import (
-    COMPLETION_COLUMNS,
     LEASE_CYCLE_MEMBER,
     WELL_COMPLETION_MEMBER,
     ArchiveFormatError,
     FilesystemPrecheckError,
+    MemberLayout,
     _member_rows,
     _modified,
     api10_from,
@@ -28,10 +28,15 @@ from glasswell.ingest.tx_pdq import (
     precheck_filesystems,
     production_window,
 )
+from glasswell.seed.conformance_tx import PDQ_MEMBER_LAYOUT
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "tx_pdq"
 SAMPLE = FIXTURES / "PDQ_DSV_sample.zip"
 RESTATED = FIXTURES / "PDQ_DSV_sample_restated.zip"
+
+# What load() resolves from the database, built here from the same registry the rule row is
+# published from, so a unit test needs no connection to be judged by the rule in force.
+LAYOUT = MemberLayout("cr_tx_pdq_format_2", PDQ_MEMBER_LAYOUT)
 
 
 def test_the_lease_key_pads_before_any_comparison() -> None:
@@ -60,16 +65,16 @@ def test_the_member_inventory_is_read_from_the_central_directory() -> None:
 
 def test_the_dump_states_its_own_window_rather_than_being_assumed_to_cover_one() -> None:
     with zipfile.ZipFile(SAMPLE) as archive:
-        assert production_window(archive) == ("202401", "202506")
+        assert production_window(archive, LAYOUT) == ("202401", "202506")
     with zipfile.ZipFile(RESTATED) as archive:
-        assert production_window(archive) == ("202401", "202507")
+        assert production_window(archive, LAYOUT) == ("202401", "202507")
 
 
 def test_the_district_file_carries_two_vocabularies_and_the_key_is_the_number() -> None:
     """District 10 is named 08 and district 08 is named 7B, so a join on the name silently
     crosses districts."""
     with zipfile.ZipFile(SAMPLE) as archive:
-        labels = district_labels(archive)
+        labels = district_labels(archive, LAYOUT)
 
     assert labels["10"] == "08"
     assert labels["08"] == "7B"
@@ -77,7 +82,7 @@ def test_the_district_file_carries_two_vocabularies_and_the_key_is_the_number() 
     assert labels["20"] == "State Wide"
 
 
-def test_a_member_whose_header_changed_width_refuses_rather_than_quarantining(
+def test_a_member_whose_header_grew_a_column_refuses_rather_than_quarantining(
     tmp_path: Path,
 ) -> None:
     """A schema change invalidates the row mapping rather than one row, so nothing failed to
@@ -91,8 +96,10 @@ def test_a_member_whose_header_changed_width_refuses_rather_than_quarantining(
                 text = header + "}NEW_COLUMN\n" + body
             target.writestr(name, text)
 
-    with zipfile.ZipFile(drifted) as archive, pytest.raises(ArchiveFormatError, match="columns"):
-        list(_member_rows(archive, WELL_COMPLETION_MEMBER, COMPLETION_COLUMNS))
+    with zipfile.ZipFile(drifted) as archive, pytest.raises(
+        ArchiveFormatError, match="NEW_COLUMN, which the rule does not list"
+    ):
+        list(_member_rows(archive, WELL_COMPLETION_MEMBER, LAYOUT))
 
 
 def test_a_row_that_does_not_fit_its_own_header_refuses_too(tmp_path: Path) -> None:
@@ -107,7 +114,7 @@ def test_a_row_that_does_not_fit_its_own_header_refuses_too(tmp_path: Path) -> N
             target.writestr(name, text)
 
     with zipfile.ZipFile(ragged) as archive, pytest.raises(ArchiveFormatError, match="fields"):
-        list(_member_rows(archive, WELL_COMPLETION_MEMBER, COMPLETION_COLUMNS))
+        list(_member_rows(archive, WELL_COMPLETION_MEMBER, LAYOUT))
 
 
 def test_the_lease_member_is_keyed_by_the_four_columns_the_manual_declares_not_null() -> None:
@@ -115,7 +122,7 @@ def test_the_lease_member_is_keyed_by_the_four_columns_the_manual_declares_not_n
     which is why field_no is in neither mart primary key. The fixture asserts the premise; the
     full-scale confirmation is the load's, on the real member."""
     with zipfile.ZipFile(SAMPLE) as archive:
-        rows = list(_member_rows(archive, LEASE_CYCLE_MEMBER))
+        rows = list(_member_rows(archive, LEASE_CYCLE_MEMBER, LAYOUT))
 
     keyed = {
         (row["OIL_GAS_CODE"], row["DISTRICT_NO"], row["LEASE_NO"], row["CYCLE_YEAR_MONTH"])
@@ -128,7 +135,7 @@ def test_the_lease_member_is_keyed_by_the_four_columns_the_manual_declares_not_n
 def test_one_wellbore_carries_two_lease_keys_in_one_dump() -> None:
     """M-16 on the fixture: the case the mart's primary key exists for."""
     with zipfile.ZipFile(SAMPLE) as archive:
-        rows = list(_member_rows(archive, WELL_COMPLETION_MEMBER))
+        rows = list(_member_rows(archive, WELL_COMPLETION_MEMBER, LAYOUT))
 
     by_api: dict[str, set[str]] = {}
     for row in rows:
@@ -149,7 +156,7 @@ def test_the_restatement_moves_one_lease_month_and_nothing_else() -> None:
         with zipfile.ZipFile(path) as archive:
             return {
                 (row["LEASE_NO"], row["CYCLE_YEAR_MONTH"]): row["LEASE_OIL_PROD_VOL"]
-                for row in _member_rows(archive, LEASE_CYCLE_MEMBER)
+                for row in _member_rows(archive, LEASE_CYCLE_MEMBER, LAYOUT)
             }
 
     first, second = volumes(SAMPLE), volumes(RESTATED)

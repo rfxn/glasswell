@@ -22,15 +22,21 @@ from glasswell.ingest.tx_pdq import (
     LEASE_CYCLE_MEMBER,
     SOURCE_KEY,
     ArchiveFormatError,
+    MemberLayout,
     _member_rows,
     production_month,
 )
 from glasswell.lineage.capture import lineage_session
 from glasswell.lineage.store import PostgresRecorder
 from glasswell.seed import seed_all
+from glasswell.seed.conformance_tx import PDQ_MEMBER_LAYOUT
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "tx_pdq"
 SAMPLE = FIXTURES / "PDQ_DSV_sample.zip"
+
+# The layout load() resolves from the rule in force, built from the same registry the rule row
+# is published from so a reader of the fixture is judged by the rule and not by the fixture.
+LAYOUT = MemberLayout("cr_tx_pdq_format_2", PDQ_MEMBER_LAYOUT)
 
 
 def client_for(payload: Path) -> httpx.Client:
@@ -215,7 +221,7 @@ def test_the_promotion_runs_a_calendar_year_at_a_time_with_a_recorded_high_water
     with zipfile.ZipFile(SAMPLE) as archive:
         years = {
             production_month(row["CYCLE_YEAR_MONTH"]).year
-            for row in _member_rows(archive, LEASE_CYCLE_MEMBER)
+            for row in _member_rows(archive, LEASE_CYCLE_MEMBER, LAYOUT)
         }
 
     assert promoted.lease_promotion["high_water_year"] == max(years)

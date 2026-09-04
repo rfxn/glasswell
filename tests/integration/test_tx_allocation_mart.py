@@ -19,17 +19,27 @@ import pytest
 
 from glasswell.allocation.v0 import MODEL_ID
 from glasswell.ingest import tx_pdq
-from glasswell.ingest.tx_pdq import WELL_COMPLETION_MEMBER, _member_rows, api10_from
+from glasswell.ingest.tx_pdq import (
+    WELL_COMPLETION_MEMBER,
+    MemberLayout,
+    _member_rows,
+    api10_from,
+)
 from glasswell.lineage.capture import derive, lineage_session
 from glasswell.lineage.models import OutputSpec
 from glasswell.lineage.store import PostgresRecorder
 from glasswell.marts import tx_allocation
 from glasswell.marts.tx_allocation import ConservationError
 from glasswell.seed import seed_all
+from glasswell.seed.conformance_tx import PDQ_MEMBER_LAYOUT
 from tests.support.seed import FIXTURE_ENV, seed_derivation, seed_manifest, seed_well
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 SAMPLE = FIXTURES / "tx_pdq" / "PDQ_DSV_sample.zip"
+
+# The layout load() resolves from the rule in force, built from the same registry the rule row
+# is published from so a reader of the fixture is judged by the rule and not by the fixture.
+LAYOUT = MemberLayout("cr_tx_pdq_format_2", PDQ_MEMBER_LAYOUT)
 SPINE_VINTAGE = date(2026, 8, 20)
 # O-08-000404's second well carries a filed plug date mid-history: it bounds, and the months
 # after it are served at volume zero with the share redistributed.
@@ -81,7 +91,7 @@ def loaded(db: psycopg.Connection, raw_root: Path, lineage_env):
                              source_key="well003.zip")
     derivation = seed_derivation(db, operation="canonical.promote")
     with zipfile.ZipFile(SAMPLE) as archive:
-        completions = list(_member_rows(archive, WELL_COMPLETION_MEMBER))
+        completions = list(_member_rows(archive, WELL_COMPLETION_MEMBER, LAYOUT))
     # One well per API-10, not one per completion: a wellbore completed on two leases is one
     # well, which is the whole of cr_tx_identity_collapse_1's decision.
     spine = {}
