@@ -44,8 +44,8 @@
 -- before any seeder that carries them.
 insert into lineage.conformance_rule_publications
     (rule_id, published_vintage, evidence_tag, evidence_commit)
-select 'cr_job_cadence_' || job_id || '_2', date '2026-09-03', 'UNRELEASED',
-       '0000000000000000000000000000000000000000'
+select 'cr_job_cadence_' || job_id || '_2', date '2026-09-04', 'v0.80',
+       'ed585501d39c75ed7cc6f4056ec7836067b4a5c1'
   from unnest(array[
        'co_ecmc_gis',
        'co_ecmc_production',

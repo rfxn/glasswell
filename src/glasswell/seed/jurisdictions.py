@@ -47,10 +47,10 @@ RESTATED_EVIDENCE_COMMIT = "5b37bf0363095b3e0cda2d6c3fb5d57e235de28f"
 # clock, which is why the v0.78 restatement shipped a day ahead of the host and resolved. The
 # vintage is the clock that must never lead the host; this one is not (gate-tx H-9).
 TX_SUPERSEDED_ON = date(2026, 9, 6)
-TX_SUPERSEDED_EVIDENCE_TAG = "UNRELEASED"
+TX_SUPERSEDED_EVIDENCE_TAG = "v0.80"
 # Spelled out rather than computed, for the reason the restatement's is: release.py scans this
 # file for the quoted placeholder and cannot see an expression that evaluates to it.
-TX_SUPERSEDED_EVIDENCE_COMMIT = "0000000000000000000000000000000000000000"
+TX_SUPERSEDED_EVIDENCE_COMMIT = "ed585501d39c75ed7cc6f4056ec7836067b4a5c1"
 
 # Colorado's own clock, named separately so the integrator can repoint it on its own train.
 # It is registered after the presentation columns exist, so it is founded whole: there is no

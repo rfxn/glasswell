@@ -131,9 +131,7 @@ def test_the_founding_rows_are_appended_over_and_never_edited(seeded) -> None:
 
     assert [row[0] for row in founding] == sorted(CO_JOB_IDS)
     assert {row[1] for row in founding} == {"launch"}
-    assert {row[2] for row in founding} == {
-        f"cr_job_cadence_{job_id}_1" for job_id in CO_JOB_IDS
-    }
+    assert {row[2] for row in founding} == {f"cr_job_cadence_{job_id}_1" for job_id in CO_JOB_IDS}
 
 
 def test_each_successor_rule_states_the_argument_in_served_words(seeded) -> None:
@@ -174,9 +172,7 @@ def test_the_migration_writes_exactly_the_rows_the_seed_writes(
     all. Seeding the founding rows alone reproduces that state, and the rows the migration then
     writes have to be the rows the seed would have written.
     """
-    founding_only = tuple(
-        row for row in schedules_module.SCHEDULES if row.get("rule_id") is None
-    )
+    founding_only = tuple(row for row in schedules_module.SCHEDULES if row.get("rule_id") is None)
     monkeypatch.setattr(schedules_module, "SCHEDULES", founding_only)
     monkeypatch.setattr(
         rules_module,
@@ -267,7 +263,18 @@ def test_the_ruling_date_is_written_by_both_writers(seeded) -> None:
     """Checklist item 5: the seed is the second writer and a date that drifts between them
     resolves the wrong row."""
     body = migration_sql(MIGRATION)
+    ruling = f"date '{OBSERVED_FROM.isoformat()}'"
 
-    assert body.count(f"date '{OBSERVED_FROM.isoformat()}'") == 4
+    # Counted by shape, not by total: the supersession's two clocks and the successor rules'
+    # effective_from are the ruling date; the publications insert's vintage is the cut date and
+    # moves at the repoint, so a bare count would be true only until the release shipped.
+    assert body.count(f"select s.job_id, {ruling}, {ruling},") == 1
+    assert body.count(f"prior.evidence_url, prior.code_ref, {ruling}") == 1
+    assert body.count(ruling) == 3
+    vintage = re.search(
+        r"select 'cr_job_cadence_' \|\| job_id \|\| '_2', date '(\d{4}-\d{2}-\d{2})',", body
+    )
+    assert vintage is not None
+    assert date.fromisoformat(vintage.group(1)) >= OBSERVED_FROM
     assert date(2026, 9, 3) == OBSERVED_FROM
     assert OBSERVED_FROM > REGISTERED_ON

@@ -56,8 +56,8 @@
 -- migration, which is this file, and their rows in seed/conformance_schedules.py.
 insert into lineage.conformance_rule_publications
     (rule_id, published_vintage, evidence_tag, evidence_commit)
-select rule_id, date '2026-09-02', 'UNRELEASED',
-       '0000000000000000000000000000000000000000'
+select rule_id, date '2026-09-04', 'v0.80',
+       'ed585501d39c75ed7cc6f4056ec7836067b4a5c1'
   from unnest(array[
        'cr_tx_pdq_format_1', 'cr_tx_pdq_scope_1', 'cr_tx_production_grain_1',
        'cr_tx_pdq_crosswalk_1', 'cr_tx_allocation_v0_1', 'cr_alloc_v0_error_bounds_1',
