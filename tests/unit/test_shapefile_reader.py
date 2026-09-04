@@ -244,3 +244,31 @@ def test_the_spacing_unit_fixture_reads_polygons():
     assert len(records) == 300
     assert records[0].geometry.geom_type in {"Polygon", "MultiPolygon"}
     assert records[0].attributes["mapsymbol"] == "1280SPC"
+
+
+def test_a_suffix_that_names_two_layers_refuses_instead_of_taking_the_first(tmp_path: Path):
+    """H-4. `endswith` over a normalised stem admits a decoy, and ZIP order decided which one
+    won. The Colorado rows name one exact member, so a second candidate is a source that grew a
+    layer -- something to read, not a tie to break."""
+    archive = write_named_zip(
+        tmp_path / "decoy.zip", "Directional_Lines", "Historic_Directional-Lines"
+    )
+
+    with pytest.raises(MalformedArchive) as refusal:
+        ZippedShapefile(archive, layer_suffix="directionallines")
+
+    message = str(refusal.value)
+    assert "2 members matching 'directionallines'" in message
+    assert "Directional_Lines" in message
+    assert "Historic_Directional-Lines" in message
+
+
+def test_one_matching_layer_beside_others_that_do_not_match_still_reads(tmp_path: Path):
+    """The refusal is about ambiguity, not about company: an archive shipping several layers
+    reads the one its suffix names."""
+    archive = write_named_zip(
+        tmp_path / "many.zip", "Directional_Lines", "Directional_Bottomhole_Locations", "Wells"
+    )
+
+    with ZippedShapefile(archive, layer_suffix="directionallines") as layer:
+        assert [record.attributes["name"] for record in layer] == ["Directional_Lines"]

@@ -50,6 +50,7 @@ from glasswell.api.pagination import (
 from glasswell.api.principal import Principal as ResolvedPrincipal
 from glasswell.api.responses import EnvelopeModel, enveloped, inline_for, iso
 from glasswell.lineage.envelope import LINEAGE_SIDECAR
+from glasswell.lineage.errors import RawRootUnset
 from glasswell.lineage.explain import (
     DOT_MEDIA_TYPE,
     MAX_DEPTH,
@@ -1193,7 +1194,13 @@ def _payload_within_raw_zone(storage_uri: str) -> PathType | None:
     """
     if not storage_uri:
         return None
-    root = resolve_raw_root().resolve()
+    try:
+        root = resolve_raw_root().resolve()
+    except RawRootUnset:
+        # A host that declares no raw zone holds no copy of anything in one, which is the same
+        # answer as a path that escapes: not found. `RawRootUnset` has no problem-document
+        # mapping, so letting it out of a read path would be a 500 where a 404 is the truth.
+        return None
     candidate = PathType(storage_uri).resolve()
     if not candidate.is_relative_to(root) or not candidate.is_file():
         return None

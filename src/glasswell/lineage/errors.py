@@ -54,9 +54,9 @@ class RawRootUnset(LineageError):
 
     def __init__(self, variable: str) -> None:
         super().__init__(
-            f"{variable} is not set and no raw root was passed, so there is nowhere to write"
-            " the raw zone. Declare it -- the deployed host carries it in"
-            " /etc/glasswell/app.env -- or pass --raw-root."
+            f"{variable} is not set and no raw root was passed, so there is no raw zone to"
+            " resolve. Declare it -- the deployed host carries it in /etc/glasswell/app.env --"
+            " or pass --raw-root."
         )
         self.variable = variable
 

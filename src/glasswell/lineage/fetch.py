@@ -72,9 +72,9 @@ def resolve_raw_root(explicit: Path | str | None = None) -> Path:
     whatever directory the operator was standing in -- `/` under systemd-run, a home directory
     by hand -- and the raw zone silently landed on a different filesystem each time.
     """
-    if explicit is not None:
-        return Path(explicit)
-    declared = os.environ.get(RAW_ROOT_ENV)
+    declared = explicit if explicit is not None else os.environ.get(RAW_ROOT_ENV)
+    # An empty declaration is not one, on either path: `Path("")` is the working directory, and
+    # `--raw-root ""` would put the raw zone there as surely as the relative default did.
     if not declared:
         raise RawRootUnset(RAW_ROOT_ENV)
     return Path(declared)

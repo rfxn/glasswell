@@ -115,3 +115,30 @@ def test_a_promotion_opens_a_run_without_declaring_a_raw_zone_it_never_reaches(m
 
     monkeypatch.setenv(RAW_ROOT_ENV, "/data/raw")
     assert run.raw_root == Path("/data/raw")
+
+
+def test_an_empty_argument_is_not_a_declaration_either(monkeypatch, tmp_path):
+    """H-2. The empty check guarded the environment branch and not the argument, so
+    `--raw-root ""` resolved to `Path('')` -- the working directory itself, which is worse than
+    the relative default it replaced."""
+    monkeypatch.delenv(RAW_ROOT_ENV, raising=False)
+    monkeypatch.chdir(tmp_path)
+
+    with pytest.raises(RawRootUnset):
+        resolve_raw_root("")
+
+    monkeypatch.setenv(RAW_ROOT_ENV, "/data/raw")
+    # The environment is not consulted for an argument that was passed and was empty.
+    with pytest.raises(RawRootUnset):
+        resolve_raw_root("")
+
+
+def test_a_read_path_answers_not_found_rather_than_five_hundred(monkeypatch):
+    """H-3. `api/routers/lineage.py`'s containment check calls the same resolver on a read path.
+    `RawRootUnset` has no problem-document mapping, so letting it out turned a clean 404 into a
+    500 on a host that declares no raw zone."""
+    from glasswell.api.routers.lineage import _payload_within_raw_zone
+
+    monkeypatch.delenv(RAW_ROOT_ENV, raising=False)
+
+    assert _payload_within_raw_zone("/data/raw/tx_pdq_dsv/x/payload.zip") is None

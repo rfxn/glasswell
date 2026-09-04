@@ -31,7 +31,6 @@ def _comparable(name: str) -> str:
     return _SEPARATORS.sub("", name.lower())
 
 
-
 class UnknownProjection(ValueError):
     """The archive declares no projection, or one that resolves to no EPSG code."""
 
@@ -89,6 +88,7 @@ class ZippedShapefile:
         self.layer_suffix = layer_suffix
         self.encoding = encoding
         payloads: dict[str, bytes] = {}
+        matched: set[str] = set()
         with zipfile.ZipFile(self.path) as bundle:
             for name in sorted(bundle.namelist()):
                 if name.endswith("/"):
@@ -99,8 +99,19 @@ class ZippedShapefile:
                     _comparable(layer_suffix)
                 ):
                     continue
-                if extension in (*REQUIRED_MEMBERS, "prj") and extension not in payloads:
-                    payloads[extension] = bundle.read(name)
+                if extension in (*REQUIRED_MEMBERS, "prj"):
+                    matched.add(stem)
+                    if extension not in payloads:
+                        payloads[extension] = bundle.read(name)
+        # A suffix that names two layers names neither. Taking the first in ZIP order would
+        # pick between them silently, and for Colorado the conformance row states one exact
+        # member -- so a second candidate is a source that grew a layer, which is a change to
+        # read rather than a tie to break.
+        if layer_suffix is not None and len(matched) > 1:
+            raise MalformedArchive(
+                f"{self.path.name} has {len(matched)} members matching {layer_suffix!r}:"
+                f" {', '.join(sorted(matched))}; the rule names one"
+            )
         missing = [member for member in REQUIRED_MEMBERS if member not in payloads]
         if missing:
             selector = f" matching {layer_suffix!r}" if layer_suffix else ""
