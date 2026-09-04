@@ -9,6 +9,7 @@ import { afterEach, beforeEach, test } from "node:test";
 import {
   KEY_HEADER,
   authenticate,
+  contrastAudit,
   forgetSecrets,
   guardTarget,
   instrumentedPage,
@@ -270,4 +271,106 @@ test("forgetting the registry restores the passthrough", () => {
   forgetSecrets();
 
   assert.equal(redact(MINTED), MINTED);
+});
+
+
+/**
+ * gate-v078 N8: `posture.json` reported `legend label 14.87` while the receded rows in the same
+ * panel rendered at 2.60:1, because the audit measured `querySelector` — the first, brightest
+ * match — and never sampled them. An instrument that stops at the first node reports the best
+ * case of whatever it is auditing, which is the opposite of an audit.
+ *
+ * A page whose `evaluate` really runs the callback against a stub document and
+ * `getComputedStyle`, so what is under test is the sampler's own body rather than a paraphrase.
+ */
+function pageOver(nodes) {
+  const document = {
+    querySelectorAll: (selector) => nodes.filter((node) => node.selector === selector),
+    querySelector: (selector) => nodes.find((node) => node.selector === selector) ?? null,
+  };
+  const getComputedStyle = (node) => ({
+    color: node.colour,
+    backgroundColor: node.background ?? "rgba(0, 0, 0, 0)",
+    fontSize: "12px",
+    opacity: String(node.opacity ?? 1),
+  });
+  return {
+    async evaluate(fn, args) {
+      const saved = [globalThis.document, globalThis.getComputedStyle];
+      globalThis.document = document;
+      globalThis.getComputedStyle = getComputedStyle;
+      try {
+        return fn(args);
+      } finally {
+        [globalThis.document, globalThis.getComputedStyle] = saved;
+      }
+    },
+  };
+}
+
+const PANEL = "rgb(17, 25, 32)";
+// The two rows the gate measured in the key at 1600: a full-brightness count and the same
+// paint on an out-of-scale row, on the panel's own #111920. Both ratios below are the gate's.
+const LEGEND_ROWS = [
+  { selector: ".gw-lg-count", colour: "rgb(159, 176, 188)", background: PANEL },
+  { selector: ".gw-lg-count", colour: "rgb(81, 92, 102)", background: PANEL },
+];
+
+test("contrastAudit reports the worst match rather than the first", async () => {
+  const [audited] = await contrastAudit(pageOver(LEGEND_ROWS), [
+    ["legend count", [".gw-lg-count"]],
+  ]);
+
+  assert.equal(audited.count, 2);
+  assert.equal(audited.ratio, 2.6, "the receded row is what an audit has to report");
+  assert.equal(audited.best, 7.95, "the bright row is still available, as `best`");
+  assert.deepEqual(
+    audited.samples.map((sample) => sample.ratio),
+    [7.95, 2.6],
+  );
+});
+
+// gate-wellcard N5: the row that recedes ships as the full-brightness paint under one
+// `opacity`, and the audit read `color` alone -- so it reported the declared 7.87:1 where the
+// panel is really painted 4.70:1. The two numbers below are the well-card sentinel's, measured
+// on the shipped stylesheet: --slate #9FB0BC on the panel #111920 at opacity 0.72.
+const RECEDED_PANEL = "rgb(18, 26, 33)";
+const RECEDED = [
+  { selector: ".gw-lg-count", colour: "rgb(159, 176, 188)", background: RECEDED_PANEL },
+  {
+    selector: ".gw-lg-count",
+    colour: "rgb(159, 176, 188)",
+    background: RECEDED_PANEL,
+    opacity: 0.72,
+  },
+];
+
+test("contrastAudit composites the opacity a row is painted under", async () => {
+  const [audited] = await contrastAudit(pageOver(RECEDED), [
+    ["legend count", [".gw-lg-count"]],
+  ]);
+
+  assert.ok(
+    Math.abs(audited.ratio - 4.7) <= 0.05,
+    `the receded row paints 4.70:1; the audit reported ${audited.ratio}`,
+  );
+  assert.equal(audited.best, 7.87, "the full-brightness row is unchanged");
+  assert.equal(audited.samples[1].declared, "rgb(159, 176, 188)");
+  assert.equal(audited.samples[1].alpha, 0.72);
+});
+
+test("contrastAudit leaves a fully opaque element exactly as it measured it", async () => {
+  const [audited] = await contrastAudit(pageOver(LEGEND_ROWS), [
+    ["legend count", [".gw-lg-count"]],
+  ]);
+
+  assert.equal(audited.samples[0].alpha, 1);
+  assert.equal(audited.samples[0].fg, audited.samples[0].declared);
+});
+
+test("contrastAudit still reports a target nothing in the page matches", async () => {
+  const [audited] = await contrastAudit(pageOver(LEGEND_ROWS), [["absent", [".gw-nothing"]]]);
+
+  assert.equal(audited.missing, true);
+  assert.deepEqual(audited.tried, [".gw-nothing"]);
 });

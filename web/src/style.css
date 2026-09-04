@@ -1204,7 +1204,11 @@ main:not([data-rail="collapsed"]) .gw-rail-strip-name {
   margin: 0 0 var(--gw-space-2);
 }
 
+/* One rule per line: the panel names two of them now -- the grain decision and the rule that
+   computes the share -- and inline anchors with no separator run the two sentences together. */
 .gw-pending-rule {
+  display: block;
+  margin-top: var(--gw-space-2);
   color: var(--paper);
   text-decoration: underline;
   text-underline-offset: 2px;
@@ -1623,6 +1627,13 @@ gw-figure {
 .gw-state-reported-zero {
   background: linear-gradient(to top, var(--paper) 0 3px, transparent 3px 100%);
   border-color: var(--paper);
+}
+
+/* Filed, but by the lease: the reported green, qualified by the paper half so the key cannot
+   show two rows with one swatch and two different subjects (M1). */
+.gw-state-lease-reported {
+  background: linear-gradient(to bottom, var(--oil) 0 50%, var(--paper) 50% 100%);
+  border-color: var(--oil);
 }
 
 .gw-state-no-report {
@@ -2353,22 +2364,32 @@ a {
    the brand went back to `flex: 0 1 auto` and the strapline came back and clipped -- so a
    signed-in owner at 820, a rung on the project's own ladder, read `glas…` / `— NO NAK`, worse
    than the string that was just fixed one rung above.
-   Scoped to a session rather than to the width, which is the real condition: signed out the
-   rail has no Sign-out control and 820 already held. Above 620, because below it the wordmark
-   shrinks and then the brand text goes entirely, which is that posture's own answer. */
+   gate-v078 N9: that round keyed the pair on the session, and "signed out 820 already held"
+   was wrong -- it read `— NO NAKED NUM`, with no ellipsis to say so, on every surface this
+   project shoots. The rules that stop the brand paying for the rail are the answer at both
+   postures and are unscoped here; only hiding the strap stays scoped, because signed out there
+   is no Sign-out control to make room for and the line fits. Above 620, because below it the
+   wordmark shrinks and then the brand text goes entirely, which is that posture's own answer. */
 @media (min-width: 621px) and (max-width: 900px) {
   #gw-header:has(#gw-logout-btn:not([hidden])) .gw-strap {
     display: none;
   }
 
-  #gw-header:has(#gw-logout-btn:not([hidden])) .gw-brand {
+  .gw-brand {
     flex: none;
   }
 
   /* The search shrinks rather than disappears: it is the only elastic thing on the rail, and a
      field a reader can still see and type in is worth more than the 40 px a collapse would buy. */
-  #gw-header:has(#gw-logout-btn:not([hidden])) .gw-search-input {
+  .gw-search-input {
     width: min(9rem, 17vw);
+  }
+
+  /* And the line completes: with the brand no longer the item that shrinks it fits on one row,
+     and where it does not it takes a second rather than being cut mid-word. */
+  .gw-strap {
+    white-space: normal;
+    overflow: visible;
   }
 }
 
@@ -2502,4 +2523,135 @@ a {
   body:has(#gw-main[data-rail="open"]) .gw-hint {
     bottom: calc(var(--gw-sheet-h) + var(--gw-space-3) + 44px);
   }
+}
+
+/* The allocation band: a second strip, in its own vocabulary and its own prefix.
+   One string-keyed record for two vocabularies collides on the first shared token, and the
+   same is true of one CSS namespace — `withheld` is already a null-semantics class and is a
+   plausible allocation class in a later jurisdiction. Two bands that cannot be told apart in
+   the DOM is the failure this prefix exists against. */
+/* The allocation rows sit inside the state strip, so they inherit the gutters align() writes
+   on it and are drawn to the plot's own width. A sibling strip inherited neither. */
+.gw-alloc-row {
+  margin-top: 2px;
+}
+
+.gw-alloc-cells {
+  height: 0.6rem;
+}
+
+.gw-alloc-mark {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 2px;
+  border: 1px solid var(--hairline);
+  background: var(--hairline);
+  padding: 0;
+}
+
+.gw-alloc-cells .gw-alloc-mark {
+  flex: 1 1 0;
+  width: auto;
+  height: 100%;
+  min-width: 0;
+  border: 0;
+  border-radius: 1px;
+}
+
+/* Observed and allocated are the distinction the band exists to draw, so they are the two
+   ends of the encoding: observed is solid and in the paper/slate pair, allocated is textured
+   and in the muted/amber pair. Nothing here is a severity colour. --ink is the surface token
+   and inverts with the theme, so a mark drawn in it is the strip: 1.09:1 dark, 1.12:1 light,
+   against the 3:1 floor a non-text mark has to clear (B2). */
+.gw-alloc-observed-single-well {
+  background: var(--slate);
+  border-color: var(--slate);
+}
+
+/* Two observed facts, so two encodings: one gas well on the lease, or one eligible well that
+   month. A shared swatch is one class to a reader who is reading the band rather than the key. */
+.gw-alloc-observed-gas-well {
+  background: linear-gradient(to bottom, var(--paper) 0 50%, var(--slate) 50% 100%);
+  border-color: var(--slate);
+}
+
+.gw-alloc-equal-share {
+  background: repeating-linear-gradient(
+    135deg,
+    var(--muted) 0 2px,
+    var(--paper) 2px 4px
+  );
+  border-color: var(--muted);
+}
+
+/* A well the regulator calls plugged with no date, still drawing a share. It is the one
+   eligibility term with no date behind it, so it is the one mark that carries the warning
+   colour the rest of the band does not use. */
+.gw-alloc-after-status-change {
+  background: repeating-linear-gradient(
+    135deg,
+    var(--amber) 0 2px,
+    var(--paper) 2px 4px
+  );
+  border-color: var(--amber);
+}
+
+.gw-alloc-excluded-after-plug {
+  background: linear-gradient(to top, var(--muted) 0 2px, transparent 2px 100%);
+  border-color: var(--muted);
+}
+
+.gw-alloc-unallocated,
+.gw-alloc-unknown {
+  background: repeating-linear-gradient(
+    45deg,
+    var(--muted),
+    var(--muted) 2px,
+    transparent 2px,
+    transparent 4px
+  );
+  border-color: var(--muted);
+}
+
+.gw-alloc-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 0.35rem 0 0;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+/* Months inside the regulator's own completeness lag. The Commission states production
+   records are substantially complete after about six months, so the tail of every Texas chart
+   is systematically under-filed — and a reader sees a decline, not an incompleteness, unless
+   the months say which they are. */
+.gw-month-incomplete {
+  opacity: 0.55;
+  box-shadow: inset 0 -2px 0 0 var(--amber);
+}
+
+/* The border says "read me"; the colour is the chip's own. --ink is the near-black in this
+   palette, not the text colour: setting it here painted the share invisible on the panel, which
+   is what the 390 px shot showed and no unit test could have. */
+/* inline-block on both: a border is painted once per line box, so an inline chip that wraps
+   mid-content reads as two chips -- one of them a bordered "100%" with nothing to say what
+   of, which is a naked number on the surface built against them (M4). */
+.gw-alloc-share,
+.gw-alloc-coverage {
+  border-color: var(--amber);
+  display: inline-block;
+}
+
+.gw-alloc-coverage {
+  margin: 0.35rem 0 0;
+}
+
+/* How the number was arrived at, beside the state and never after it. The band says it across
+   the series; this is the one place a reader is reading a single number. */
+.gw-readout-alloc {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--muted);
 }

@@ -26,12 +26,17 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 // out of `dist/index.html` and nothing has ever measured the stylesheet beside it, so a
 // 30 kB CSS addition passed all three. Set once at 7,420 B — the 6,520 B measured on the
 // v0.77 tree plus the 900 B the well card's rail is allowed to spend — and ratcheted down to
-// measured + 5 % at the end of the v0.80 train. Spending the ceiling here is deliberate;
+// measured + 5 % at the end of the v0.81 card group. Spending the ceiling here is deliberate;
 // raising it is a failed exit.
+// Re-measured on the MERGED tree at the v0.81 card merge, which is the first walk that carries
+// both trains: the Texas allocation band (which raised the route from 74,838 to 76,412 on its
+// own head) and the card's six cuts. The route measures 76,103 B here, so the budget stays at
+// the 79,700 B the Texas train set — +4.7% over this measurement — and the merge raises
+// nothing. Neither branch's own number describes the tree they land in.
 const BUDGET_BYTES = {
   entryGzip: 14_000,
   entryCssGzip: 7_420,
-  explorerRouteGzip: 75_000,
+  explorerRouteGzip: 79_700,
   mapChunkGzip: 330_000,
 };
 

@@ -3,8 +3,8 @@
  * across, so the pointer resolves to the month nearest it over the whole plot rectangle and the
  * answer is rendered as DOM — where a handle can be a real button rather than a two-pixel one.
  */
-import { formatMonth, formatVolume, nullSemantics } from "../card/format.ts";
-import type { NullSemanticsMark } from "../card/format.ts";
+import { allocationClass, formatMonth, formatVolume, nullSemantics } from "../card/format.ts";
+import type { AllocationMark, NullSemanticsMark } from "../card/format.ts";
 import { handleAt } from "./series.ts";
 import type { ChartSeries } from "./series.ts";
 
@@ -16,6 +16,13 @@ export interface ReadoutRow {
   /** Formatted, or null where the month was never measured — a gap is not a zero (SB-05 §3.2). */
   value: string | null;
   mark: NullSemanticsMark;
+  /** How the number was arrived at, where the jurisdiction serves an allocation. Null where
+   *  every month is an observation, which is every jurisdiction but the lease-grain ones. */
+  allocation: AllocationMark | null;
+  /** How many wells the lease volume was divided among, where it was divided at all. */
+  eligibleWells: number | null;
+  /** How many lease shares this point is the sum of; more than one and no divisor applies. */
+  shares: number | null;
   handle: string | null;
 }
 
@@ -64,6 +71,11 @@ export function readoutAt(chart: ChartSeries, index: number): Readout | null {
         unit: column.unit,
         value: plotted === null || raw === null ? null : formatVolume(raw),
         mark: nullSemantics(column.nullSemantics[index] ?? ""),
+        allocation: column.allocationClasses[index]
+          ? allocationClass(column.allocationClasses[index] ?? "")
+          : null,
+        eligibleWells: column.eligibleWells[index] ?? null,
+        shares: column.shares[index] ?? null,
         handle: handleAt(column, index, month),
       };
     }),

@@ -74,7 +74,7 @@ GET /v1/manifests/{manifest_id}       GET /v1/conformance               GET /v1/
 GET /v1/glossary                      GET /v1/tiles/{layer}/{z}/{x}/{y}.pbf
 ```
 
-The frozen OpenAPI snapshot contains 57 operations across 52 paths, 56 under `/v1`, across those
+The frozen OpenAPI snapshot contains 58 operations across 53 paths, 57 under `/v1`, across those
 families plus health, vintages, derivations, sessions, accounts, key administration and error
 documentation. Forecast, valuation,
 scenario, agent and inventory routes are not live. There is no private endpoint behind

@@ -31,7 +31,7 @@ from glasswell.lineage import (
 )
 from glasswell.lineage.audit import emit
 from glasswell.lineage.serialization import hash_payload
-from glasswell.seed.jurisdictions import JURISDICTION_RULES, JURISDICTIONS
+from glasswell.seed.jurisdictions import JURISDICTIONS, SERVING_JURISDICTION_RULES
 
 NULL_SEMANTICS_RULE = "cr_nd_null_semantics_1"
 LIQUIDS_RULE = "cr_nd_liquids_policy_1"
@@ -74,19 +74,60 @@ WITHHOLDING_BY_PREFIX: dict[str, tuple[tuple[str, str], ...]] = {
 #
 # A registry dimension rather than a tuple, so widening the mart is a row with a rationale and
 # an effective date like every other cross-source decision. The rule each registration names is
-# the one that decides whether it writes a well-grain row: the mart's own reads are all
-# `entity_type = 'well'`, so a jurisdiction in scope without one would be entered from the well
-# spine, match no month, and be published never_reported with its production sitting in
-# canonical -- a positive false claim rather than a gap.
+# the one that decides the jurisdiction writes a well-grain row at all -- observed or
+# allocated. A jurisdiction in scope whose named rule decides neither would be entered from the
+# well spine, match no month, and be published never_reported with its production sitting in
+# canonical: a positive false claim rather than a gap.
+#
+# Restated for Texas, where the well-grain row is an allocation. The observed read is
+# `entity_type = 'well'` over canonical; the allocated read is over
+# marts.tx_allocated_production, which is a mart reading a mart -- admissible, and stated as
+# such by marts/vintage_cohorts.py:7-8. What is never admissible is a mart reading staging.
+# Every figure built from an allocated row states `basis: allocated` and names the model.
 CUMULATIVES_SCOPE = "cumulatives_scope"
 CUMULATIVE_JURISDICTIONS: tuple[str, ...] = tuple(
     str(row["jurisdiction_code"])
-    for row in JURISDICTION_RULES
+    for row in SERVING_JURISDICTION_RULES
     if row["decision"] == CUMULATIVES_SCOPE and row.get("serving", True)
 )
 STATE_API_PREFIXES: tuple[str, ...] = tuple(
     _PREFIX_OF[code] for code in CUMULATIVE_JURISDICTIONS
 )
+
+# The rule each registration names, so the mart can ask it what grain the jurisdiction writes.
+SCOPE_RULE_OF: dict[str, str] = {
+    str(row["jurisdiction_code"]): str(row["rule_id"])
+    for row in SERVING_JURISDICTION_RULES
+    if row["decision"] == CUMULATIVES_SCOPE and row.get("serving", True)
+}
+
+ALLOCATED_BASIS = "allocated"
+
+# Which prefixes read the allocated mart is a question for the rules, not for this module, and
+# a rule-id shape test would be a naked heuristic. The named rule's own spec says whether the
+# well-grain row it admits is observed or allocated.
+_SCOPE_BASIS = """
+select rule_id, spec ->> 'cumulatives_basis' as basis
+  from lineage.conformance_rules where rule_id = any(%(rule_ids)s)
+"""
+
+
+def allocated_prefixes(connection: psycopg.Connection) -> tuple[str, ...]:
+    """The API prefixes whose well-grain cumulative row is an allocation."""
+    if not SCOPE_RULE_OF:
+        return ()
+    declared = {
+        row["rule_id"]: row["basis"]
+        for row in _rows(
+            connection, _SCOPE_BASIS, {"rule_ids": sorted(set(SCOPE_RULE_OF.values()))}
+        )
+    }
+    return tuple(
+        _PREFIX_OF[code]
+        for code, rule_id in sorted(SCOPE_RULE_OF.items())
+        if declared.get(rule_id) == ALLOCATED_BASIS
+    )
+
 
 MART_STREAMS = ("liquid", "gas", "water")
 STREAM_UNITS = {"liquid": "bbl", "gas": "mcf", "water": "bbl"}
@@ -94,6 +135,7 @@ STREAM_BASIS = {"liquid": LIQUIDS_BASIS, "gas": None, "water": "water"}
 
 OBSERVED = "observed"
 NEVER_REPORTED = "never_reported"
+OBSERVED_WITH_ALLOCATED = "observed_with_allocated"
 
 MONTHS_IN_YEAR = 12
 
@@ -121,6 +163,9 @@ def per_well_cumulative_cte(restrict_to: str | None = None) -> str:
     the view after the New Mexico promotion.
     """
     membership = f"\n       and api10 in (select api10 from {restrict_to})" if restrict_to else ""
+    allocated_membership = (
+        f"\n       and api10 in (select api10 from {restrict_to})" if restrict_to else ""
+    )
     return f"""
 prod as (
     select api10,
@@ -135,6 +180,18 @@ prod as (
                  and {cumulative_semantics_predicate()}) as water_bbl
       from canonical.production_monthly_latest
      where entity_type = 'well' and api10 is not null{membership}
+     group by api10
+     union all
+    -- The allocated arm. A jurisdiction whose cumulatives_scope rule says its well-grain row
+    -- is an allocation writes no entity_type = 'well' row in canonical at all, so reading
+    -- canonical alone would publish never_reported over its whole spine. The mart-reads-mart
+    -- ruling is what makes this admissible; a mart reading staging still is not.
+    select api10,
+           sum(volume) filter (where stream = 'liquid') as liquid_bbl,
+           sum(volume) filter (where stream = 'gas') as gas_mcf,
+           null::numeric as water_bbl
+      from marts.tx_allocated_production
+     where true{allocated_membership}
      group by api10)
 """
 
@@ -206,6 +263,9 @@ class CumulativesRefresh:
     snapshot_vintage: date | None
     states: tuple[str, ...]
     coverage_outcomes: Mapping[str, int]
+    # Allocated jurisdictions whose mart is empty on this instance: entered, they would have
+    # published never_reported over their whole spine.
+    skipped: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -216,6 +276,7 @@ class CumulativesRefresh:
             else None,
             "states": list(self.states),
             "coverage_outcomes": dict(self.coverage_outcomes),
+            "skipped": list(self.skipped),
         }
 
 
@@ -227,12 +288,54 @@ select api10, state_code
 """
 
 _STREAM_TOTALS = f"""
-select api10, {_MART_STREAM} as stream, sum(volume) as cum_volume
+select api10, {_MART_STREAM} as stream, sum(volume) as cum_volume, 0 as allocated_months
   from canonical.production_monthly_latest
  where entity_type = 'well' and api10 is not null
    and left(api10, 2) = any(%(states)s)
    and {cumulative_semantics_predicate()}
  group by 1, 2
+ union all
+select api10, stream, sum(volume) as cum_volume,
+       count(distinct production_month) filter (where granularity = 'lease_allocated')
+           as allocated_months
+  from marts.tx_allocated_production
+ where left(api10, 2) = any(%(allocated)s)
+ group by 1, 2
+"""
+
+# The allocated months and the volume they carry, per well and mart stream. Served beside the
+# total and never after it: a total that sums allocated months without saying so is the naked
+# number this rule exists to prevent.
+_ALLOCATED_MONTHS = """
+select api10, stream,
+       count(distinct production_month) filter (where granularity = 'lease_allocated')
+           as allocated_months,
+       sum(abs(volume)) filter (where granularity = 'lease_allocated') as allocated_volume,
+       sum(abs(volume)) as total_volume,
+       min(production_month) as first_month, max(production_month) as last_month,
+       count(distinct production_month) as span_months
+  from marts.tx_allocated_production
+ where left(api10, 2) = any(%(allocated)s)
+ group by 1, 2
+"""
+
+_ALLOCATED_WELLS = """
+select distinct api10, left(api10, 2) as state_code
+  from marts.tx_allocated_production
+ where left(api10, 2) = any(%(allocated)s)
+ order by api10
+"""
+
+# Which allocated jurisdictions have anything to be cumulated. Between `make deploy` and the
+# manual load the allocated mart is empty, and an allocated jurisdiction entered from the well
+# spine matches no month and publishes `never_reported` over its whole spine -- 359,421 Texas
+# wells, three rows each -- which is the positive false claim the invariant above names by
+# name. An empty mart is a jurisdiction that is not ready, not a jurisdiction that filed
+# nothing (gate-tx H-10).
+_ALLOCATED_PRESENT = """
+select distinct left(api10, 2) as state_code
+  from marts.tx_allocated_production
+ where left(api10, 2) = any(%(allocated)s)
 """
 
 # One label per (well, mart stream, month): where two sources filed the same month, the
@@ -285,11 +388,13 @@ _INSERT_CUMULATIVE = """
 insert into marts.well_cumulatives
     (api10, state_code, stream, cum_volume, unit, basis, months_reported,
      months_reported_zero, months_no_report_stored, months_withheld_stored, months_absent,
-     span_months, first_month, last_month, coverage_outcome, snapshot_vintage, derivation_id)
+     span_months, first_month, last_month, coverage_outcome, allocated_months,
+     allocated_share, snapshot_vintage, derivation_id)
 values (%(api10)s, %(state_code)s, %(stream)s, %(cum_volume)s, %(unit)s, %(basis)s,
         %(months_reported)s, %(months_reported_zero)s, %(months_no_report_stored)s,
         %(months_withheld_stored)s, %(months_absent)s, %(span_months)s, %(first_month)s,
-        %(last_month)s, %(coverage_outcome)s, %(snapshot_vintage)s, %(derivation_id)s)
+        %(last_month)s, %(coverage_outcome)s, %(allocated_months)s, %(allocated_share)s,
+        %(snapshot_vintage)s, %(derivation_id)s)
 """
 
 _INSERT_WITHHOLDING = """
@@ -352,11 +457,25 @@ def _month_groups(
 
 def _collect(connection: psycopg.Connection) -> dict[str, Any]:
     """Everything bounded by the well population. The month labels are not, so they stream."""
-    states = {"states": list(STATE_API_PREFIXES)}
+    allocated = list(allocated_prefixes(connection))
+    present = {
+        row["state_code"]
+        for row in _rows(connection, _ALLOCATED_PRESENT, {"allocated": allocated})
+    }
+    skipped = [prefix for prefix in allocated if prefix not in present]
+    allocated = [prefix for prefix in allocated if prefix in present]
+    states = {"states": [item for item in STATE_API_PREFIXES if item not in skipped]}
+    scoped = {**states, "allocated": allocated}
     sources, reasons = _withholding_pairs()
     totals: dict[tuple[str, str], Decimal | None] = {}
-    for row in _rows(connection, _STREAM_TOTALS, states):
-        totals[(row["api10"], row["stream"])] = row["cum_volume"]
+    for row in _rows(connection, _STREAM_TOTALS, scoped):
+        key = (row["api10"], row["stream"])
+        held = totals.get(key)
+        totals[key] = row["cum_volume"] if held is None else held + (row["cum_volume"] or 0)
+    allocation: dict[tuple[str, str], dict[str, Any]] = {
+        (row["api10"], row["stream"]): row
+        for row in _rows(connection, _ALLOCATED_MONTHS, {"allocated": allocated})
+    }
     withheld: dict[str, dict[date, str | None]] = {}
     for row in _rows(connection, _WITHHELD_MONTHS, {**states, "sources": sources,
                                                     "reasons": reasons}):
@@ -364,12 +483,21 @@ def _collect(connection: psycopg.Connection) -> dict[str, Any]:
     with connection.cursor() as cursor:
         cursor.execute(_SNAPSHOT_VINTAGE, states)
         snapshot_vintage = cursor.fetchone()[0]
+    # The allocated jurisdictions' wells are in the spine too, but their months live in the
+    # mart, so the well list is the union: a well with an allocated share and no canonical row
+    # would otherwise never be entered and would be missing rather than never_reported.
+    wells = {row["api10"]: row for row in _rows(connection, _WELLS, states)}
+    for row in _rows(connection, _ALLOCATED_WELLS, {"allocated": allocated}):
+        wells.setdefault(row["api10"], row)
     return {
-        "wells": _rows(connection, _WELLS, states),
+        "wells": [wells[api10] for api10 in sorted(wells)],
         "totals": totals,
+        "allocation": allocation,
         "withheld": withheld,
         "snapshot_vintage": snapshot_vintage,
         "states": states,
+        "allocated": allocated,
+        "skipped": skipped,
     }
 
 
@@ -399,11 +527,46 @@ def _cumulative_rows(
         well_months: dict[date, str] = {}
         for stream in MART_STREAMS:
             well_months |= months.get(stream, {})
+        allocated_here = {
+            stream: collected["allocation"].get((api10, stream))
+            for stream in MART_STREAMS
+        }
         span = filed_span(well_months, withheld_months)
-        outcome = NEVER_REPORTED if span[0] is None else OBSERVED
+        if span[0] is None:
+            bounds = [
+                (row["first_month"], row["last_month"])
+                for row in allocated_here.values()
+                if row is not None
+            ]
+            if bounds:
+                span = (min(first for first, _ in bounds), max(last for _, last in bounds))
+        allocated_months_total = sum(
+            int(row["allocated_months"] or 0)
+            for row in allocated_here.values()
+            if row is not None
+        )
+        if span[0] is None:
+            outcome = NEVER_REPORTED
+        elif allocated_months_total:
+            # A history that mixes observed and allocated months is neither of the two words
+            # that existed before it, and the share is served beside the total rather than
+            # after it.
+            outcome = OBSERVED_WITH_ALLOCATED
+        else:
+            outcome = OBSERVED
         for stream in MART_STREAMS:
             counts = month_class_counts(span, months.get(stream, {}), withheld_months)
+            allocated_row = allocated_here.get(stream)
+            allocated_months = int(allocated_row["allocated_months"] or 0) if allocated_row else 0
+            allocated_share = None
+            if allocated_row and allocated_row["total_volume"]:
+                allocated_share = (
+                    Decimal(allocated_row["allocated_volume"] or 0)
+                    / Decimal(allocated_row["total_volume"])
+                ).quantize(Decimal("0.0001"))
             yield {
+                "allocated_months": allocated_months,
+                "allocated_share": allocated_share,
                 "api10": api10,
                 "state_code": well["state_code"],
                 "stream": stream,
@@ -451,7 +614,7 @@ def refresh_well_cumulatives(connection: psycopg.Connection) -> CumulativesRefre
     cumulatives = list(_cumulative_rows(connection, collected))
     withholding = _withholding_rows(collected)
     snapshot_vintage = collected["snapshot_vintage"]
-    outcomes = {OBSERVED: 0, NEVER_REPORTED: 0}
+    outcomes = {OBSERVED: 0, NEVER_REPORTED: 0, OBSERVED_WITH_ALLOCATED: 0}
     for row in cumulatives:
         outcomes[row["coverage_outcome"]] += 1
 
@@ -482,7 +645,10 @@ def refresh_well_cumulatives(connection: psycopg.Connection) -> CumulativesRefre
                 state: [list(pair) for pair in WITHHOLDING_BY_PREFIX.get(state, ())]
                 for state in STATE_API_PREFIXES
             },
-            "state_api_prefixes": list(STATE_API_PREFIXES),
+            "state_api_prefixes": list(collected["states"]["states"]),
+            # Named in the params rather than dropped silently: a refresh that skipped a
+            # jurisdiction has to say which, and the derivation is where that is durable.
+            "skipped_prefixes": list(collected["skipped"]),
             "streams": list(MART_STREAMS),
             "coverage_outcomes": outcomes,
         },
@@ -524,8 +690,9 @@ def refresh_well_cumulatives(connection: psycopg.Connection) -> CumulativesRefre
         derivation_id=context.derivation_id,
         row_counts=row_counts,
         snapshot_vintage=snapshot_vintage,
-        states=STATE_API_PREFIXES,
+        states=tuple(collected["states"]["states"]),
         coverage_outcomes=outcomes,
+        skipped=tuple(collected["skipped"]),
     )
 
 

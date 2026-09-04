@@ -883,9 +883,12 @@ if systemctl list-unit-files glasswell-scheduler.timer >/dev/null 2>&1; then
                 ;;
         esac
     fi
-    # The v0.78 posture, which inverts at the flag flip: every row this track seeds observes.
-    launching="$("${PSQL[@]}" "select count(*) from lineage.job_schedules_as_of(current_date, current_date) s join lineage.scheduled_jobs j on j.job_id = s.job_id where s.launch_mode = 'launch' and (j.jurisdiction in ('ND','TX','NM','MT') or j.jurisdiction is null)")"
-    assert "every resident and cross-jurisdiction row observes" 0 "$launching"
+    # The posture ruling, which inverts at the launch flip: every resolved row observes, in
+    # every jurisdiction. Naming the residents scoped this to the states that existed when it
+    # was written, so Colorado's six launching rows were invisible to it and a seventh state's
+    # would be too -- and a jurisdiction nobody listed is exactly where a launching row lands.
+    launching="$("${PSQL[@]}" "select count(*) from lineage.job_schedules_as_of(current_date, current_date) where launch_mode = 'launch'")"
+    assert "every resolved row observes" 0 "$launching"
     scheduler_runs="$("${PSQL[@]}" "select count(*) from lineage.job_runs where launched_by = 'scheduler' and outcome in ('ran','failed','interrupted')")"
     assert "the scheduler has launched nothing" 0 "$scheduler_runs"
 
@@ -909,7 +912,10 @@ fi
 printf 'scheduler identity\n'
 assert "no role named root exists" 0 \
     "$("${PSQL[@]}" "select count(*) from pg_roles where rolname = 'root'")"
-assert "glasswell_scheduler can log in and is not a superuser" 'f|t' \
+# false|true, not f|t: psql renders a bare boolean column through boolout as t/f, but a
+# concatenation goes through the text cast, which spells the same value true/false. The old
+# expectation could not match any role, so this line had never once passed.
+assert "glasswell_scheduler can log in and is not a superuser" 'false|true' \
     "$("${PSQL[@]}" "select rolsuper || '|' || rolcanlogin from pg_roles where rolname = 'glasswell_scheduler'")"
 assert "glasswell_scheduler holds no pipeline membership" f \
     "$("${PSQL[@]}" "select pg_has_role('glasswell_scheduler', 'glasswell_pipeline', 'MEMBER')")"

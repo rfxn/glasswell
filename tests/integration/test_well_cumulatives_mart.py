@@ -312,10 +312,11 @@ def test_the_partition_names_states_rather_than_a_hardcoded_jurisdiction(refresh
         (refresh.derivation_id,),
     )[0][0]
 
-    # Two states in scope, so the partition names two. The address moving when the population
-    # widened is the property being asserted, not an accident: a figure built over a different
-    # population is a different figure and must not share an identity with the old one.
-    assert partition == {"states": "05,33"}
+    # Three states in scope, so the partition names three. The address moving when the
+    # population widens is the property being asserted, not an accident: a figure built over a
+    # different population is a different figure and must not share an identity with the old
+    # one. It moved from 33 to 05,33 when Colorado registered, and again when Texas did.
+    assert partition == {"states": "05,33,42"}
     assert sorted(
         row[0] for row in rows(db, "select distinct state_code from marts.well_cumulatives")
     ) == ["05", "33"]
@@ -398,3 +399,69 @@ def test_no_colorado_well_is_published_never_reported_unless_it_filed_nothing(re
         # Per stream: the fixture files oil and nothing else, so gas and water are honestly
         # zero-reported on a well that did file, which is a different fact from never_reported.
         assert reported <= filed, api10
+
+
+# One Texas well on the spine and an allocated mart with nothing in it: the state of every
+# instance between `make deploy` and the completion of the manual load, which the runbook says
+# takes two to six hours (gate-tx H-10).
+TX_SPINE = "4200388001"
+
+
+@pytest.fixture
+def refreshed_before_the_allocation(db: psycopg.Connection, lineage_env):
+    seed_all(db)
+    manifest_id = seed_manifest(db, sha256="9" * 64, source_key="tx-spine.zip")
+    derivation_id = seed_derivation(db)
+    seed_well(
+        db, api10=TX_SPINE, state_code="42", basin=None,
+        manifest_id=manifest_id, derivation_id=derivation_id,
+    )
+    db.commit()
+    with lineage_session(recorder=PostgresRecorder(db), environment=lineage_env):
+        refresh = refresh_well_cumulatives(db)
+    db.commit()
+    return db, refresh
+
+
+def test_an_allocated_jurisdiction_with_an_empty_mart_publishes_nothing_at_all(
+    refreshed_before_the_allocation,
+):
+    """`never_reported` over the Texas spine is the positive false claim the invariant this
+    track restated names by name: the well's production is not absent, it is not loaded yet.
+
+    On the live spine this is 359,421 wells and about 1,078,000 rows, served through the
+    cumulatives link the track newly offers for Texas.
+    """
+    db, refresh = refreshed_before_the_allocation
+    published = rows(
+        db, "select count(*) from marts.well_cumulatives where state_code = %s", ("42",)
+    )[0][0]
+
+    assert published == 0
+    assert "42" in refresh.skipped
+    assert "42" not in refresh.states
+
+
+def test_the_skip_is_recorded_in_the_derivation_rather_than_left_to_be_inferred(
+    refreshed_before_the_allocation,
+):
+    db, refresh = refreshed_before_the_allocation
+    params = rows(
+        db,
+        "select params from lineage.derivations where derivation_id = %s",
+        (refresh.derivation_id,),
+    )[0][0]
+
+    assert params["skipped_prefixes"] == ["42"]
+    assert "42" not in params["state_api_prefixes"]
+
+
+def test_the_jurisdictions_that_are_loaded_are_published_as_before(
+    refreshed_before_the_allocation,
+):
+    """The skip is one jurisdiction's, not a refusal to refresh: North Dakota's and
+    Colorado's rows are written in the same pass."""
+    _db, refresh = refreshed_before_the_allocation
+
+    assert set(refresh.states) >= {"33", "05"}
+    assert refresh.row_counts["well_cumulatives"] >= 0

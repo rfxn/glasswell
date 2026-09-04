@@ -330,7 +330,12 @@ def test_the_mart_table_and_its_view_are_installed_with_their_grants(
 
 
 def test_all_four_schedule_tables_carry_colorado(db: psycopg.Connection) -> None:
-    """N-32: the rows are written by both writers, so a deploy that seeds nothing schedules."""
+    """N-32: the rows are written by both writers, so a deploy that seeds nothing schedules.
+
+    Scoped to this migration's own effective date. `079_scheduler_observe.sql` supersedes all
+    six with observing rows at a later one, and an unscoped read would silently start counting
+    that correction as though it were part of this registration.
+    """
     job_ids = [str(job["job_id"]) for job in CO_JOBS]
     with db.cursor() as cursor:
         cursor.execute(
@@ -345,8 +350,8 @@ def test_all_four_schedule_tables_carry_colorado(db: psycopg.Connection) -> None
         sources = cursor.fetchone()[0]
         cursor.execute(
             "select job_id, rule_id, trigger, launch_mode from lineage.job_schedules"
-            " where job_id = any(%s)",
-            (job_ids,),
+            " where job_id = any(%s) and effective_from = %s",
+            (job_ids, CO_REGISTERED_ON),
         )
         schedules = cursor.fetchall()
         cursor.execute(
@@ -360,6 +365,9 @@ def test_all_four_schedule_tables_carry_colorado(db: psycopg.Connection) -> None
     assert sources == sum(len(JOB_SOURCES[job_id]) for job_id in job_ids if job_id in JOB_SOURCES)
     assert len(schedules) == 6
     assert all(rule_id is not None for _job, rule_id, _trigger, _mode in schedules)
+    # This migration's own rows, read at its own effective date: 079 appends a supersession
+    # that resolves observe over every one of them, and job_schedules is append-only, so what
+    # 077 registered has to still be here to be superseded.
     assert {mode for *_rest, mode in schedules} == {"launch"}
     assert edges == len([edge for edge in DEPENDENCIES if edge[0] in set(job_ids)])
     assert edges == 5

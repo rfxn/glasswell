@@ -72,7 +72,7 @@ and 10,896 of the 344,611 inside a polygon (3.2 %) are in a different one — 10
 
 ## Serving surface
 
-**57 operations across 52 paths, 56 under `/v1`**, counted from `tests/contract/openapi_snapshot.json`
+**58 operations across 53 paths, 57 under `/v1`**, counted from `tests/contract/openapi_snapshot.json`
 on 2026-09-02 — the three added on `release/v0.76` are `GET /v1/jurisdictions` and `GET`/`DELETE` on
 the session list. Covered: health, operational status, wells and their facets, ND production, per-well
 cumulatives, vintage cohorts, completion context and promoted completion design, ND physical
@@ -102,7 +102,7 @@ well when the link named no viewport of its own.
 |---|---|---|
 | **P0** Scaffold and contracts | Met | `/v1/audit` is not served, and is not a P0 exit |
 | **P1** ND spine | Met with named deferrals | PDF era 2003-01 → 2015-04 and FracFocus chemistry remain absent by design |
-| **P2** Serving and map | Substantially met | 57 operations, tiles with the allowlist asserted in CI, map/card/drawer/glossary/explorer/Status all shipped. `/v1/spacingunits` unserved; permits, GOR and water-cut remain |
+| **P2** Serving and map | Substantially met | 58 operations, tiles with the allowlist asserted in CI, map/card/drawer/glossary/explorer/Status all shipped. `/v1/spacingunits` unserved; permits, GOR and water-cut remain |
 | **P3** Forecasting and benchmark | Entry gate met; control served; modeling remains | Publication `p3pub_8b434525d8c621762e31b06ca660bfcd` accepted 2026-08-28 and its control served. Quantile-model writer, split-conformal calibration, model-registry writer, persisted analog index and benchmark runner remain. `fv2.0` is a one-feature set |
 | **P4** Dollars and scenarios | Not started | Entire phase |
 | **P5** Intelligence, agents and alerts | Not started | Entire phase |

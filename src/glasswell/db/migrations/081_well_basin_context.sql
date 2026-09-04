@@ -20,9 +20,10 @@
 --      future resolves nowhere, /v1/conformance/<id> serves 404 for it, and every basin line
 --      and status-history line on every card links to a 404.
 --   4. This file's version integer lives in its filename and nowhere else, so a renumber is a
---      rename. It is certain here: feat/tx-lease-production already carries 079 and 080
---      on-branch, so this becomes 081 at the train. `grep -rn "079"` over src/ and tests/
---      returns only a latitude and a Texas county code, so nothing else moves with it.
+--      rename. It has already happened once: the file was 079 until the v0.80 train landed
+--      079_scheduler_observe and 080_tx_lease_production on main, and merging them made two
+--      079s, which discover_migrations refuses. It is 081 now. No test and no fixture names
+--      the integer, so nothing moved with it.
 --   5. The rule ids are immutable and must not change during the repoint: seven ids seeded by
 --      seed/conformance_basin_context.py, seed/conformance_status_history.py and
 --      seed/conformance_schedules.py read them back from the publication rows this file

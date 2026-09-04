@@ -749,6 +749,42 @@ _POOL_GRAIN_REPORTING = _LEASE_REPORTING.replace(
     "   and (spec -> 'rolls_up_to_the_well')::boolean is false",
 )
 
+# str.replace with no match returns the original, so a clause added above the substitution
+# above turns _POOL_GRAIN_REPORTING into a second copy of _LEASE_REPORTING -- New Mexico then
+# matches no reporting_level = 'lease' rule and two of its assertions go red in files the
+# change did not touch. The first hypothesis would be a registry merge rather than a one-line
+# edit here, so the failure is named at its cause for the cost of one line.
+assert _POOL_GRAIN_REPORTING != _LEASE_REPORTING, (
+    "the _POOL_GRAIN_REPORTING substitution matched nothing: a clause was added to"
+    " _LEASE_REPORTING above the two lines it replaces, and the pool-grain query is now the"
+    " lease-grain query"
+)
+
+# A jurisdiction that files at the lease and serves no well-level figure is the one this
+# predicate is looking for. Texas files at the lease and now serves one, as an allocation that
+# says so on every point, so the third key is what lets one rule have two consumers: the card
+# stops showing a pending-allocation panel while the producing class keeps resolving Texas to
+# unknown, which is a separate decision cr_tx_production_grain_1 does not make.
+_LEASE_REPORTING = _LEASE_REPORTING.replace(
+    "   and (spec -> 'allocation_required')::boolean\n",
+    "   and (spec -> 'allocation_required')::boolean\n"
+    "   and coalesce((spec -> 'well_level_production_served')::boolean, false) is false\n",
+)
+
+# The mirror of _LEASE_REPORTING, one key apart. A jurisdiction that files at the lease and
+# serves a well-level figure anyway is serving an allocation, and the rule that admits it is
+# what every point of that series has to cite.
+_ALLOCATED_SERIES = _LEASE_REPORTING.replace(
+    "   and coalesce((spec -> 'well_level_production_served')::boolean, false) is false\n",
+    "   and coalesce((spec -> 'well_level_production_served')::boolean, false)\n",
+)
+
+assert _ALLOCATED_SERIES != _LEASE_REPORTING, (
+    "the _ALLOCATED_SERIES substitution matched nothing: the two predicates differ by one"
+    " key, and a copy of the lease-reporting query would say every lease jurisdiction serves"
+    " an allocated series"
+)
+
 _LEASE_BASELINE = """
 select min(published_vintage)
   from lineage.conformance_rules
@@ -807,6 +843,31 @@ def lease_reporting_rule(
     return _reporting_absence(
         connection,
         _LEASE_REPORTING,
+        state_code,
+        as_of=as_of,
+        valid_at=valid_at,
+        knowledge_at=knowledge_at,
+    )
+
+
+def allocated_series_rule(
+    connection: psycopg.Connection,
+    state_code: str | None,
+    *,
+    as_of: date | None = None,
+    valid_at: date | None = None,
+    knowledge_at: date | None = None,
+) -> LeaseReportingRule | None:
+    """The rule admitting a well-level figure in a jurisdiction that files at the lease.
+
+    The same registry fact read the other way round. `lease_reporting_rule` answers "this
+    jurisdiction has no well-level series and here is why"; this answers "it has one, and it is
+    an allocation, and here is the rule that says so". Exactly one of them can match a
+    jurisdiction at an instant, because they differ by one key.
+    """
+    return _reporting_absence(
+        connection,
+        _ALLOCATED_SERIES,
         state_code,
         as_of=as_of,
         valid_at=valid_at,

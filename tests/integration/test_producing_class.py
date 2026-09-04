@@ -16,7 +16,11 @@ import psycopg
 import pytest
 from psycopg.rows import dict_row
 
-from glasswell.lineage.conformance import lease_reporting_rule, pool_grain_rule
+from glasswell.lineage.conformance import (
+    allocated_series_rule,
+    lease_reporting_rule,
+    pool_grain_rule,
+)
 from glasswell.marts.producing import (
     NOT_PRODUCING,
     PRODUCING,
@@ -173,12 +177,23 @@ def test_a_jurisdiction_with_no_well_level_series_is_unknown_and_never_not_produ
 def test_the_two_reasons_for_an_absent_series_do_not_collapse_into_each_other(
     population,
 ) -> None:
-    """A test that would pass on a query that returned every state for either reason."""
-    assert lease_reporting_rule(population, "42") is not None
+    """A test that would pass on a query that returned every state for either reason.
+
+    Texas inverts here, and the inversion is the point. `_LEASE_REPORTING` answers "this
+    jurisdiction has no well-level series and here is why"; Texas now has one, served as an
+    allocation, so it stops matching. What must not change is `_NO_WELL_SERIES_STATES`, three
+    lines above: the producing class is a separate decision and Texas stays `unknown` in it.
+    """
+    assert lease_reporting_rule(population, "42") is None
     assert lease_reporting_rule(population, "30") is None
     assert pool_grain_rule(population, "30") is not None
     assert pool_grain_rule(population, "42") is None
     assert pool_grain_rule(population, "33") is None
+    # The other half of the pair: the rule that admits the allocated series answers only for
+    # the jurisdiction that registered one.
+    assert allocated_series_rule(population, "42") is not None
+    assert allocated_series_rule(population, "30") is None
+    assert allocated_series_rule(population, "33") is None
 
 
 def test_the_policy_comes_from_the_registry_rather_than_from_the_code(population) -> None:

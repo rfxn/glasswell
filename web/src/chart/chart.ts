@@ -1,7 +1,14 @@
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 
-import { NULL_SEMANTICS_STATES, formatMonth, nullSemantics } from "../card/format.ts";
+import {
+  ALLOCATION_CLASSES,
+  NULL_SEMANTICS_STATES,
+  allocationClass,
+  formatMonth,
+  nullSemantics,
+  shareDetail,
+} from "../card/format.ts";
 import { explainHandle } from "../chrome/handle.ts";
 import { THEME_EVENT } from "../chrome/theme.ts";
 import { labelElement } from "../glossary/gw-term.ts";
@@ -94,6 +101,8 @@ export function renderChart(
     readout.className = "gw-series-readout";
     readout.setAttribute("aria-live", "polite");
     container.append(readout, stateKey(view.chart, callbacks));
+    const key = allocationKey(view.chart, callbacks);
+    if (key) container.appendChild(key);
     const vintages = vintageDisclosure(view.chart);
     if (vintages) container.appendChild(vintages);
 
@@ -314,11 +323,25 @@ function distinctVintages(column: SeriesColumn): string[] {
 }
 
 /** Without a key the band is a strip of colour, and the gap it explains stays ambiguous. */
+/**
+ * The four the API distinguishes, drawn whether or not this well hit them -- they are the
+ * vocabulary, and a reader learns it from the key -- plus any state a served series actually
+ * carries beyond them. A mark on the band with nothing in the key to read it by is a colour
+ * the reader has to guess at.
+ */
+function keyStates(chart: ChartSeries): string[] {
+  const states = new Set<string>(NULL_SEMANTICS_STATES);
+  for (const column of chart.columns) {
+    for (const state of column.nullSemantics) if (state) states.add(state);
+  }
+  return [...states];
+}
+
 function stateKey(chart: ChartSeries, callbacks: ChartCallbacks): HTMLElement {
   const wrapper = document.createElement("p");
   wrapper.className = "gw-state-key";
   const pointer = chart.columns[0] ? `/series/${chart.columns[0].key}_null_semantics` : "";
-  for (const state of NULL_SEMANTICS_STATES) {
+  for (const state of keyStates(chart)) {
     const described = nullSemantics(state);
     const item = document.createElement("span");
     item.className = "gw-state-key-item";
@@ -344,13 +367,20 @@ function stateBand(chart: ChartSeries): HTMLElement {
     row.className = "gw-state-row";
     const name = document.createElement("span");
     name.className = "gw-state-name";
-    name.textContent = column.label;
+    name.textContent = bandSubject(column);
+    if (leaseGrain(column)) {
+      name.title =
+        `What the lease filed for ${column.label.toLowerCase()} each month. This well's` +
+        " number is its share of that filing, and the row below says how the share was made.";
+    }
     const cells = document.createElement("div");
     cells.className = "gw-state-cells";
     cells.setAttribute("role", "img");
     cells.setAttribute(
       "aria-label",
-      `${column.label}: what was reported in each of ${chart.months.length} months.` +
+      (leaseGrain(column)
+        ? `${column.label}: what the lease filed in each of ${chart.months.length} months.`
+        : `${column.label}: what was reported in each of ${chart.months.length} months.`) +
         " Use the month stepper below to read any one of them.",
     );
     for (const [index, month] of chart.months.entries()) {
@@ -359,17 +389,123 @@ function stateBand(chart: ChartSeries): HTMLElement {
     row.append(name, cells);
     wrapper.appendChild(row);
   }
+  // The allocation rows go inside this wrapper, not beside it. `align` sets --gw-band-left and
+  // --gw-band-right on the element it is handed, and a sibling strip inherits neither -- which
+  // is a band drawn to a different width from the plot it sits under, and which was exactly
+  // what the first shot showed.
+  for (const row of allocationRows(chart)) wrapper.appendChild(row);
   return wrapper;
+}
+
+/** Whether the series was filed at the lease and this well's points are its shares. */
+function leaseGrain(column: SeriesColumn): boolean {
+  return column.allocationClasses.some((state) => state !== "");
+}
+
+/**
+ * The first band's subject, in words, on screen. Two bands under one chart that both read
+ * `Oil` are one claim to a reader; the filing and the share are two. Two words, because the
+ * name sits in the plot's own left gutter: `lease filing` measured 77 px against 58 px of
+ * column and truncated to `Oil · leas...`, and a subject a reader cannot read is not one.
+ */
+function bandSubject(column: SeriesColumn): string {
+  return leaseGrain(column) ? `${column.label} · lease` : column.label;
 }
 
 function mark(column: SeriesColumn, index: number, month: string): HTMLElement {
   const described = nullSemantics(column.nullSemantics[index] ?? "");
   const cell = document.createElement("span");
   cell.className = `gw-state-mark ${described.className}`;
+  if (column.incomplete[index]) cell.classList.add("gw-month-incomplete");
   cell.setAttribute("data-index", String(index));
   cell.setAttribute("data-no-glossary", "");
   cell.title = `${formatMonth(month)} · ${column.label} · ${described.label}`;
   return cell;
+}
+
+/**
+ * The allocation band: a second strip under the first, in its own vocabulary and its own CSS
+ * prefix. Drawn only where a class reached the wire, so an observed jurisdiction's chart is
+ * unchanged and a Texas well never shows a share without saying it is one.
+ */
+function allocationRows(chart: ChartSeries): HTMLElement[] {
+  if (!chart.allocated) return [];
+  const rows: HTMLElement[] = [];
+  for (const column of chart.columns) {
+    if (column.allocationClasses.every((state) => state === "")) continue;
+    const row = document.createElement("div");
+    row.className = "gw-state-row gw-alloc-row";
+    const name = document.createElement("span");
+    name.className = "gw-state-name";
+    name.textContent = `${column.label} · how`;
+    const cells = document.createElement("div");
+    cells.className = "gw-state-cells gw-alloc-cells";
+    cells.setAttribute("role", "img");
+    cells.setAttribute(
+      "aria-label",
+      `${column.label}: how each of ${chart.months.length} months was arrived at:` +
+        " observed where the lease had one eligible well, allocated where it had more.",
+    );
+    for (const [index, month] of chart.months.entries()) {
+      cells.appendChild(allocationMark(column, index, month));
+    }
+    row.append(name, cells);
+    rows.push(row);
+  }
+  return rows;
+}
+
+function allocationMark(column: SeriesColumn, index: number, month: string): HTMLElement {
+  const state = column.allocationClasses[index] ?? "";
+  const described = allocationClass(state);
+  const cell = document.createElement("span");
+  cell.className = `gw-alloc-mark ${described.className}`;
+  if (column.incomplete[index]) cell.classList.add("gw-month-incomplete");
+  cell.setAttribute("data-index", String(index));
+  cell.setAttribute("data-no-glossary", "");
+  const detail = shareDetail(column.eligibleWells[index] ?? null, column.shares[index] ?? null);
+  cell.title = `${formatMonth(month)} · ${column.label} · ${described.label}${detail}`;
+  return cell;
+}
+
+/**
+ * The allocation band's own key, in its own vocabulary and only for what this well's band
+ * drew. Six entries under a band showing one class made the band read as a component that
+ * had failed to draw the other five.
+ */
+function allocationKey(chart: ChartSeries, callbacks: ChartCallbacks): HTMLElement | null {
+  if (!chart.allocated) return null;
+  const wrapper = document.createElement("p");
+  wrapper.className = "gw-alloc-key";
+  const first = chart.columns.find((entry) =>
+    entry.allocationClasses.some((state) => state !== ""),
+  );
+  const pointer = first ? `/series/${first.key}_allocation_class_by_month` : "";
+  for (const state of servedClasses(chart)) {
+    const described = allocationClass(state);
+    const item = document.createElement("span");
+    item.className = "gw-state-key-item";
+    const swatch = document.createElement("span");
+    swatch.className = `gw-alloc-mark ${described.className}`;
+    swatch.title = described.title;
+    item.appendChild(swatch);
+    item.appendChild(labelElement(described.label, callbacks.labelTermFor(pointer)));
+    wrapper.appendChild(item);
+  }
+  return wrapper;
+}
+
+/**
+ * The classes this series actually carries, in the order the vocabulary lists them, plus any
+ * the vocabulary does not know: a mark on the band with no entry in the key is a texture the
+ * reader has to guess at, which is the opposite failure to keying five classes nothing drew.
+ */
+function servedClasses(chart: ChartSeries): string[] {
+  const served = new Set(
+    chart.columns.flatMap((column) => column.allocationClasses).filter((state) => state !== ""),
+  );
+  const known: string[] = ALLOCATION_CLASSES.filter((state) => served.has(state));
+  return [...known, ...[...served].filter((state) => !known.includes(state))];
 }
 
 /**
@@ -450,11 +586,25 @@ function readoutRow(row: ReadoutRow, callbacks: ChartCallbacks): HTMLElement {
   stateMark.className = `gw-state-mark ${row.mark.className}`;
   state.append(stateMark, document.createTextNode(` ${row.mark.label}`));
 
+  // How the number was arrived at, in the one place a reader reads one number. The band says
+  // it across the whole series and the readout is where a share would otherwise sit beside the
+  // word "reported" with nothing to say it is an estimate.
+  const how = document.createElement("span");
+  if (row.allocation) {
+    how.className = "gw-readout-alloc";
+    how.title = row.allocation.title;
+    const allocMark = document.createElement("span");
+    allocMark.className = `gw-alloc-mark ${row.allocation.className}`;
+    const detail = shareDetail(row.eligibleWells, row.shares);
+    how.append(allocMark, document.createTextNode(` ${row.allocation.label}${detail}`));
+  }
+
   // The facts wrap among themselves; the handle does not leave the row it explains, which at
   // 390 is the difference between a button beside a number and a button under the next one.
   const facts = document.createElement("div");
   facts.className = "gw-readout-facts";
   facts.append(swatch, name, value, state);
+  if (row.allocation) facts.appendChild(how);
 
   element.appendChild(facts);
   if (row.handle) {

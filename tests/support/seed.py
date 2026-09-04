@@ -111,18 +111,21 @@ _WELL_DEFAULTS: dict[str, Any] = {
     "land_unit_label": "151N-101W-11",
     "total_depth_ft": None,
     "completion_date": None,
+    "plug_date": None,
 }
 
 _INSERT_WELL = (
     "insert into canonical.wells (api10, api14, state_code, county_code_at_permit, ndic_file_no,"
     " operator_name_reported, operator_id, well_name, status_canonical, status_reported,"
     " well_type_reported, spud_date, confidential_flag, basin, land_unit_label,"
-    " total_depth_ft, completion_date, effective_from, source_manifest_id, derivation_id)"
+    " total_depth_ft, completion_date, plug_date, effective_from, source_manifest_id,"
+    " derivation_id)"
     " values (%(api10)s, %(api14)s, %(state_code)s, %(county_code_at_permit)s,"
     " %(ndic_file_no)s, %(operator_name_reported)s, %(operator_id)s, %(well_name)s,"
     " %(status_canonical)s, %(status_reported)s, %(well_type_reported)s, %(spud_date)s,"
     " %(confidential_flag)s, %(basin)s, %(land_unit_label)s, %(total_depth_ft)s,"
-    " %(completion_date)s, %(effective_from)s, %(source_manifest_id)s, %(derivation_id)s)"
+    " %(completion_date)s, %(plug_date)s, %(effective_from)s, %(source_manifest_id)s,"
+    " %(derivation_id)s)"
 )
 
 

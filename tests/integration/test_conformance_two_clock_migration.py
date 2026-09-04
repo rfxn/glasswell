@@ -12,6 +12,7 @@ import pytest
 from glasswell.db import migrate
 from glasswell.lineage.clock import utc_today
 from glasswell.seed import (
+    ALLOCATION_RULES,
     BASIN_CONTEXT_RULES,
     BASIN_RULES,
     C115B_RULES,
@@ -57,6 +58,7 @@ def _seeded_rule_ids() -> set[str]:
             PRODUCING_RULES,
             SCHEDULE_RULES,
             TX_RULES,
+            ALLOCATION_RULES,
             TYPECURVE_RULES,
             VINTAGE_RULES,
         )

@@ -11,7 +11,7 @@ from fastapi import APIRouter, Path, Request
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.responses import JSONResponse
 
-from glasswell.api.deps import AsOf, Connection, ExplainEffect, rows
+from glasswell.api.deps import AsOf, Connection, ExplainEffect, jurisdictions, rows
 from glasswell.api.errors import ProblemError, problem_responses
 from glasswell.api.examples import (
     EXAMPLE_API10,
@@ -30,7 +30,6 @@ from glasswell.api.responses import (
     iso,
     month_label,
 )
-from glasswell.api.routers.health import source_health_data
 from glasswell.api.routers.wells import API10_PATTERN
 from glasswell.lineage.envelope import collect_handles, distinct_handles, figure
 from glasswell.lineage.explain import MAX_HANDLES
@@ -42,6 +41,7 @@ from glasswell.marts.cumulatives import (
     ROLLUP_RULE,
     STATE_API_PREFIXES,
 )
+from glasswell.status.source_health import source_health_data
 
 router = APIRouter(tags=["wells"])
 
@@ -54,7 +54,7 @@ _CUMULATIVES = """
 select c.api10, c.state_code, c.stream, c.cum_volume, c.unit, c.basis, c.months_reported,
        c.months_reported_zero, c.months_no_report_stored, c.months_withheld_stored,
        c.months_absent, c.span_months, c.first_month, c.last_month, c.coverage_outcome,
-       c.snapshot_vintage, c.derivation_id,
+       c.allocated_months, c.allocated_share, c.snapshot_vintage, c.derivation_id,
        coalesce(w.months_withheld, 0) as months_withheld_quarantined,
        coalesce(w.rule_ids, '{}'::text[]) as withholding_rule_ids
   from marts.well_cumulatives c
@@ -152,7 +152,11 @@ class WellCumulatives(BaseModel):
         ),
     )
     granularity: str = Field(
-        description="well_observed; these are regulator filings summed, never allocated.",
+        description=(
+            "well_observed where every month behind the total is a regulator filing;"
+            " lease_allocated where the jurisdiction files at the lease and the well-grain"
+            " months are shares. Never silently one when it is the other."
+        ),
         json_schema_extra={GLOSSARY_KEY: "gt_granularity"},
     )
     snapshot_vintage: date = Field(
@@ -160,7 +164,17 @@ class WellCumulatives(BaseModel):
         json_schema_extra={GLOSSARY_KEY: "gt_report_vintage"},
     )
     coverage_outcome: str = Field(
-        description="observed, or never_reported where the well has filed nothing at all."
+        description=(
+            "observed, never_reported where the well has filed nothing at all, or"
+            " observed_with_allocated where some of the months behind the total are shares."
+        )
+    )
+    allocation: CumulativeAllocation | None = Field(
+        default=None,
+        description=(
+            "Present only where allocated months contribute. A total that sums them without"
+            " saying so is the naked number this block exists to prevent."
+        ),
     )
     cumulative: CumulativeStreams | None = Field(
         description="The three totals; null where the well has never filed anything."
@@ -170,6 +184,54 @@ class WellCumulatives(BaseModel):
         description="Months the regulator withheld for this well, from the quarantine ledger.",
         json_schema_extra={GLOSSARY_KEY: "gt_withheld"},
     )
+
+
+class CumulativeAllocation(BaseModel):
+    """What the allocated months contribute, stated beside the total and never after it."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    basis: str = Field(
+        description="The months behind this total are shares, not observations."
+    )
+    model_id: str | None = Field(description="The model that computed every share in them.")
+    rule_id: str = Field(description="The registered decision that admits a well-grain row.")
+    months: dict[str, FigureModel] = Field(
+        description="Allocated months per stream, each a figure with a handle."
+    )
+    share: dict[str, FigureModel] = Field(
+        description="The share of each stream's total the allocated months carry."
+    )
+    shares_counted: FigureModel | None = Field(
+        default=None,
+        description="How many stored per-lease shares the well's totals were summed over.",
+    )
+
+
+# What the last refresh actually wrote, not what the module is configured to cover. A
+# jurisdiction whose allocated mart is empty is skipped by the refresh, and a 404 naming it as
+# covered invites the reader to conclude the well is out of scope -- which is the opposite of
+# both halves of "an empty mart is a jurisdiction that is not ready, not a jurisdiction that
+# filed nothing" (gate-tx H-10-C).
+_LAST_REFRESH = """
+select params from lineage.derivations
+ where output_dataset = 'marts.well_cumulatives'
+ order by created_at desc limit 1
+"""
+
+
+def _skipped_prefixes(connection: Connection) -> tuple[str, ...]:
+    found = rows(connection, _LAST_REFRESH, {})
+    if not found:
+        return ()
+    params = found[0]["params"] or {}
+    return tuple(str(item) for item in (params.get("skipped_prefixes") or ()))
+
+
+def _scope_rule(connection: Connection, prefix: str) -> str | None:
+    """The decision that admits this jurisdiction's well-grain row, read from the registry."""
+    row = jurisdictions(connection).at_prefix(prefix)
+    return row.rule("cumulatives_scope") if row is not None else None
 
 
 @router.get(
@@ -264,11 +326,27 @@ def get_well_cumulatives(
 ) -> JSONResponse:
     found = rows(connection, _CUMULATIVES, {"api10": api10})
     if not found:
+        skipped = _skipped_prefixes(connection)
+        prefix = api10[:2]
+        if prefix in skipped:
+            rule = _scope_rule(connection, prefix)
+            raise ProblemError(
+                "not_found",
+                detail=(
+                    f"no cumulative for {api10} yet. This jurisdiction is registered for a"
+                    " well-grain cumulative row and the last refresh skipped it: the allocated"
+                    " mart it reads holds no rows on this instance, so nothing is published"
+                    " rather than a total over months nobody has split. The lease months are"
+                    f" promoted and served at /v1/wells/{api10}/production"
+                    + (f", and {rule} is the rule that computes the shares." if rule else ".")
+                ),
+            )
+        covered = [item for item in STATE_API_PREFIXES if item not in skipped]
         raise ProblemError(
             "not_found",
             detail=(
                 f"no cumulative for {api10}. The cumulative mart covers state API prefix"
-                f" {', '.join(STATE_API_PREFIXES)}; a well outside it has no total here, which"
+                f" {', '.join(covered)}; a well outside it has no total here, which"
                 " is not the same fact as a well that produced nothing."
             ),
         )
@@ -286,14 +364,16 @@ def get_well_cumulatives(
         )
 
     outcome = anchor["coverage_outcome"]
+    allocated = _allocation(connection, by_stream, api10=api10, outcome=outcome)
     warnings: list[dict[str, Any]] = []
     data: dict[str, Any] = {
         "api10": api10,
-        "granularity": "well_observed",
+        "granularity": "lease_allocated" if allocated else "well_observed",
         "snapshot_vintage": snapshot,
         "coverage_outcome": outcome,
         "cumulative": _cumulative(by_stream, api10=api10, snapshot=snapshot),
         "coverage": _coverage(by_stream, api10=api10),
+        "allocation": allocated,
         "months_withheld": figure(
             str(anchor["months_withheld_quarantined"]),
             unit=COUNT_UNIT,
@@ -374,6 +454,67 @@ def _cumulative(
             )
         )
     return totals
+
+
+ALLOCATED_COVERAGE = "observed_with_allocated"
+
+_SHARES = """
+select count(*) as shares, min(allocation_model_id) as model_id,
+       min(allocation_rule_id) as rule_id
+  from marts.tx_allocated_production where api10 = %(api10)s
+"""
+
+
+def _allocation(
+    connection: psycopg.Connection,
+    by_stream: dict[str, dict[str, Any]],
+    *,
+    api10: str,
+    outcome: str,
+) -> dict[str, Any] | None:
+    """The allocated contribution, or None where every month behind the total is observed."""
+    if outcome != ALLOCATED_COVERAGE:
+        return None
+    counted = rows(connection, _SHARES, {"api10": api10})
+    detail = counted[0] if counted else {}
+    # The mart's own rows carry the rule; where a row is missing the registration is asked
+    # rather than a literal answering for it (gate-tx RV-3).
+    registered = _scope_rule(connection, api10[:2])
+    return {
+        "basis": "allocated",
+        "model_id": detail.get("model_id"),
+        "rule_id": detail.get("rule_id") or registered,
+        "months": {
+            stream: figure(
+                int(row["allocated_months"] or 0),
+                unit="months",
+                derivation=row["derivation_id"],
+                selector=f"api10={api10}&stream={stream}&col=allocated_months",
+            )
+            for stream, row in by_stream.items()
+            if row is not None and row["allocated_months"]
+        },
+        "share": {
+            stream: figure(
+                str(row["allocated_share"]),
+                unit="share",
+                derivation=row["derivation_id"],
+                selector=f"api10={api10}&stream={stream}&col=allocated_share",
+            )
+            for stream, row in by_stream.items()
+            if row is not None and row["allocated_share"] is not None
+        },
+        "shares_counted": figure(
+            int(detail.get("shares") or 0),
+            unit="shares",
+            derivation=next(
+                (row["derivation_id"] for row in by_stream.values() if row is not None), ""
+            ),
+            selector=f"api10={api10}&col=shares_counted",
+        )
+        if detail.get("shares")
+        else None,
+    }
 
 
 def _coverage(by_stream: dict[str, dict[str, Any]], *, api10: str) -> dict[str, Any]:

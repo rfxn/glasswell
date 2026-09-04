@@ -24,7 +24,7 @@ from glasswell.seed.conformance_schedules import SCHEDULE_RULES
 from glasswell.seed.conformance_status_history import (
     HISTORY_RULES as STATUS_HISTORY_RULES,
 )
-from glasswell.seed.conformance_tx import TX_RULES
+from glasswell.seed.conformance_tx import ALLOCATION_RULES, TX_RULES
 from glasswell.seed.conformance_typecurve import TYPECURVE_RULES
 from glasswell.seed.conformance_vintage import VINTAGE_RULES
 
@@ -118,6 +118,7 @@ def _seeded_policy_rule_ids() -> set[str]:
             SCHEDULE_RULES,
             STATUS_HISTORY_RULES,
             TX_RULES,
+            ALLOCATION_RULES,
             TYPECURVE_RULES,
             VINTAGE_RULES,
         )

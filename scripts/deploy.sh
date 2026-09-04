@@ -307,7 +307,11 @@ if remote "systemctl is-enabled --quiet glasswell-restore-drill.timer"; then
 fi
 # The timer only, never the service, for the reason cf-ranges gives above: a tick reads the
 # whole registry and every source's poll evidence, and a deploy step must not wait on it.
-# While every seeded row observes there is nothing for it to launch either way.
+# Every row the registry RESOLVES observes, so a tick launches nothing. The raw table is a
+# different reading and says otherwise: job_schedules is append-only, so Colorado's six
+# founding rows still carry launch_mode='launch' and are superseded by observing rows at a
+# later clock. A reader checking the table directly must resolve it through
+# lineage.job_schedules_as_of, which is what the planner reads.
 remote "systemctl start glasswell-scheduler.timer" \
     || refuse "glasswell-scheduler timer did not start"
 remote "systemctl start glasswell-status.service" \
