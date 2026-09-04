@@ -440,16 +440,16 @@ drop_and_verify_scratch \
 # Measured after the pre-cleanup, so a leftover scratch database's bytes count as free, and
 # before createdb, so a refusal leaves nothing for finish's cleanup to fail to remove.
 scratch_data_directory=$(psql_value postgres "SHOW data_directory;") \
-	|| fail insufficient_free_space "the scratch cluster data directory could not be read"
+	|| fail free_space_probe_failed "the scratch cluster data directory could not be read"
 scratch_data_directory=${scratch_data_directory//[[:space:]]/}
 source_database_bytes=$(psql_value postgres "SELECT pg_database_size('$SOURCE');") \
-	|| fail insufficient_free_space "the source database size could not be read"
+	|| fail free_space_probe_failed "the source database size could not be read"
 source_database_bytes=${source_database_bytes//[[:space:]]/}
 available_bytes=$(df --block-size=1 --output=avail -- "$scratch_data_directory" | tail -n 1) \
-	|| fail insufficient_free_space "free space on the scratch filesystem could not be read"
+	|| fail free_space_probe_failed "free space on the scratch filesystem could not be read"
 available_bytes=${available_bytes//[[:space:]]/}
 [[ -n $scratch_data_directory && $source_database_bytes =~ ^[0-9]+$ && $available_bytes =~ ^[0-9]+$ ]] \
-	|| fail insufficient_free_space "the free-space precheck could not be measured"
+	|| fail free_space_probe_failed "the free-space precheck could not be measured"
 # pg_database_size bounds the restored copy; the 10 GiB margin is a guess, for the WAL written
 # between checkpoints and pg_restore's sort temp files. spec-data-platform.md 3.2(a) argues it.
 required_bytes=$((source_database_bytes + 10737418240))

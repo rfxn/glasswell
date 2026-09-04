@@ -7,10 +7,14 @@ import hashlib
 import json
 import os
 import pwd
+import re
 import subprocess
 from pathlib import Path
+from typing import get_args
 
 import pytest
+
+from glasswell.status.models import RestoreFailureDetail
 
 pytestmark = pytest.mark.unit
 
@@ -63,8 +67,14 @@ case "$statement" in
     fi
     ;;
   *"SELECT EXISTS"*) printf '%s\n' "${STUB_READ_VALUE:-t}" ;;
-  "SHOW data_directory"*) printf '%s\n' "${STUB_DATA_DIRECTORY:-/var/lib/postgresql/16/main}" ;;
-  *"pg_database_size"*) printf '%s\n' "${STUB_DATABASE_BYTES:-1500000000}" ;;
+  "SHOW data_directory"*)
+    [ "${STUB_DATA_DIRECTORY_RC:-0}" = 0 ] || exit "$STUB_DATA_DIRECTORY_RC"
+    printf '%s\n' "${STUB_DATA_DIRECTORY:-/var/lib/postgresql/16/main}"
+    ;;
+  *"pg_database_size"*)
+    [ "${STUB_DATABASE_BYTES_RC:-0}" = 0 ] || exit "$STUB_DATABASE_BYTES_RC"
+    printf '%s\n' "${STUB_DATABASE_BYTES:-1500000000}"
+    ;;
 esac
 exit 0
 """
@@ -166,6 +176,26 @@ def drill(tmp_path: Path):
     return run
 
 
+# A code outside the closed literal makes the whole receipt fail validation
+# (`status/collector.py:394`), so the drill reports as unreadable rather than as failed. The one
+# member of this set is pre-existing at v0.80 and routed to P2a; it is an equality rather than a
+# subset so that closing it there reddens this test rather than leaving a stale allowance.
+UNMODELLED_FAILURE_CODES = {"manifest_dump_missing"}
+
+
+def test_every_failure_code_the_drill_can_write_is_in_the_closed_literal() -> None:
+    # Comment lines first: prose in this file says "fail to remove", which is not a code.
+    script = "\n".join(
+        line
+        for line in DRILL.read_text(encoding="utf-8").splitlines()
+        if not line.lstrip().startswith("#")
+    )
+    emitted = set(re.findall(r"(?:^|\s)fail ([a-z][a-z0-9_]*)", script))
+    emitted |= set(re.findall(r"failure_detail=([a-z][a-z0-9_]*)", script))
+
+    assert emitted - set(get_args(RestoreFailureDetail)) == UNMODELLED_FAILURE_CODES
+
+
 def drop_calls(calls: str) -> int:
     return sum("DROP DATABASE" in line for line in calls.splitlines())
 
@@ -207,8 +237,13 @@ def test_clean_drill_publishes_complete_private_atomic_proof(drill) -> None:
         ({"STUB_RESTORED_SCHEMA": "43"}, "schema_head_mismatch"),
         ({"STUB_RESTORED_ROWS": "41"}, "critical_count_mismatch"),
         ({"STUB_READ_VALUE": "f"}, "representative_read_failed"),
+        # The measured shortfall, and then the four ways the measurement itself can fail. Only
+        # the first is a full disk, and the collector serves the code as the cause.
         ({"STUB_DF_AVAIL": "1000000"}, "insufficient_free_space"),
-        ({"STUB_DF_RC": "1"}, "insufficient_free_space"),
+        ({"STUB_DATA_DIRECTORY_RC": "1"}, "free_space_probe_failed"),
+        ({"STUB_DATABASE_BYTES_RC": "1"}, "free_space_probe_failed"),
+        ({"STUB_DF_RC": "1"}, "free_space_probe_failed"),
+        ({"STUB_DF_AVAIL": "unknown"}, "free_space_probe_failed"),
     ],
 )
 def test_every_assertion_failure_cleans_up_and_publishes_failure(
@@ -247,8 +282,8 @@ def test_cleanup_that_fails_or_leaves_scratch_cannot_fall_through_to_success(
 
 
 def test_free_space_refusal_precedes_createdb_and_leaves_no_scratch(drill) -> None:
-    # The default receipt is the one verify.sh reads and the status page serves; a refused
-    # drill under test must reach the overridden path only, so this run cannot create it.
+    # The proof that the run writes only to the override is the fixture's RESTORE_RESULT_PATH;
+    # this latch is belt-and-braces on the path verify.sh reads, not that proof.
     default_receipt = Path("/var/lib/glasswell-restore-drill/result.json")
     default_receipt_existed = default_receipt.exists()
 
