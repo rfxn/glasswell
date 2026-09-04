@@ -790,6 +790,148 @@
   related_terms: ["Basin", "Conformance rule"]
   source_refs: ["cr_tx_basin_context_1", "cr_mt_basin_scope_1", "marts.well_basin_context"]
 
+- term: Bottom hole
+  aliases: ["Bottom-hole location", "BHL"]
+  short_definition: >-
+    Where a well's wellbore ends, as against where it starts at the surface.
+  expanded_definition: >-
+    A lateral can run two miles from its surface hole, so the two points answer different
+    questions and can fall in different sections, different spacing units and different basins.
+    Texas files both for 360,434 wellbores; which one a served answer used is stated on the
+    answer rather than assumed, which is what `geometry_basis` on the basin block records.
+  domain_tags: [geospatial, data-model]
+  related_terms: ["Wellbore", "Lateral", "Geometry provenance"]
+  source_refs: ["blueprint-v0.6 §9", "marts.well_basin_context"]
+
+- term: Basin boundary
+  aliases: ["Published boundary", "Boundary set"]
+  short_definition: >-
+    A polygon a publisher draws around a basin or play, and the set it belongs to.
+  expanded_definition: >-
+    glasswell answers "which basin" by asking a published boundary set where the well's
+    geometry falls, and serves the set and its vintage beside the answer. A well outside every
+    polygon is `outside_published_boundaries`, which is a finding about the set rather than a
+    gap in the record: two thirds of Montana's wells read that way.
+  domain_tags: [geospatial, governance]
+  related_terms: ["Basin", "Scope label", "Play"]
+  source_refs: ["cr_nd_basin_context_1", "canonical.basin_boundaries"]
+
+- term: Producing month
+  aliases: ["Months online", "Month index", "Time zero"]
+  short_definition: >-
+    Months counted from a well's own first production rather than from the calendar.
+  expanded_definition: >-
+    Two wells drilled four years apart are comparable on this axis and on no other: month 1 is
+    each well's own first producing month. A peer control is drawn on it because the peers were
+    online at different calendar times, and a calendar axis would compare a first year against
+    a fifth.
+  domain_tags: [production, modeling]
+  related_terms: ["First production", "Peer control", "Type curve"]
+  source_refs: ["blueprint-v0.6 §9", "/v1/wells/{api10}/type-curve"]
+
+- term: Normalised volume
+  aliases: ["Per lateral foot", "Per kft"]
+  short_definition: >-
+    A volume divided by the well's lateral length, served in units per thousand feet.
+  expanded_definition: >-
+    It is not a rate per foot of pipe per unit time: it is the month's volume divided by the
+    lateral that produced it, which makes a 5,000 ft well and a 10,000 ft well comparable. The
+    divisor and the method that measured it ride the served basis, and the point's handle
+    resolves both the production and the geometry, because a number divided in a browser would
+    carry the handle of the number it was divided from.
+  domain_tags: [production, data-model]
+  related_terms: ["Lateral", "Naked number", "Derivation handle"]
+  source_refs: ["cr_nd_lateral_length_1", "/v1/wells/{api10}/production?normalization=per_lateral_ft"]
+
+- term: Running total
+  aliases: ["Rolling sum"]
+  short_definition: >-
+    The sum of the points currently on screen, computed in the browser.
+  expanded_definition: >-
+    Explicitly not Cumulative production, which is a served mart figure with its own coverage
+    classes and its own snapshot vintage. The running total states the months it summed and the
+    class of each, and it carries no derivation handle at all: a client sum wearing one point's
+    handle would name its own provenance and open a different number's chain.
+  domain_tags: [production, governance]
+  related_terms: ["Cumulative production", "Naked number", "Derivation handle"]
+  source_refs: ["spec-well-card §5.4", "web/src/chart/chart.ts"]
+
+- term: Status history
+  aliases: ["Status timeline"]
+  short_definition: >-
+    The effective-dated well statuses a regulator filed, newest first.
+  expanded_definition: >-
+    Served only where the jurisdiction's `effective_from` is the regulator's own valid time.
+    Where it is the vintage of the extract glasswell pulled, a history would be a log of when
+    glasswell looked, so none is served and the absence is stated with the rule behind it. The
+    axis is the filed code; the class column is today's mapping applied to a historical code
+    and says so.
+  domain_tags: [data-model, governance]
+  related_terms: ["Well status", "Effective date", "Vocabulary rule"]
+  source_refs: ["cr_nm_wellhistory_status_history_1", "/v1/wells/{api10}/history"]
+
+- term: Peer control
+  aliases: ["Control curve", "Held-out control"]
+  short_definition: >-
+    What a well's peers actually did, aggregated backward and never forward.
+  expanded_definition: >-
+    A backward-looking aggregate over an arm the subject was held out of, drawn on a
+    producing-month axis. It is not a forecast and the response says so in a field of its own;
+    the quantile convention, the ladder rung the peers were drawn at and the knowledge cutoff
+    are all served, because a control read without them is a picture without a population.
+  domain_tags: [modeling, governance]
+  related_terms: ["Type curve", "Peer ladder", "Held out", "Quantile convention"]
+  source_refs: ["cr_tc_publication_scope_1", "/v1/wells/{api10}/type-curve"]
+
+- term: Held-out subject
+  aliases: ["Test subject"]
+  short_definition: >-
+    A well the control was fitted without, which is why it can be compared against it.
+  expanded_definition: >-
+    A control fitted on a well and then compared against that same well is measuring its own
+    training data. Only a well in the pinned split set's test arm gets a peer control served,
+    which is why most cards have no such section and say why.
+  domain_tags: [modeling, governance]
+  related_terms: ["Split set", "Held out", "Peer control"]
+  source_refs: ["cr_tc_publication_scope_1", "lineage.p3_publication_receipts"]
+
+- term: Held out
+  aliases: ["Holdout", "Held-out arm"]
+  short_definition: >-
+    Kept out of a fit so that what is measured against it is not what it was built from.
+  expanded_definition: >-
+    glasswell holds out the subject and every well on its pad, because a neighbour drilled by
+    the same operator into the same rock leaks the answer one pad over. The knowledge cutoff
+    does the same job in time: nothing after it enters the fit.
+  domain_tags: [modeling, governance]
+  related_terms: ["Held-out subject", "Peer control", "Split set"]
+  source_refs: ["cr_tc_peer_ladder_1", "spec-well-card §5.7"]
+
+- term: Log scale
+  aliases: ["Logarithmic axis"]
+  short_definition: >-
+    An axis where each step is a multiple rather than an addition.
+  expanded_definition: >-
+    Decline reads as a straight line on one, which is why it is offered. A log axis cannot
+    place a zero, and `reported_zero` is a third of the spine's production rows, so on log a
+    zero month leaves the line, stays in the state band and the readout, and the chart states
+    per stream how many months that was.
+  domain_tags: [production, ui]
+  related_terms: ["Producing class", "Cumulative production"]
+  source_refs: ["spec-well-card §5.3", "web/src/chart/options.ts"]
+
+- term: Derivation chain
+  aliases: ["Chain"]
+  short_definition: >-
+    The walk from a served figure back through every derivation to a checksummed file.
+  expanded_definition: >-
+    A handle is the address; the chain is what is at it. A chain that stopped short says so
+    rather than ending quietly, because a truncated chain read as a complete one is a claim
+    that provenance was checked when it was not.
+  domain_tags: [lineage, governance]
+  related_terms: ["Derivation handle", "Manifest", "Recipe"]
+  source_refs: ["/v1/explain", "web/src/lineage/drawer.ts"]
+
 - term: Section (PLSS)
   highlightable: false
   aliases: ["Section", "Sections", "PLSS section"]

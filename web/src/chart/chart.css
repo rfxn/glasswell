@@ -210,3 +210,63 @@
   color: var(--slate);
   white-space: normal;
 }
+
+.gw-vintage-read {
+  margin-left: var(--gw-space-2);
+  padding: 0 var(--gw-space-2);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--gw-radius-pill);
+  background: none;
+  color: var(--cyan);
+  font: inherit;
+  font-size: var(--gw-fs-micro);
+  cursor: pointer;
+}
+
+.gw-export {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--gw-space-2);
+  margin-top: 0.4rem;
+}
+
+.gw-export button {
+  padding: 0 var(--gw-space-2);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--gw-radius-pill);
+  background: none;
+  color: var(--slate);
+  font: inherit;
+  font-size: var(--gw-fs-micro);
+  cursor: pointer;
+}
+
+.gw-export-note {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.gw-peer-facts dd,
+.gw-peer-identity {
+  font-family: var(--gw-font-mono);
+  font-size: var(--gw-fs-micro);
+}
+
+.gw-peer-title,
+.gw-pool-title {
+  margin: 0.2rem 0;
+  font-size: var(--gw-fs-eyebrow);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--slate);
+}
+
+.gw-peer-reasons {
+  margin: 0.2rem 0 0 1rem;
+  padding: 0;
+}
+
+.gw-coverage-line {
+  margin: 0.1rem 0 0;
+}

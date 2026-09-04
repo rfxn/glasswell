@@ -83,6 +83,11 @@ from glasswell.marts.vintage_cohorts import (
     cohort_rollup,
     load_cohort_policy,
 )
+from glasswell.modeling.served import (
+    UnregisteredArtifact,
+    resolve_pinned_control,
+    subject_origins,
+)
 
 # The decision name and the two clock classes are the rule's own, spelled once in the
 # module that defines the rule: a second spelling here is how a decision name drifts.
@@ -596,6 +601,12 @@ class WellDetail(WellSummary):
         " laterals but the neighbour mart's measured domain does not reach it. Null where"
         " neighbours are served and where none were ever registered."
     )
+    type_curve_scope: TypeCurveScope = Field(
+        description="Whether a published peer control covers this well, and what it is scoped"
+        " to. Served for every well: the section's absence sentence is the publication's own"
+        " scope, and a client writing that sentence would be writing a basin name into the"
+        " card."
+    )
     basin_context: BasinContext | None = Field(
         description="The published boundary answer for this well. Null only where the mart has"
         " not been refreshed since the well landed, which is a pipeline state and not a fact"
@@ -616,6 +627,26 @@ class WellDetail(WellSummary):
         description="The rule that says what this jurisdiction's geometry means. Null where"
         " the jurisdiction registers no geometry_provenance decision, which is a registry gap"
         " to be stated rather than another jurisdiction's rule to be inherited."
+    )
+
+
+class TypeCurveScope(BaseModel):
+    """What the published control covers, and whether this well is one of its test subjects."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    published: bool = Field(description="Whether any accepted publication is servable at all.")
+    held_out: bool = Field(
+        description="Whether this well is a test subject of the pinned split set. Only a"
+        " held-out subject gets links.type_curve: a control fitted on the well it is compared"
+        " against measures its own training data."
+    )
+    basin: str | None = Field(description="The basin the publication is scoped to.")
+    publication_id: str | None = Field(description="The accepted publication in force.")
+    eval_vintage: str | None = Field(description="The evaluation vintage it was accepted at.")
+    split_set_id: str | None = Field(description="The split set the subject list comes from.")
+    detail: str | None = Field(
+        description="Why this well has no control, in served words. Null where it has one."
     )
 
 
@@ -851,6 +882,9 @@ def reported_at_pool_grain(rule: LeaseReportingRule) -> dict[str, Any]:
             " because nothing was filed. The pool series is served separately."
         ),
         "pointer": "/producing",
+        # On the warning rather than only inside the sentence: a client that had to parse the
+        # rule id out of prose is a client that will parse it wrong once.
+        "rule_id": rule["rule_id"],
     }
 
 
@@ -918,6 +952,58 @@ def _producing_unregistered(pointer: str) -> dict[str, Any]:
             " to answer from."
         ),
         "pointer": pointer,
+    }
+
+
+def _type_curve_scope(connection: Any, api10: str) -> dict[str, Any]:
+    """Whether a peer control exists for this well, and what it is scoped to.
+
+    Served for every well rather than only for a subject: the section's absence sentence is
+    the publication's own scope -- its basin, its evaluation vintage, its split set -- and a
+    client that had to say why the section is missing would be writing a `williston` literal
+    into the card (N-18). `held_out` decides `links.type_curve` and nothing else does.
+    """
+    try:
+        pin = resolve_pinned_control(connection)
+    except UnregisteredArtifact as error:
+        return {
+            "published": False,
+            "held_out": False,
+            "basin": None,
+            "publication_id": None,
+            "eval_vintage": None,
+            "split_set_id": None,
+            "detail": str(error),
+        }
+    try:
+        instances = subject_origins(pin, api10=api10)
+    except UnregisteredArtifact as error:
+        return {
+            "published": True,
+            "held_out": False,
+            "basin": pin.basin,
+            "publication_id": pin.publication_id,
+            "eval_vintage": pin.eval_vintage.isoformat(),
+            "split_set_id": pin.split_set_id,
+            "detail": str(error),
+        }
+    return {
+        "published": True,
+        "held_out": bool(instances),
+        "basin": pin.basin,
+        "publication_id": pin.publication_id,
+        "eval_vintage": pin.eval_vintage.isoformat(),
+        "split_set_id": pin.split_set_id,
+        "detail": (
+            None
+            if instances
+            else (
+                f"The published control is scoped to {pin.basin} and this well is not a test"
+                f" subject of split set {pin.split_set_id} at evaluation vintage"
+                f" {pin.eval_vintage.isoformat()}. A control fitted on a well it is then"
+                " compared against would be measuring its own training data."
+            )
+        ),
     }
 
 
@@ -2647,6 +2733,7 @@ def get_well(
         )
 
     basin_context = _basin_block(rows(connection, _BASIN_CONTEXT, {"api10": api10}), api10)
+    type_curve_scope = _type_curve_scope(connection, api10)
 
     point = next((item for item in geometry if item["lon"] is not None), None)
     data = _summary(row, registry) | {
@@ -2688,6 +2775,9 @@ def get_well(
         # The polygon answer beside the ingest scope label, with their agreement marked. Null
         # only where the mart has not been refreshed since the well landed.
         "basin_context": basin_context,
+        # Whether a peer control exists for this well and what it is scoped to, so the card
+        # knows the section exists without asking and its absence sentence is served.
+        "type_curve_scope": type_curve_scope,
         # Whose well it is, read off the registry rather than written in the client: a Montana
         # disposal well's hover said "as ND filed it" for exactly as long as the client held
         # the answer. The portal is a portal, and the field says so in its own description.
@@ -2747,6 +2837,14 @@ def get_well(
             **(
                 {"status_rule": f"/v1/conformance/{status_vocabulary_rule}"}
                 if status_vocabulary_rule
+                else {}
+            ),
+            # Emitted from the held-out fact and from nothing else: the section renders when
+            # the link is present, which is what stops a card offering a control fitted on the
+            # well it is being compared against.
+            **(
+                {"type_curve": f"/v1/wells/{api10}/type-curve"}
+                if type_curve_scope["held_out"]
                 else {}
             ),
         },

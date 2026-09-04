@@ -235,3 +235,37 @@ def test_an_unrefreshed_mart_is_a_pipeline_state_and_not_a_null_basin(
     assert body["basin_context"] is None
     # And the bare label is still on the wire, because that is what it always was.
     assert body["basin"] == "williston"
+
+
+def test_the_card_learns_whether_a_peer_control_exists_without_asking(
+    client: TestClient,
+) -> None:
+    """M-4: the section is gated on a link, and the link is emitted from the held-out fact.
+
+    A card that had to request the control to find out whether it exists would ask on every
+    well and be told 404 on almost all of them; a card that guessed from a basin name would be
+    writing `williston` into the client.
+    """
+    body = client.get(f"/v1/wells/{EXAMPLE_API10}").json()
+
+    scope = body["data"]["type_curve_scope"]
+    assert scope["published"] is True
+    assert scope["held_out"] is True
+    assert scope["basin"]
+    assert scope["publication_id"]
+    assert scope["split_set_id"]
+    assert scope["detail"] is None
+    assert body["links"]["type_curve"] == f"/v1/wells/{EXAMPLE_API10}/type-curve"
+
+
+def test_a_well_the_control_was_fitted_on_is_offered_no_control(client: TestClient) -> None:
+    """The leakage guard, served: a control fitted on this well and then compared against it
+    would be measuring its own training data, so the link is absent and the scope says why."""
+    body = client.get(f"/v1/wells/{TX_API10}").json()
+
+    scope = body["data"]["type_curve_scope"]
+    assert scope["held_out"] is False
+    assert "type_curve" not in body["links"]
+    assert scope["detail"]
+    assert scope["basin"] in scope["detail"]
+    assert "training data" in scope["detail"]

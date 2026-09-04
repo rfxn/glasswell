@@ -561,13 +561,19 @@ describe("well card", () => {
     expect(
       cells.map((cell) => cell.querySelector(".gw-figure-value, .gw-absent")?.textContent),
     ).toEqual(["21,000 bbl", "unavailable: withheld", "unavailable: no report"]);
-    // The whole point: an absent month is never summed as a zero.
-    expect(cells[1]?.textContent).not.toMatch(/\b0\b/);
-    expect(cells[2]?.textContent).not.toMatch(/\b0\b/);
-    // Nothing is collapsed away — the four counts stay reachable on the cell.
-    expect(cells[1]?.getAttribute("title")).toBe(
+    // The whole point: an absent month is never summed as a zero. Against the value rather
+    // than the whole cell, because the coverage counts beside it are readable text now and a
+    // month count of zero is exactly what they are there to say.
+    const shown = (cell: Element | undefined): string =>
+      cell?.querySelector(".gw-figure-value, .gw-absent")?.textContent ?? "";
+    expect(shown(cells[1])).not.toMatch(/\b0\b/);
+    expect(shown(cells[2])).not.toMatch(/\b0\b/);
+    // Nothing is collapsed away, and nothing is hidden behind a hover: the four counts are
+    // text under the figure, where a keyboard reader and a phone reader have them too.
+    expect(cells[1]?.querySelector(".gw-coverage-line")?.textContent).toBe(
       "0 reported · 0 reported zero · 0 no report · 7 withheld of 7 months",
     );
+    expect(cells[1]?.getAttribute("title")).toBeNull();
   });
 
   it("says nothing was ever filed rather than showing a zero cumulative", async () => {
@@ -1472,5 +1478,66 @@ describe("a cumulative total that some months were allocated into", () => {
 
     expect(scope?.dataset["handle"]).toBe("drv_a#api10=x&stream=liquid");
     expect(scope?.getAttribute("title")).toContain("cr_tx_allocation_v0_1");
+  });
+});
+
+describe("the third production state, and the sections it opens", () => {
+  const poolGrain = {
+    ...wellEnvelope,
+    meta: {
+      ...wellEnvelope.meta,
+      warnings: [
+        {
+          code: "production_reported_at_pool_grain",
+          detail:
+            "This well's regulator files production at the well_completion_pool and glasswell" +
+            " performs no rollup to the well (cr_nm_wcproduction_pool_rollup_1).",
+          pointer: "/producing",
+          rule_id: "cr_nm_wcproduction_pool_rollup_1",
+        },
+      ],
+    },
+  };
+
+  it("draws a titled panel that names the rule and points down at the filings", async () => {
+    vi.stubGlobal("fetch", vi.fn(stubFetch({ [`/v1/wells/${API10}`]: poolGrain })));
+
+    await renderWellCard(host, API10, callbacks);
+
+    const panel = host.querySelector('[data-state="production_reported_at_pool_grain"]');
+    expect(panel?.querySelector(".gw-frame-title")?.textContent).toBe(
+      "Production is filed by pool",
+    );
+    expect(panel?.querySelector(".gw-identity-rule")?.textContent).toBe(
+      "cr_nm_wcproduction_pool_rollup_1",
+    );
+    expect(panel?.querySelector(".gw-section-link")?.textContent).toBe("Production by pool");
+  });
+
+  it("opens the Pools section by default, because the record is there and not above", async () => {
+    // N-24: the reader came for the filings, and on this well the chart is a stated absence.
+    vi.stubGlobal("fetch", vi.fn(stubFetch({ [`/v1/wells/${API10}`]: poolGrain })));
+
+    await renderWellCard(host, API10, callbacks);
+
+    const pools = host.querySelector("#gw-section-pools");
+    expect(pools).not.toBeNull();
+    expect(pools?.querySelector(".gw-section-toggle")?.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("says the pool-grain sentence once, in the panel rather than as a loose warning", async () => {
+    vi.stubGlobal("fetch", vi.fn(stubFetch({ [`/v1/wells/${API10}`]: poolGrain })));
+
+    await renderWellCard(host, API10, callbacks);
+
+    for (const warning of host.querySelectorAll(".gw-warning")) {
+      expect(warning.textContent).not.toContain("performs no rollup");
+    }
+  });
+
+  it("offers no Pools section on a well whose regulator files at the well", async () => {
+    await renderWellCard(host, API10, callbacks);
+
+    expect(host.querySelector("#gw-section-pools")).toBeNull();
   });
 });

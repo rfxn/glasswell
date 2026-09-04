@@ -9534,6 +9534,93 @@
         "title": "TypeCurveIndexSeries",
         "type": "object"
       },
+      "TypeCurveScope": {
+        "additionalProperties": false,
+        "description": "What the published control covers, and whether this well is one of its test subjects.",
+        "properties": {
+          "basin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The basin the publication is scoped to.",
+            "title": "Basin"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why this well has no control, in served words. Null where it has one.",
+            "title": "Detail"
+          },
+          "eval_vintage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The evaluation vintage it was accepted at.",
+            "title": "Eval Vintage"
+          },
+          "held_out": {
+            "description": "Whether this well is a test subject of the pinned split set. Only a held-out subject gets links.type_curve: a control fitted on the well it is compared against measures its own training data.",
+            "title": "Held Out",
+            "type": "boolean"
+          },
+          "publication_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The accepted publication in force.",
+            "title": "Publication Id"
+          },
+          "published": {
+            "description": "Whether any accepted publication is servable at all.",
+            "title": "Published",
+            "type": "boolean"
+          },
+          "split_set_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The split set the subject list comes from.",
+            "title": "Split Set Id"
+          }
+        },
+        "required": [
+          "published",
+          "held_out",
+          "basin",
+          "publication_id",
+          "eval_vintage",
+          "split_set_id",
+          "detail"
+        ],
+        "title": "TypeCurveScope",
+        "type": "object"
+      },
       "TypeCurveSeries": {
         "properties": {
           "cumulative_p10": {
@@ -10531,6 +10618,10 @@
             "description": "Total wellbore depth as the regulator reported it, with its handle.",
             "x-glasswell-glossary": "gt_wellbore"
           },
+          "type_curve_scope": {
+            "$ref": "#/components/schemas/TypeCurveScope",
+            "description": "Whether a published peer control covers this well, and what it is scoped to. Served for every well: the section's absence sentence is the publication's own scope, and a client writing that sentence would be writing a basin name into the card."
+          },
           "well_name": {
             "anyOf": [
               {
@@ -10587,6 +10678,7 @@
           "geometry",
           "surface_point",
           "neighbors_reason",
+          "type_curve_scope",
           "basin_context",
           "jurisdiction_name",
           "regulator_name",

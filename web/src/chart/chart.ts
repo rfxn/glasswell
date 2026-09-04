@@ -35,6 +35,12 @@ export interface ChartCallbacks {
    * seam, so the link is shareable and the server answers the range on reload.
    */
   onBrush?(from: string | null, to: string | null): void;
+  /**
+   * Read the series again at an earlier report vintage. §4.3 item 3: the control is real
+   * because the handle changes -- the point resolves to a different promotion and a different
+   * workbook -- and it re-requests through the `as_of` arm rather than re-deriving here.
+   */
+  onVintage?(asOf: string): void;
 }
 
 /**
@@ -190,7 +196,7 @@ export function renderChart(
 
     // The band reads the window, never the log view: a month that read zero is a fact about
     // the month, and the axis it cannot be drawn on is a fact about the drawing.
-    const band = stateBand(visible);
+    const band = stateBand(visible, callbacks.onVintage);
     container.appendChild(band);
     const zeros = log ? logZeros(visible) : null;
     if (zeros) container.appendChild(zeros);
@@ -753,7 +759,10 @@ function stateKey(chart: ChartSeries, callbacks: ChartCallbacks): HTMLElement {
  * line could be any of them, and the band says which without collapsing them into each other.
  */
 /** One row per stream that carries a restated month, and none where nothing was restated. */
-function restatementRows(chart: ChartSeries): HTMLElement[] {
+function restatementRows(
+  chart: ChartSeries,
+  onVintage: ((asOf: string) => void) | undefined,
+): HTMLElement[] {
   return chart.columns
     .filter((column) => column.mixedVintages)
     .map((column) => {
@@ -772,10 +781,11 @@ function restatementRows(chart: ChartSeries): HTMLElement[] {
       // Against the newest vintage in the window, which is the capture the rest of the line is
       // drawn at: a month read at an older one is the fact this row exists to show.
       const newest = [...column.vintages].filter(Boolean).sort().pop() ?? null;
+      const earlier = new Set<string>();
       column.vintages.forEach((vintage, index) => {
-        const mark = restatement(
-          vintage && vintage !== newest ? "earlier_capture" : "latest_capture",
-        );
+        const older = Boolean(vintage) && vintage !== newest;
+        if (older && vintage) earlier.add(vintage);
+        const mark = restatement(older ? "earlier_capture" : "latest_capture");
         const cell = document.createElement("span");
         cell.className = `gw-state-mark ${mark.className}`;
         cell.setAttribute("data-index", String(index));
@@ -783,11 +793,29 @@ function restatementRows(chart: ChartSeries): HTMLElement[] {
         cells.appendChild(cell);
       });
       row.append(name, cells);
+      // §4.3 item 3: the way to read the series as it stood at the earlier capture. It is a
+      // re-request, not a redraw, and the proof it is real is that every point's handle
+      // changes -- a different promotion, a different workbook.
+      const oldest = [...earlier].sort()[0];
+      if (oldest && onVintage) {
+        const read = document.createElement("button");
+        read.type = "button";
+        read.className = "gw-vintage-read";
+        read.textContent = `Read at ${oldest}`;
+        read.title =
+          `Request this series as of ${oldest}. Every point then resolves to the promotion` +
+          " that was in force at that capture.";
+        read.addEventListener("click", () => onVintage(oldest));
+        row.appendChild(read);
+      }
       return row;
     });
 }
 
-function stateBand(chart: ChartSeries): HTMLElement {
+function stateBand(
+  chart: ChartSeries,
+  onVintage: ((asOf: string) => void) | undefined,
+): HTMLElement {
   const wrapper = document.createElement("div");
   wrapper.className = "gw-state-strip";
   for (const column of chart.columns) {
@@ -824,7 +852,7 @@ function stateBand(chart: ChartSeries): HTMLElement {
   for (const row of allocationRows(chart)) wrapper.appendChild(row);
   // The third vocabulary, and only where it has something to say: a well nobody restated
   // carries no row at all rather than a row of "as filed" marks.
-  for (const row of restatementRows(chart)) wrapper.appendChild(row);
+  for (const row of restatementRows(chart, onVintage)) wrapper.appendChild(row);
   return wrapper;
 }
 

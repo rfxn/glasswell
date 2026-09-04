@@ -790,6 +790,21 @@ def get_well_production(
     if aggregated and grain_rule:
         links["pools"] = f"/v1/wells/{api10}/production/pools"
         links["aggregation_rule"] = f"/v1/conformance/{grain_rule}"
+    # The pool-grain arm, on the predicate `_pool_grain_warning` already computed and with no
+    # new query: a well whose regulator files per completion pool has a pool series and a rule
+    # that decided there is no rollup, so the Pools section is gated on a link like every other
+    # section rather than on the client recognising a warning code.
+    if grain_rule and any(
+        warning["code"] == "production_reported_at_pool_grain" for warning in warnings
+    ):
+        links["pools"] = f"/v1/wells/{api10}/production/pools"
+        links["reporting_rule"] = f"/v1/conformance/{grain_rule}"
+    # WC-P2-4: which rule decides whether this jurisdiction carries a per-well cumulative at
+    # all. A client sentence about that absence would be a jurisdiction literal; the link is
+    # the registry's own answer.
+    cumulatives = registry.rule_for(state_code, CUMULATIVES_SCOPE)
+    if cumulatives:
+        links["cumulatives_rule"] = f"/v1/conformance/{cumulatives}"
     if divisor is not None:
         # The handle has to change with the number: a client-side division carrying the served
         # handle would be a naked number wearing someone else's papers. The response derivation

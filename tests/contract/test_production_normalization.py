@@ -103,3 +103,18 @@ def test_a_jurisdiction_that_withholds_the_length_is_refused_by_name(
 def test_an_unknown_normalisation_is_refused_rather_than_ignored(client: TestClient) -> None:
     # A parameter the API has not agreed to answer must not fall through to the plain series.
     assert client.get(PATH, params={"normalization": "per_barrel"}).status_code == 422
+
+
+def test_the_pool_grain_arm_gates_the_pools_section_on_a_link(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """M-11: every other section is gated on a link, and this one was gated on the client
+    recognising a warning code. The predicate is the one `_pool_grain_warning` already
+    computes, so the arm costs no query."""
+    body = client.get(PATH).json()
+
+    # The ND fixture rolls up, so it carries no pool-grain arm and says so by omission.
+    assert "pools" not in body["links"] or body["links"]["pools"].endswith("/pools")
+    # WC-P2-4: the rule that decides whether this jurisdiction carries a per-well cumulative
+    # at all is a link rather than a sentence the client would have to write.
+    assert body["links"]["cumulatives_rule"].startswith("/v1/conformance/cr_")

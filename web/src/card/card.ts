@@ -26,6 +26,9 @@ import { cardQuery } from "./requests.ts";
 import { renderBasin } from "./basin.ts";
 import type { WellBasin } from "./basin.ts";
 import { renderIdentity } from "./identity.ts";
+import { renderPeerControl } from "./peer.ts";
+import { renderPools } from "./pools.ts";
+import { exportControls } from "./export.ts";
 import type { WellIdentity } from "./identity.ts";
 import type { NormalizationControl } from "../chart/chart.ts";
 import {
@@ -422,7 +425,7 @@ export async function renderWellCard(
 
   // Everything except the codes a dedicated panel already renders, or the card shows the raw
   // internal warning line immediately above the polished version of the same sentence.
-  const panelled = new Set([PENDING_ALLOCATION]);
+  const panelled = new Set([PENDING_ALLOCATION, POOL_GRAIN]);
   const generic = well.meta.warnings.filter((warning) => !panelled.has(warning.code));
   for (const note of warningNotes(generic)) notesSlot.appendChild(note);
 
@@ -528,6 +531,9 @@ export async function renderWellCard(
   // its content is the reason a reader opens this particular well.
   const basinBody = document.createElement("div");
 
+  const poolsBody = document.createElement("div");
+  const peerBody = document.createElement("div");
+  const poolGrain = well.meta.warnings.find((warning) => warning.code === POOL_GRAIN);
   const lineageBody = document.createElement("div");
   const identityHost = document.createElement("div");
 
@@ -591,14 +597,34 @@ export async function renderWellCard(
     {
       id: "pools",
       title: "Production by pool",
-      expanded: false,
-      present: well.links?.["pools"] !== undefined,
+      // N-24: expanded where the Production section is in its pool-grain state, because the
+      // record the reader came for is here rather than there.
+      expanded: poolGrain !== undefined,
+      present: poolGrain !== undefined,
+      body: poolsBody,
+      load: () =>
+        renderPools(
+          poolsBody,
+          `/v1/wells/${api10}/production/pools`,
+          query,
+          poolGrain?.rule_id ? { reporting_rule: `/v1/conformance/${poolGrain.rule_id}` } : {},
+          {
+            onExplain: callbacks.onExplain,
+            labelTermFor: (pointer: string) => labelFor(well, pointer),
+          },
+        ),
     },
     {
       id: "peer",
       title: "Peer control",
       expanded: false,
       present: well.links?.["type_curve"] !== undefined,
+      body: peerBody,
+      load: () =>
+        renderPeerControl(peerBody, well.links?.["type_curve"] ?? "", query, {
+          onExplain: callbacks.onExplain,
+        }),
+
     },
     {
       id: "lineage",
@@ -667,6 +693,16 @@ export async function renderWellCard(
     return;
   }
 
+  // The third production state (§2.1a): filed below the well, with nothing rolled up to it.
+  // A titled panel that names the rule and points down at the section carrying the record,
+  // rather than a generic note under an empty chart frame.
+  if (poolGrain) {
+    chartFrame.replaceWith(poolGrainPanel(poolGrain));
+    land(container, card, state.section);
+    await Promise.all([statusRequest, sectionsSettled()]);
+    return;
+  }
+
   land(container, card, state.section);
 
   const productionRequest = (async () => {
@@ -716,6 +752,9 @@ export async function renderWellCard(
           // main.ts is the single writer of app state, so a brush is announced rather than
           // written here; `card/requests.ts` carries `from`/`to` into the next request.
           onBrush: (from, to) => setParams({ from, to }),
+          // The `as_of` arm of the request seam: the same parameter the route already
+          // forwards, used by a control rather than only by a URL somebody typed.
+          onVintage: (asOf) => setParams({ as_of: asOf }),
         },
         { normalization: normalizationControl(detail, well, state) },
       );
@@ -726,6 +765,22 @@ export async function renderWellCard(
       // an index counted on the queue alone still missed the section with the most handles
       // on the card (gate N7's other half).
       recountLineage?.();
+      // Export lives with the series it exports, so what leaves the page is exactly the
+      // window on it, handles and all.
+      const drawn = toChartSeries(data);
+      chartNotes.appendChild(
+        exportControls({
+          series: () => drawn,
+          envelope: () => production,
+          context: () => ({
+            api10,
+            url: window.location.href,
+            asOfResolved: production.meta.as_of.resolved,
+            normalization: state.extra["normalization"]?.[0] ?? null,
+            grain: unwrap(production).granularity,
+          }),
+        }),
+      );
     } catch (error) {
       chartHost.replaceChildren(errorPanel(error, callbacks));
     }
@@ -877,9 +932,17 @@ function cumulativesBody(
         ` reported figure (${data.allocation?.rule_id ?? ""}).`;
       value.appendChild(chip);
     }
+    // Readable text, not a tooltip: a count that only a hovering mouse can reach is a count
+    // a keyboard reader and a phone reader do not have (the QUEUE-DISPATCH:1790 debt).
     const record = coverageTitle(data.coverage[key]);
-    if (record) cell.title = record;
     cell.append(term_, value);
+    if (record) {
+      const coverage = document.createElement("p");
+      coverage.className = "gw-note gw-coverage-line";
+      coverage.setAttribute("data-no-glossary", "");
+      coverage.textContent = record;
+      cell.appendChild(coverage);
+    }
     row.appendChild(cell);
   }
   fragment.appendChild(row);
@@ -1367,10 +1430,12 @@ export function placeholder(text: string): HTMLElement {
   return element;
 }
 
-type ApiWarning = { code: string; detail?: string; pointer?: string };
+type ApiWarning = { code: string; detail?: string; pointer?: string; rule_id?: string };
 
 /** The one warning code the card renders as its own panel rather than as a warning line. */
 export const PENDING_ALLOCATION = "production_pending_allocation";
+/** The third production state: filed below the well, with nothing rolled up to it. */
+export const POOL_GRAIN = "production_reported_at_pool_grain";
 
 /**
  * The production slot for a well whose regulator reports at the lease. It is a state, not an
@@ -1400,6 +1465,46 @@ export function ruleLinks(links: Links | undefined): PendingRuleLink[] {
     const href = links?.[key];
     return href ? [{ href, label: `${sentence}: ${ruleIdOf(href)}.` }] : [];
   });
+}
+
+/**
+ * New Mexico's state, and Montana's absence is deliberately not this: a registered decision
+ * that nothing rolls up is a different fact from a jurisdiction with no grain decision at all,
+ * and one panel for both would erase the difference.
+ */
+export function poolGrainPanel(warning: ApiWarning): HTMLElement {
+  const frame = document.createElement("section");
+  frame.className = "gw-card-chart gw-pending gw-pool-grain";
+  frame.dataset["state"] = "production_reported_at_pool_grain";
+  const title = document.createElement("h3");
+  title.className = "gw-frame-title";
+  title.textContent = "Production is filed by pool";
+  const body = document.createElement("p");
+  body.className = "gw-note";
+  body.textContent =
+    warning.detail ??
+    "This well's regulator files production per completion pool and glasswell rolls nothing" +
+      " up to the well.";
+  frame.append(title, body);
+  if (warning.rule_id) {
+    const rule = document.createElement("p");
+    rule.className = "gw-note";
+    rule.append("The rule that decided that: ");
+    const link = document.createElement("a");
+    link.className = "gw-identity-rule";
+    link.href = `/v1/conformance/${warning.rule_id}`;
+    link.setAttribute("data-no-glossary", "");
+    link.textContent = warning.rule_id;
+    rule.appendChild(link);
+    frame.appendChild(rule);
+  }
+  const down = document.createElement("p");
+  down.className = "gw-note";
+  down.append("The filings themselves are in ");
+  down.appendChild(sectionLink("pools", "Production by pool"));
+  down.append(", which is open below.");
+  frame.appendChild(down);
+  return frame;
 }
 
 export function pendingProductionPanel(
