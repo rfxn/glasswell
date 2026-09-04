@@ -583,7 +583,7 @@ describe("counts that are being fetched", () => {
 });
 
 describe("counts that could not be had", () => {
-  it("shows an em dash and says so, so absence is not read as a count of none", () => {
+  it("shows the absent mark and says so, so absence is not read as a count of none", () => {
     const legend = createLegend({ onFilter: () => {} });
     legend.setCounts({ active: 20_643 }, 12);
     legend.setUnavailable(12);
