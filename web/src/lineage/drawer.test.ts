@@ -135,6 +135,20 @@ describe("a chain that stopped short", () => {
     expect(String(fetchSpy.mock.calls[1]?.[0])).toContain("depth=8");
   });
 
+  it("offers no deeper walk where the walk it just made was the deepest there is", async () => {
+    // A chain still truncated at depth 8 is the registry's limit, not the drawer's: a control
+    // that re-requests the same depth changes nothing and says it would.
+    const atLimit = {
+      ...explainEnvelope,
+      data: { chains: [{ ...explainEnvelope.data.chains[0], truncated: true, depth: 8 }] },
+    };
+    vi.stubGlobal("fetch", vi.fn(stubFetch({ "/v1/explain": atLimit })));
+    await renderLineageDrawer(host, OIL_HANDLE, noop, 8);
+
+    expect(host.querySelector(".gw-drawer-summary")?.textContent).toContain("truncated");
+    expect(host.querySelector(".gw-drawer-deeper")).toBeNull();
+  });
+
   it("offers nothing extra where the chain already reached its manifests", async () => {
     vi.stubGlobal("fetch", vi.fn(stubFetch({ "/v1/explain": explainEnvelope })));
     await renderLineageDrawer(host, OIL_HANDLE, noop);
