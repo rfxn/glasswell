@@ -610,3 +610,79 @@ describe("the log control, and the zero it cannot draw", () => {
     expect(host.querySelector(".gw-log-zeros")).toBeNull();
   });
 });
+
+describe("brushing a range, and the total that follows it", () => {
+  const brushed = vi.fn();
+  beforeEach(() => {
+    brushed.mockClear();
+    renderChart(host, sparse, { ...callbacks, onBrush: brushed });
+  });
+
+  const band = (): HTMLElement => host.querySelector(".gw-state-cells") as HTMLElement;
+  const cells = (): HTMLElement[] => [...band().querySelectorAll<HTMLElement>(".gw-state-mark")];
+  const drag = (from: number, to: number): void => {
+    const marks = cells();
+    marks[from]?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    marks[to]?.dispatchEvent(new PointerEvent("pointerenter", { bubbles: true }));
+    marks[to]?.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
+  };
+
+  it("narrows the window to the months the reader dragged over", () => {
+    drag(1, 3);
+
+    const note = host.querySelector(".gw-window-note")?.textContent ?? "";
+    expect(note).toContain("Nov 2025");
+    expect(note).toContain("Jan 2026");
+    expect(host.querySelector(".gw-state-row")?.querySelectorAll(".gw-state-mark").length).toBe(3);
+  });
+
+  it("says the window is a selection and offers the way out of it", () => {
+    drag(1, 3);
+
+    const selected = host.querySelector(".gw-window-selected");
+    expect(selected?.textContent).toContain("Selected");
+    const clear = host.querySelector<HTMLButtonElement>(".gw-window-clear");
+    expect(clear).not.toBeNull();
+    clear?.click();
+    expect(host.querySelector(".gw-window-selected")).toBeNull();
+    expect(host.querySelector(".gw-state-row")?.querySelectorAll(".gw-state-mark").length).toBe(6);
+  });
+
+  it("hands the range to the card, so the URL can carry it and the server can answer it", () => {
+    drag(1, 3);
+
+    expect(brushed).toHaveBeenCalledWith("2025-11", "2026-01");
+    host.querySelector<HTMLButtonElement>(".gw-window-clear")?.click();
+    expect(brushed).toHaveBeenLastCalledWith(null, null);
+  });
+
+  it("draws a running total over the selection, with its own scope on the same line", () => {
+    drag(1, 3);
+    const total = host.querySelector(".gw-running-total")?.textContent ?? "";
+
+    expect(total).toContain("Running total");
+    expect(total).toContain("3 months shown");
+    expect(total).toContain("3 reported");
+    expect(total).not.toContain("withheld");
+  });
+
+  it("gives the running total no handle at all, and says where provenance is", () => {
+    drag(1, 3);
+    const row = host.querySelector(".gw-running-total") as HTMLElement;
+
+    // M-7, the owner's ruling: a client sum that borrowed one point's ⌾ would name the sum's
+    // provenance and open a different number's chain.
+    expect(row.querySelectorAll(".gw-handle").length).toBe(0);
+    expect(row.querySelector("gw-figure")).toBeNull();
+    expect(row.textContent).toContain("computed on this page from the 3 points shown");
+    expect(row.textContent).toContain("each point's ⌾ is beside it");
+  });
+
+  it("counts the classes of the months it summed, not the ones it did not", () => {
+    // The first month of the fixture reads zero, so a brush that includes it says so.
+    drag(0, 2);
+    const total = host.querySelector(".gw-running-total")?.textContent ?? "";
+
+    expect(total).toContain("1 reported zero");
+  });
+});

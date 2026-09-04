@@ -60,3 +60,48 @@
 .gw-log-zeros {
   margin: 0 0 0.4rem;
 }
+
+/* The selection, and the sum it makes possible. The total is text, not a figure: it carries no
+   ⌾ because the client computed it, and the scope line says where provenance actually is. */
+.gw-window-selected {
+  display: flex;
+  align-items: center;
+  gap: var(--gw-space-2);
+  margin: 0.2rem 0 0;
+  color: var(--cyan);
+  font-size: var(--gw-fs-micro);
+}
+
+.gw-window-clear {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--slate);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.gw-running-total {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--gw-space-2);
+  margin: 0.4rem 0 0;
+}
+
+.gw-running-title {
+  color: var(--slate);
+  font-size: var(--gw-fs-micro);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.gw-running-value {
+  font-family: var(--gw-font-mono);
+}
+
+.gw-running-scope {
+  flex-basis: 100%;
+  margin: 0.1rem 0 0;
+}

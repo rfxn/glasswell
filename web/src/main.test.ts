@@ -699,3 +699,23 @@ describe("what the first paint asks for before it knows who is asking", () => {
     expect(seen.filter((path) => path === "/v1/session")).toHaveLength(1);
   });
 });
+
+describe("a brush reaches the URL, so the link carries the range", () => {
+  it("writes from and to on a brush and drops them when it is cleared", async () => {
+    // The chart narrows its own window; this is the half that makes a brushed card a link
+    // somebody else can open, and it is a replace because a drag is not a navigation.
+    await bootAt("/?well=3305310451");
+
+    document.dispatchEvent(
+      new CustomEvent("gw-window-set", { detail: { from: "2025-11", to: "2026-01" } }),
+    );
+    expect(window.location.search).toContain("from=2025-11");
+    expect(window.location.search).toContain("to=2026-01");
+
+    document.dispatchEvent(
+      new CustomEvent("gw-window-set", { detail: { from: null, to: null } }),
+    );
+    expect(window.location.search).not.toContain("from=");
+    expect(window.location.search).not.toContain("to=");
+  });
+});

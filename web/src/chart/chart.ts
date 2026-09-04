@@ -9,6 +9,7 @@ import {
   NULL_SEMANTICS_STATES,
   allocationClass,
   formatMonth,
+  formatValue,
   nullSemantics,
   shareDetail,
 } from "../card/format.ts";
@@ -27,6 +28,12 @@ const PLOT_HEIGHT = 260;
 export interface ChartCallbacks {
   onExplain(handle: string): void;
   labelTermFor(pointer: string): string | null;
+  /**
+   * A brush, in months, or a pair of nulls when the reader clears it. The chart narrows its own
+   * window either way; the card is what writes `from`/`to` into the URL through the request
+   * seam, so the link is shareable and the server answers the range on reload.
+   */
+  onBrush?(from: string | null, to: string | null): void;
 }
 
 export interface ChartOptions {
@@ -64,6 +71,12 @@ export function renderChart(
   let span = served ? null : defaultSpan(chart.months);
   const hidden = new Set<string>();
   let log = false;
+  let brush: { from: string; to: string } | null = null;
+  const setBrush = (next: { from: string; to: string } | null): void => {
+    brush = next;
+    callbacks.onBrush?.(next?.from ?? null, next?.to ?? null);
+    draw();
+  };
   // The month, not its index: widening the window renumbers every point, and a reader who was
   // reading March must not silently end up reading some month five years earlier.
   let month = chart.months[chart.months.length - 1] ?? null;
@@ -73,10 +86,22 @@ export function renderChart(
     repaint = new AbortController();
     const signal = repaint.signal;
     const windowed = chartWindow(chart, span);
-    const visible = shown(windowed.chart, hidden);
+    const brushed = brush ? selected(windowed.chart, brush.from, brush.to) : windowed.chart;
+    const visible = shown(brushed, hidden);
     // Two views of the same window: the band and the readout read every month the record has,
     // and the plot reads the line the axis can actually draw.
-    const view = { window: windowed.window, chart: log ? withoutZeros(visible) : visible };
+    const view = {
+      window: brush
+        ? {
+            ...windowed.window,
+            shown: brushed.months.length,
+            from: brushed.months[0] ?? null,
+            to: brushed.months[brushed.months.length - 1] ?? null,
+            truncated: brushed.months.length < windowed.window.total,
+          }
+        : windowed.window,
+      chart: log ? withoutZeros(visible) : visible,
+    };
     const months = view.chart.months;
     if (month === null || !months.includes(month)) month = months[months.length - 1] ?? null;
 
@@ -89,10 +114,18 @@ export function renderChart(
         else hidden.add(stream);
         draw();
       }),
-      windowBar(view.window, choices, span, served, (next) => {
-        span = next;
-        draw();
-      }),
+      windowBar(
+        view.window,
+        choices,
+        span,
+        served,
+        (next) => {
+          span = next;
+          brush = null;
+          draw();
+        },
+        brush ? { ...brush, onClear: () => setBrush(null) } : null,
+      ),
     );
     // A window the record does not reach is served as an empty series. That is a fact about the
     // window, which the bar above has just stated — an empty axis under it would say nothing.
@@ -116,6 +149,13 @@ export function renderChart(
     container.appendChild(band);
     const zeros = log ? logZeros(visible) : null;
     if (zeros) container.appendChild(zeros);
+    // Under the band it is a sum of, and only where a reader asked for a range: the whole
+    // point of the brush is "what did this well make over that stretch".
+    if (brush) {
+      const total = runningTotal(visible);
+      if (total) container.appendChild(total);
+    }
+    brushBand(band, visible.months, setBrush, signal);
 
     const axis = document.createElement("p");
     axis.className = "gw-chart-axis";
@@ -173,6 +213,29 @@ export function renderChart(
  * streams are on. A stream is never dropped from the legend -- a toggle a reader cannot undo
  * is a delete.
  */
+/** The months a brush left, as a view over the window: no request, no aggregation. */
+function selected(chart: ChartSeries, from: string, to: string): ChartSeries {
+  const first = chart.months.indexOf(from);
+  const last = chart.months.indexOf(to);
+  if (first === -1 || last === -1) return chart;
+  const cut = <T>(values: readonly T[]): T[] => values.slice(first, last + 1);
+  const columns = chart.columns.map((column) => ({
+    ...column,
+    values: cut(column.values),
+    raw: cut(column.raw),
+    handles: cut(column.handles),
+    vintages: cut(column.vintages),
+    nullSemantics: cut(column.nullSemantics),
+    allocationClasses: cut(column.allocationClasses),
+    granularities: cut(column.granularities),
+    eligibleWells: cut(column.eligibleWells),
+    shares: cut(column.shares),
+    incomplete: cut(column.incomplete),
+  }));
+  const x = cut(chart.x);
+  return { ...chart, months: cut(chart.months), x, columns, data: [x, ...columns.map((c) => c.values)] };
+}
+
 function shown(chart: ChartSeries, hidden: ReadonlySet<string>): ChartSeries {
   const columns = chart.columns.filter((column) => !hidden.has(column.stream));
   if (columns.length === chart.columns.length) return chart;
@@ -302,6 +365,7 @@ function windowBar(
   span: number | null,
   served: boolean,
   onSpan: (span: number | null) => void,
+  brush: { from: string; to: string; onClear: () => void } | null = null,
 ): HTMLElement {
   const bar = document.createElement("div");
   bar.className = "gw-window-bar";
@@ -310,6 +374,21 @@ function windowBar(
   note.setAttribute("data-no-glossary", "");
   note.textContent = describeWindow(window_, served);
   bar.appendChild(note);
+  if (brush) {
+    // A fourth state beside the spans, and the way out of it: a window a reader dragged into
+    // and cannot drag out of is a trap, and `All` would otherwise mean two different things.
+    const mark = document.createElement("p");
+    mark.className = "gw-window-selected";
+    mark.setAttribute("data-no-glossary", "");
+    mark.textContent = `Selected · ${formatMonth(brush.from)} – ${formatMonth(brush.to)}`;
+    const clear = document.createElement("button");
+    clear.type = "button";
+    clear.className = "gw-window-clear";
+    clear.textContent = "Clear the selection";
+    clear.addEventListener("click", brush.onClear);
+    mark.appendChild(clear);
+    bar.appendChild(mark);
+  }
   if (choices.length < 2) return bar;
 
   const control = document.createElement("div");
@@ -421,6 +500,86 @@ function logZeros(chart: ChartSeries): HTMLElement | null {
     ". A log axis cannot place a zero, so those months are in the band and the readout and not" +
     " on the line.";
   return note;
+}
+
+/**
+ * A sum the client computed over the points it holds, which is why it carries no ⌾ at all.
+ * Borrowing the last point's handle would name the sum's provenance and open a different
+ * number's chain, and that is the same move normalisation is a served arm to avoid (M-7): a
+ * number the client computed either becomes a served figure with its own chain, or it carries
+ * no provenance affordance and says where the provenance actually is.
+ */
+function runningTotal(chart: ChartSeries): HTMLElement | null {
+  if (chart.columns.length === 0 || chart.months.length === 0) return null;
+  const row = document.createElement("section");
+  row.className = "gw-running-total";
+  row.setAttribute("data-no-glossary", "");
+  const title = document.createElement("span");
+  title.className = "gw-running-title";
+  title.textContent = "Running total";
+  row.appendChild(title);
+
+  for (const column of chart.columns) {
+    const sum = column.values.reduce<number>((total, value) => total + (value ?? 0), 0);
+    const entry = document.createElement("span");
+    entry.className = "gw-running-value";
+    entry.textContent = `${column.label} ${formatValue(String(sum))} ${column.unit}`;
+    row.appendChild(entry);
+  }
+
+  // Its own scope on the same line, counted from the points it summed: three classes, and
+  // `withheld` is not one of them -- it is not a production null-semantics class at all.
+  const first = chart.columns[0] as SeriesColumn;
+  const count = (state: string): number =>
+    first.nullSemantics.filter((each) => each === state).length;
+  const scope = document.createElement("p");
+  scope.className = "gw-note gw-running-scope";
+  scope.textContent =
+    `Running total over the ${chart.months.length} months shown, ${count("reported")} reported,` +
+    ` ${count("reported_zero")} reported zero, ${count("no_report")} no report.` +
+    ` It is computed on this page from the ${chart.months.length} points shown; each point's` +
+    " ⌾ is beside it.";
+  row.appendChild(scope);
+  return row;
+}
+
+/**
+ * The band is the brush surface as well as the readout's: at 131 months a per-point target is
+ * two CSS pixels, and a drag across the band is the gesture that reads on a phone as well as
+ * on a plot. The plot's own x-drag raises the same call.
+ */
+function brushBand(
+  band: HTMLElement,
+  months: readonly string[],
+  onBrush: (range: { from: string; to: string } | null) => void,
+  signal: AbortSignal,
+): void {
+  let anchor: number | null = null;
+  const indexOf = (event: Event): number | null => {
+    const cell = (event.target as HTMLElement | null)?.closest?.(".gw-state-mark");
+    const at = cell?.getAttribute("data-index");
+    return at === null || at === undefined ? null : Number(at);
+  };
+  band.addEventListener(
+    "pointerdown",
+    (event) => {
+      anchor = indexOf(event);
+    },
+    { signal },
+  );
+  const finish = (event: Event): void => {
+    if (anchor === null) return;
+    const at = indexOf(event) ?? anchor;
+    const [first, last] = anchor <= at ? [anchor, at] : [at, anchor];
+    anchor = null;
+    const from = months[first];
+    const to = months[last];
+    // A click is not a brush: one month is what the readout already answers.
+    if (from === undefined || to === undefined || first === last) return;
+    onBrush({ from, to });
+  };
+  band.addEventListener("pointerup", finish, { signal });
+  band.addEventListener("pointercancel", () => (anchor = null), { signal });
 }
 
 function handleButton(handle: string, label: string, callbacks: ChartCallbacks): HTMLElement {

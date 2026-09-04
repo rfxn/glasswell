@@ -709,6 +709,10 @@ export async function renderWellCard(
       renderChart(chartHost, toChartSeries(data), {
         onExplain: callbacks.onExplain,
         labelTermFor: (pointer) => labelFor(production, pointer),
+        // main.ts is the single writer of app state, so a brush is announced rather than
+        // written here; `card/requests.ts` is what carries `from`/`to` into the next request.
+        onBrush: (from, to) =>
+          document.dispatchEvent(new CustomEvent("gw-window-set", { detail: { from, to } })),
       });
       for (const note of warningNotes(production.meta.warnings)) chartNotes.appendChild(note);
       highlight(chartFrame, termIndex());

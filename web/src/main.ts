@@ -120,6 +120,22 @@ document.addEventListener("gw-section-set", (event) => {
   commit({ section: id }, mode);
 });
 
+// card/chart -> here, for the same reason the section event exists: main is the single writer
+// of app state, and a brush has to reach the URL so the link is shareable and the server
+// answers the range on reload. `replace`, never `push`: a drag is not a navigation.
+document.addEventListener("gw-window-set", (event) => {
+  const { from, to } = (event as CustomEvent<{ from: string | null; to: string | null }>).detail;
+  const extra = { ...state.extra };
+  if (from && to) {
+    extra["from"] = [from];
+    extra["to"] = [to];
+  } else {
+    delete extra["from"];
+    delete extra["to"];
+  }
+  commit({ extra }, "replace");
+});
+
 function commit(next: Partial<AppState>, mode: "push" | "replace" = "push"): void {
   state = { ...state, ...next };
   writeState(state, mode);
