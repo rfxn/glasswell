@@ -164,8 +164,12 @@ export function statusMinZoom(id: string | null | undefined): number {
 }
 
 export function statusProperty(): Expr {
-  // The served class is never null since the resolver gained its absence arm, so this coalesce
-  // is a guard on an unresolved store rather than on the wire.
+  // The coalesce guards the tile, not the store. Every serving path reads the resolver's
+  // absence arm, and so does every wells mart, so a published tile carries a class for every
+  // feature -- but a tile is a cache, and a reader panning across one built before the mart was
+  // last refreshed is reading rows the resolver never touched. Those draw as the absence class
+  // rather than as nothing, which is what this coalesce is for. Against an unresolved store it
+  // yields the empty string, which matches no class in the filter, so nothing is painted.
   return lower(coalesce(get("status_canonical"), absence?.id ?? ""));
 }
 

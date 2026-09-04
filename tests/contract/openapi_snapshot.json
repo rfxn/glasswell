@@ -10173,7 +10173,7 @@
                 "type": "null"
               }
             ],
-            "description": "Wells whose status did not resolve to a class: neither the promotion nor the registered vocabulary produced one, so they are served the absence class. The same population as the `unmapped` entry in `statuses`, and served under its own name because it is what this field has always counted. It is not the set of wells whose source filed no code: that set is wider, because a promotion can write a class for a well that filed nothing, and the filed code is served beside the class so a reader can tell the two apart.",
+            "description": "Wells whose status did not resolve to a class: neither the promotion nor the registered vocabulary produced one, so they are served the absence class. The same population as the `unmapped` entry in `statuses`, and served under its own name because it is what this field has always counted. It is not the set of wells whose source filed no code: that set is wider, because a promotion can write a class for a well that filed nothing, and the filed code is served beside the class so a reader can tell the two apart. The legend's own affordance resolves the class entry's handle rather than this one, because the row it sits on toggles the class; both address the same population and this field keeps its own handle.",
             "x-glasswell-glossary": "gt_well_status"
           },
           "vocabulary_rules": {
