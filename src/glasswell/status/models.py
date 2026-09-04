@@ -55,6 +55,7 @@ RestoreFailureDetail = Literal[
     "unsafe_dump_manifest",
     "invalid_dump_manifest",
     "scratch_precleanup_failed",
+    "insufficient_free_space",
     "scratch_create_failed",
     "restore_failed",
     "postgis_assertion_failed",

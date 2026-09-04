@@ -63,6 +63,8 @@ case "$statement" in
     fi
     ;;
   *"SELECT EXISTS"*) printf '%s\n' "${STUB_READ_VALUE:-t}" ;;
+  "SHOW data_directory"*) printf '%s\n' "${STUB_DATA_DIRECTORY:-/var/lib/postgresql/16/main}" ;;
+  *"pg_database_size"*) printf '%s\n' "${STUB_DATABASE_BYTES:-1500000000}" ;;
 esac
 exit 0
 """
@@ -80,6 +82,12 @@ case " $* " in
   *) exit "${STUB_RESTORE_RC:-0}" ;;
 esac
 """,
+    # Prints what `df --block-size=1 --output=avail` prints: a header, then the byte count.
+    "df": (
+        '#!/bin/bash\nprintf \'df %s\\n\' "$*" >> "$DRILL_LOG"\n'
+        '[ "${STUB_DF_RC:-0}" = 0 ] || exit "$STUB_DF_RC"\n'
+        'printf \'Avail\\n%s\\n\' "${STUB_DF_AVAIL:-200000000000}"\n'
+    ),
 }
 
 
@@ -199,6 +207,8 @@ def test_clean_drill_publishes_complete_private_atomic_proof(drill) -> None:
         ({"STUB_RESTORED_SCHEMA": "43"}, "schema_head_mismatch"),
         ({"STUB_RESTORED_ROWS": "41"}, "critical_count_mismatch"),
         ({"STUB_READ_VALUE": "f"}, "representative_read_failed"),
+        ({"STUB_DF_AVAIL": "1000000"}, "insufficient_free_space"),
+        ({"STUB_DF_RC": "1"}, "insufficient_free_space"),
     ],
 )
 def test_every_assertion_failure_cleans_up_and_publishes_failure(
@@ -234,6 +244,26 @@ def test_cleanup_that_fails_or_leaves_scratch_cannot_fall_through_to_success(
     assert payload["failure_detail"] == failure_detail
     assert payload["scratch_removed"] is False
     assert "OK: restore drill passed" not in completed.stdout
+
+
+def test_free_space_refusal_precedes_createdb_and_leaves_no_scratch(drill) -> None:
+    # The default receipt is the one verify.sh reads and the status page serves; a refused
+    # drill under test must reach the overridden path only, so this run cannot create it.
+    default_receipt = Path("/var/lib/glasswell-restore-drill/result.json")
+    default_receipt_existed = default_receipt.exists()
+
+    completed, payload, calls = drill(STUB_DF_AVAIL="1000000")
+
+    assert completed.returncode != 0
+    assert payload is not None
+    assert payload["failure_detail"] == "insufficient_free_space"
+    assert payload["dump"]["name"] == "glasswell-20260827T020000Z.dump"
+    # The refusal sits before createdb, which is what keeps verify.sh's scratch-cleanup
+    # assert green: finish still runs drop_and_verify_scratch on the way out.
+    assert "createdb" not in calls
+    assert payload["scratch_removed"] is True
+    assert drop_calls(calls) == 2
+    assert default_receipt.exists() == default_receipt_existed
 
 
 def test_cleanup_failure_does_not_overwrite_the_cause_that_came_first(drill) -> None:
