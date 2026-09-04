@@ -31,12 +31,14 @@ DOMAIN_EVIDENCE_TAG = "UNRELEASED"
 # an expression that evaluates to it is invisible to that scan.
 DOMAIN_EVIDENCE_COMMIT = "0000000000000000000000000000000000000000"
 
-# The eleven mapped classes and the one absence class, in legend order. Every label, colour,
-# glyph and min_zoom is carried across verbatim from what the canvas already draws, so the map
-# does not change appearance in the train that changes where its colours come from. The notes
-# are the one deliberate content change: they are re-authored to name no regulator and no
-# regulator code, because which codes reach a class is the per-jurisdiction mapping rule's fact
-# and resolves at /conformance rather than in a shared sentence.
+# The eleven mapped classes and the one absence class, in legend order. Every label, glyph and
+# min_zoom is carried across verbatim from what the canvas already draws. Two things are
+# deliberate changes: the notes name no regulator and no regulator code, because which codes
+# reach a class is the per-jurisdiction mapping rule's fact; and `expired` and `unmapped` are
+# repainted, because the values carried across measured 2.94:1 and 2.19:1 against the dark
+# panel and the absence class is the one this train turns from a negation nobody could tick
+# into a row drawn on five jurisdictions with a count on every box. Every class now clears
+# 3:1 against both themes' panels and both map substrates; see the domain rule's rationale.
 STATUS_CLASSES: tuple[dict[str, object], ...] = (
     {
         "status_canonical": "active",
@@ -132,7 +134,7 @@ STATUS_CLASSES: tuple[dict[str, object], ...] = (
     {
         "status_canonical": "expired",
         "label": "Expired permit",
-        "colour": "#55666F",
+        "colour": "#4A7480",
         "glyph": "dashed",
         "min_zoom": 9,
         "sort_order": 110,
@@ -144,7 +146,7 @@ STATUS_CLASSES: tuple[dict[str, object], ...] = (
         # canvas already made and which is data here so a reader can find it.
         "status_canonical": UNMAPPED_CLASS,
         "label": "Unmapped status",
-        "colour": "#46525C",
+        "colour": "#666A71",
         "glyph": "hollow",
         "min_zoom": 0,
         "sort_order": 120,

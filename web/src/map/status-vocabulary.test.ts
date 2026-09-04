@@ -210,7 +210,7 @@ describe("the scanner is not blind", () => {
   });
 
   it("catches a planted colour", () => {
-    const files = plant('export const colour = "#46525C";');
+    const files = plant('export const colour = "#666A71";');
     const colours = new Set(served().map((row) => row.colour));
 
     expect(offenders(files, colours)).toHaveLength(1);

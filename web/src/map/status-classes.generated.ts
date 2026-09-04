@@ -122,7 +122,7 @@ export const SEEDED_STATUS_CLASSES: readonly StatusClassRow[] = [
   {
     status_canonical: "expired",
     label: "Expired permit",
-    colour: "#55666F",
+    colour: "#4A7480",
     glyph: "dashed",
     min_zoom: 9,
     sort_order: 110,
@@ -133,7 +133,7 @@ export const SEEDED_STATUS_CLASSES: readonly StatusClassRow[] = [
   {
     status_canonical: "unmapped",
     label: "Unmapped status",
-    colour: "#46525C",
+    colour: "#666A71",
     glyph: "hollow",
     min_zoom: 0,
     sort_order: 120,

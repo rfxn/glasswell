@@ -69,6 +69,10 @@ STATUS_CLASS_RULES: tuple[dict[str, object], ...] = (
             "classes": list(MAPPED_CLASSES),
             "absence_class_rule": ABSENCE_BASIS_RULE_ID,
             "symbology_source": DOMAIN_TABLE,
+            # The two theme panels and the two map substrates a swatch is read against. A
+            # colour is a served datum, so the bar it has to clear is one too.
+            "min_contrast_ratio": 3.0,
+            "contrast_measured_against": ["#121A21", "#0E151B", "#FFFFFF", "#F2F5F8"],
             "module_function": "glasswell.lineage.status_classes:load_status_classes",
             "source_is_filing_anchor": FILING_ANCHOR,
             "contract_note": (
@@ -94,7 +98,13 @@ STATUS_CLASS_RULES: tuple[dict[str, object], ...] = (
             " single writer rather than a second list. Presentation travels with the class"
             " because presentation is what a client needs served: an enum carries a name and"
             " nothing else, and a colour with no row behind it is a symbology decision no gate"
-            " can read."
+            " can read. Two of the twelve are repainted rather than carried across, and the bar"
+            " is part of the decision so the next class has one to clear: a swatch is a"
+            " non-text mark, so 3:1 is its floor, and it is read against both theme panels and"
+            " both map substrates. The values carried across measured 2.19:1 for the absence"
+            " class and 2.94:1 for expired against the dark panel, which is the substrate the"
+            " app opens on; the absence class was the least legible mark on a canvas this same"
+            " decision turns it into a first-class row of."
         ),
         "evidence_url": "https://glasswell.rpx.sh/conformance",
     },

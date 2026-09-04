@@ -69,6 +69,9 @@ select 'cr_status_class_domain_1', 'cr_status_class_domain', null, 'nd_mpr_xlsx'
                                         'plugged', 'dry', 'documented_unmapped', 'expired'),
            'absence_class_rule', 'cr_status_absence_basis_1',
            'symbology_source', 'lineage.status_classes',
+           'min_contrast_ratio', 3.0,
+           'contrast_measured_against',
+               jsonb_build_array('#121A21', '#0E151B', '#FFFFFF', '#F2F5F8'),
            'module_function', 'glasswell.lineage.status_classes:load_status_classes',
            'source_is_filing_anchor', true,
            'contract_note', 'a declaration the serving path reads, not a frame transformation:'
@@ -88,7 +91,13 @@ select 'cr_status_class_domain_1', 'cr_status_class_domain', null, 'nd_mpr_xlsx'
        ' it, and makes the foreign key the single writer rather than a second list. Presentation'
        ' travels with the class because presentation is what a client needs served: an enum'
        ' carries a name and nothing else, and a colour with no row behind it is a symbology'
-       ' decision no gate can read.',
+       ' decision no gate can read. Two of the twelve are repainted rather than carried across,'
+       ' and the bar is part of the decision so the next class has one to clear: a swatch is a'
+       ' non-text mark, so 3:1 is its floor, and it is read against both theme panels and both'
+       ' map substrates. The values carried across measured 2.19:1 for the absence class and'
+       ' 2.94:1 for expired against the dark panel, which is the substrate the app opens on;'
+       ' the absence class was the least legible mark on a canvas this same decision turns it'
+       ' into a first-class row of.',
        'https://glasswell.rpx.sh/conformance',
        'glasswell.lineage.status_classes:load_status_classes', date '2026-09-03'
  where exists (select 1 from lineage.sources where source_id = 'nd_mpr_xlsx')
@@ -211,11 +220,13 @@ create trigger reject_status_classes_mutation
 
 grant select on lineage.status_classes to glasswell_api, glasswell_pipeline;
 
--- The twelve rows. label, colour, glyph and min_zoom are carried across verbatim from what the
--- canvas already draws, so the map does not change appearance in the train that changes where
--- its colours come from. The notes are the one deliberate content change: not one regulator
--- code appears in them, which is what stops expired's note arguing from two regulators' letters
--- while a third's codes sit in the same class.
+-- The twelve rows. label, glyph and min_zoom are carried across verbatim from what the canvas
+-- already draws. Two things are deliberate changes. Not one regulator code appears in a note,
+-- which is what stops expired's note arguing from two regulators' letters while a third's codes
+-- sit in the same class. And expired and unmapped are repainted: the values carried across
+-- measured 2.94:1 and 2.19:1 against the dark panel, below the 3:1 non-text bar, and the
+-- absence class is the one this file turns from a negation nobody could tick into a row drawn
+-- on five jurisdictions. Every class clears 3:1 against both themes now.
 --
 -- Guarded on rule residency in the shape 075:233 uses. Here the guard reads this file's own
 -- rule insert above rather than the seed's, because the foreign keys below are added in this
@@ -252,13 +263,13 @@ select d.status_canonical, d.label, d.colour, d.glyph, d.min_zoom, d.sort_order,
     ('documented_unmapped', 'Documented, no class', '#8E6E9E', 'hollow', 9, 100,
      'The regulator publishes this code and glasswell has no equivalent class, so the filed'
      ' code is served instead of a guess.', false, 'cr_status_class_domain_1'),
-    ('expired', 'Expired permit', '#55666F', 'dashed', 9, 110,
+    ('expired', 'Expired permit', '#4A7480', 'dashed', 9, 110,
      'A permit lapsed, was cancelled or was vacated before spud, so no wellbore exists.',
      false, 'cr_status_class_domain_1'),
     -- min_zoom 0: absence must not be the thing that hides. The note states both cases rather
     -- than minting a twelfth class for the second, because which codes a vocabulary declined is
     -- the mapping rule's fact and the filed code beside the class is what says which case holds.
-    ('unmapped', 'Unmapped status', '#46525C', 'hollow', 0, 120,
+    ('unmapped', 'Unmapped status', '#666A71', 'hollow', 0, 120,
      'No class resolved. Either the source filed no status, or it filed a code its registered'
      ' vocabulary has no row for; the well card and the hover say which, because they carry the'
      ' filed code.', true, 'cr_status_absence_basis_1')
