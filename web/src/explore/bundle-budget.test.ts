@@ -25,17 +25,22 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 // The fourth budget closes a gap the other three left open: the resolver below reads `.js`
 // out of `dist/index.html` and nothing has ever measured the stylesheet beside it, so a
 // 30 kB CSS addition passed all three. Set once at 7,420 B — the 6,520 B measured on the
-// v0.77 tree plus the 900 B the well card's rail is allowed to spend — and ratcheted down to
-// measured + 5 % at the end of the v0.81 card group. Spending the ceiling here is deliberate;
-// raising it is a failed exit.
+// v0.77 tree plus the 900 B the well card's rail is allowed to spend — and ratcheted at the
+// end of the v0.81 card group. The rail spent 860 of its 900 B, so measured + 5 % is 7,735
+// and would be a 315 B raise: the ratchet takes the unspent ceiling back instead, to 7,400,
+// which is the 7,367 measured on this head plus 33 B — about five times the largest jitter
+// §3 records. Spending the ceiling was deliberate; raising it is a failed exit.
 // Re-measured on the MERGED tree at the v0.81 card merge, which is the first walk that carries
 // both trains: the Texas allocation band (which raised the route from 74,838 to 76,412 on its
-// own head) and the card's six cuts. The route measures 76,103 B here, so the budget stays at
-// the 79,700 B the Texas train set — +4.7% over this measurement — and the merge raises
-// nothing. Neither branch's own number describes the tree they land in.
+// own head) and the card's six cuts. The route measured 76,103 B there, so the budget stays at
+// the 79,700 B the Texas train set and the merge raises nothing. Neither branch's own number
+// describes the tree they land in. Re-walked at the card group's last phase, with P5's chart
+// controls and P6's three sections landed: 78,971 B, which is 729 B of headroom rather than
+// 3,597. The chart, table, peer, pools and export modules all ride cut chunks; what grew on
+// the route is the card's request layer and the shell that reaches it.
 const BUDGET_BYTES = {
   entryGzip: 14_000,
-  entryCssGzip: 7_420,
+  entryCssGzip: 7_400,
   explorerRouteGzip: 79_700,
   mapChunkGzip: 330_000,
 };

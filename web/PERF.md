@@ -120,20 +120,31 @@ rest on it.
 | budget | B gzipped | headroom over measured |
 |---|---:|---|
 | entry chunk | 14,000 | +7.5% over 13,026 (v0.80 P0, drawer split; was +0.4% over 13,950 at v0.78 and +0.5% over 13,928 at v0.76) |
-| **entry stylesheet** | **7,420** | the 6,507 measured on `7ff303c` plus the 900 B ceiling the rail is allowed to spend; ratcheted to measured + 5% at the last v0.81 card phase |
-| explorer route, map excluded | 79,700 | +4.7% over 76,103, **measured on the merged tree** at the v0.81 card merge (Texas measured 76,412 on its own head and set 79,700; the card measured 74,544 on its own; neither number describes the tree both land in) |
+| **entry stylesheet** | **7,400** | the ratcheted value: 7,367 measured at the card group's last phase plus 33 B. Was 7,420 — the 6,520 measured on the v0.77 tree plus the 900 B ceiling the rail was allowed to spend |
+| explorer route, map excluded | 79,700 | +0.9% over **78,971**, re-walked at the card group's last phase. The same build on the merge commit measures 76,110 (76,103 at the merge itself; the 7 B is the jitter above), so P5 and P6 spent **2,861 B**. Texas measured 76,412 on its own head and set 79,700; the card measured 74,544 on its own; neither number described the tree both landed in |
 | map chunk | 330,000 | +5.2% over 313,823 |
 
 **The fourth budget, and why it is the only one carrying deliberate slack.** The other three
-were set at about 5% over a measurement and ratchet downwards. `entryCssGzip` is set at
-**7,420 B**: the **6,507 B** measured on `7ff303c` plus the **900 B** the well card's rail is
-allowed to spend on the grid, the collapse strip, three sheet snap points, ten section headers
+were set at about 5% over a measurement and ratchet downwards. `entryCssGzip` was set at
+**7,420 B**: the **6,520 B** measured on the v0.77 tree plus the **900 B** the well card's rail
+is allowed to spend on the grid, the collapse strip, three sheet snap points, ten section headers
 and the touch rules the card's own controls need. That ceiling is spent on purpose in this
-release and recovered at the end of it — the last v0.80 phase ratchets the budget down to the
-measured value plus 5%, which is the discipline the other three already carry. **A budget
-carrying unspent slack has stopped being a ratchet, so the slack has an expiry.** The gap it
-closes is real: `bundle-budget.test.ts` resolves `assets/([\w.-]+\.js)` out of `dist/index.html`
-and matched no stylesheet at all, so a 30 kB CSS addition passed every budget in the file.
+release and recovered at the end of it. **A budget carrying unspent slack has stopped being a
+ratchet, so the slack has an expiry.** The gap it closes is real: `bundle-budget.test.ts`
+resolves `assets/([\w.-]+\.js)` out of `dist/index.html` and matched no stylesheet at all, so a
+30 kB CSS addition passed every budget in the file.
+
+**The ratchet, and why it is not "measured + 5%".** The rule the card spec wrote was *ratchet to
+the measured value plus 5%*, which assumes the rail leaves most of its ceiling unspent. It did
+not: the stylesheet measures **7,367 B** at the card group's last phase, so the rail spent
+**860 of its 900 B** on the grid, the strip, the snap points, the section headers, the chart's
+own controls and three new sections. Measured + 5% is **7,735 B**, which is **315 B above the
+budget it was meant to tighten** — applying the formula would raise a budget §0 P-6 and §11's
+fourteenth non-goal both forbid raising. The ratchet takes back what is actually unspent
+instead: **7,420 → 7,400**, which is the measurement plus **33 B**, about five times the largest
+jitter this section records and 20 B of ceiling returned. The number a formula produces is not
+the number when the formula produces a raise; what the tree measures decides, and it is written
+down here rather than resolved silently.
 
 The v0.77 tree measured 6,520 B and this one measures 6,507; the stylesheet did not change
 between them and the 13 bytes are the jitter the paragraph above describes. The budget is the
@@ -389,6 +400,7 @@ single green check. Append; do not overwrite.
 | date | commit | entry gzip B | explorer route gzip B | map chunk gzip B | note |
 |---|---|---:|---:|---:|---|
 | 2026-09-02 | v0.80 P0 (`7ff303c` + the split) | **13,026** | **73,925** | 318,073 | The lineage drawer moved behind a dynamic import, which is what funds the well card's second generation. Measured on the same tree before and after: entry **13,947 → 13,026 gzip**, **921 B returned** (raw 40,254 → 36,539), against 53 B of headroom before it and 974 B after. `gw-chain` occurs **3** times in the entry chunk before and **0** after, counted with `grep -o` piped to `wc -l` over the chunk `dist/index.html` names, because `grep -c` counts lines and a minified chunk is two of them. The drawer is now `drawer-*.js`, 4,060 B raw / **1,376 B gzip**, fetched on the first handle a reader opens and by no reader who opens none. The explorer route is re-walked in the same act: **74,838 B** on the base tree against the 71,511 this file recorded, and **73,925 B** here with the drawer cut on the rule the paragraph above states. The entry stylesheet is unchanged at 6,507 B and gains the fourth budget in the same commit, at the ruled 7,420 B |
+| 2026-09-04 | v0.81 card P7 (`0d68f51`) | **13,666** | **78,971** | 325,643 | The card's second generation, measured at the group's last phase on a clean head and against the same build on the merge commit `7324027`, which is the only base that attributes anything: entry **13,576 → 13,666** (+90), explorer route **76,110 → 78,971** (+2,861), entry stylesheet **7,396 → 7,367** (-29), map chunk **325,642 → 325,643** (+1, the jitter class, and none of it this branch's). P5's chart controls and P6's peer, pools and export sections ride cut chunks (`chart`, `table`, `card`, `drawer`, `sheet`); what the route gained is the card's request layer and the shell that reaches them. The stylesheet **fell** across a group that added three sections, because the drawer's chrome moved to `lineage/drawer.css` while the rail's own rules stayed on the entry sheet. **The budget ratchets 7,420 → 7,400**, the measurement plus 33 B: measured + 5% is 7,735 and would be a 315 B raise, so the ratchet takes back what is unspent instead. Against the row below, the entry is +640 and the route +5,046 — most of that the Texas train's, which this row does not claim |
 | 2026-08-21 | `ff9a0ae` | 341,517 | — | — | one chunk; no split, no explorer |
 | 2026-08-21 | C0 | 38,498 | — | 302,369 | map moved behind a dynamic import |
 | 2026-08-21 | C11 | 44,192 | 62,817 | 313,823 | first measurement of the explorer route |
