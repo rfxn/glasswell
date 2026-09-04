@@ -93,6 +93,9 @@ def test_the_serving_migration_registers_the_modeling_selector_profiles(db) -> N
             # request-computed, so the profile is what keeps /v1/explain from answering 422 on
             # a handle the response carries.
             ("api.well_facets", "response_output"),
+            # 081: the per-lateral-foot arm divides a served volume by a served length, so the
+            # point's own handle has to resolve both and the profile is what lets it.
+            ("api.well_production", "response_output"),
             ("api.well_status_summary", "response_output"),
             ("api.well_vintage_cohorts", "response_output"),
         ]
