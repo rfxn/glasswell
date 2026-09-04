@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { toChartSeries } from "../chart/series.ts";
@@ -94,5 +95,28 @@ describe("the chart as a table", () => {
 
     expect(groups.map((each) => each.textContent)).toEqual(["Oil (bbl)", "Gas (mcf)"]);
     expect(groups.every((each) => each.getAttribute("colspan") === "3")).toBe(true);
+  });
+});
+
+describe("what stays put when the streams scroll past", () => {
+  it("pins the month header alone, never the second row's first Value header", () => {
+    const frame = seriesTable(chart, callbacks);
+    const rows = frame.querySelectorAll("thead tr");
+    expect(rows).toHaveLength(2);
+    const pinned = frame.querySelectorAll("thead th.gw-table-month");
+    expect(pinned).toHaveLength(1);
+    expect(pinned[0]?.closest("tr")).toBe(rows[0]);
+    expect(rows[1]?.querySelector("th.gw-table-month")).toBeNull();
+  });
+
+  it("is pinned by the class and not by position, so both header rows cannot match", () => {
+    // A rule on `thead th:first-child` matched the first cell of both header rows and pinned
+    // the second row's Value header over the month column; a partially scrolled figure then
+    // read as a whole one with its leading digits covered.
+    const css = readFileSync("src/chart/chart.css", "utf8");
+    expect(css).not.toMatch(/thead th:first-child/);
+    const sticky = css.match(/\.gw-series-table thead th\.gw-table-month[^{]*\{[^}]*\}/)?.[0] ?? "";
+    expect(sticky).toContain("position: sticky");
+    expect(sticky).toContain("z-index");
   });
 });

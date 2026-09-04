@@ -36,6 +36,9 @@ export function seriesTable(chart: ChartSeries, callbacks: TableCallbacks): HTML
   const month = document.createElement("th");
   month.scope = "col";
   month.rowSpan = 2;
+  // The class, not `:first-child`: that selector matched the first cell of both header rows and
+  // pinned the second row's Value header over this one.
+  month.className = "gw-table-month";
   month.appendChild(labelElement("Month", callbacks.labelTermFor("/series/pm")));
   first.appendChild(month);
   const second = document.createElement("tr");

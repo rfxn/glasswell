@@ -194,7 +194,7 @@
 /* The month stays readable while the streams scroll past it: a row whose identity has left
    the viewport is a row of numbers about nothing, which at 390 is every row. */
 .gw-series-table tbody th,
-.gw-series-table thead th:first-child {
+.gw-series-table thead th.gw-table-month {
   position: sticky;
   left: 0;
   background: var(--panel);
