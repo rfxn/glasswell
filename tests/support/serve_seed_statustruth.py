@@ -43,6 +43,11 @@ WELLS = (
     ("2508399802", "Shut In", "inactive", "OG", "RICHLAND 9-11", -104.62, 47.55, "mt_gis_wells"),
     ("2508399803", "P&A - Approved", "plugged", "OG", "CEDAR CREEK 1", -104.40, 46.95,
      "mt_gis_wells"),
+    # The fourth disposal well. §11 exit 11 names MT, TX and NM, and the hover has to be
+    # photographed on each: an injection code filed by a regulator that publishes no codebook
+    # for it is the case the line's second sentence exists for.
+    ("2508399804", "Active Injection", "active", "WI", "MBOGC DISPOSAL 3", -104.70, 47.58,
+     "mt_gis_wells"),
     ("0512399801", "PR", None, "OW", "CROSSBOW 12-7HN", -104.72, 40.32, "co_ecmc_wells_shp"),
     ("0512399802", "AL", None, "OW", "NIOBRARA UNIT 22-3", -104.60, 40.38, "co_ecmc_wells_shp"),
     ("0512399803", "SO", None, "GW", "WATTENBERG STATE 3-14", -104.50, 40.26,

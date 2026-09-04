@@ -26,7 +26,14 @@ const TX_ABSENT = "4238399803";
 const NM_RESOLVED = "3001599801";
 // One disposal well per jurisdiction that publishes an injection codebook, and one from a
 // jurisdiction that does not: the hover has to name its own regulator or draw no ring at all.
-const DISPOSAL = { ND: "3305399804", TX: "4238399802", NM: "3001599803" };
+// api10, and the viewport that puts it under the pointer: `?map=z/lat/lon` is the app's own
+// viewport parameter, so the shot names the frame rather than hoping a selection flies to it.
+const DISPOSAL = {
+  ND: { api10: "3305399804", map: "13/47.74000/-103.40000" },
+  TX: { api10: "4238399802", map: "13/31.86000/-102.24000" },
+  NM: { api10: "3001599803", map: "13/32.28000/-104.18000" },
+  MT: { api10: "2508399804", map: "13/47.58000/-104.70000" },
+};
 mkdirSync(OUT, { recursive: true });
 
 const stampOf = (page) =>
@@ -122,28 +129,43 @@ for (const bp of WIDTHS) {
     // the map on it, so the pointer is moved to the centre of the canvas and the sentence the
     // card renders is read back rather than assumed: three jurisdictions, three sentences, and
     // the one that publishes no injection codebook must render none.
-    for (const [code, api10] of Object.entries(DISPOSAL)) {
-      await page.goto(`${BASE}/?view=map&well=${api10}`, { waitUntil: "networkidle" });
+    for (const [code, target] of Object.entries(DISPOSAL)) {
+      const { api10, map } = target;
+      await page.goto(`${BASE}/?view=map&map=${map}`, { waitUntil: "networkidle" });
       await mapReady(page).catch(() => {});
       await page.waitForTimeout(3000);
       await dismissToasts(page);
-      // Selecting a well centres the map on it, but the point lands within a few pixels of the
-      // centre rather than on it and the hit radius is small, so the pointer walks a short
-      // spiral until the card opens. Aiming once at the centre photographed three empty cards.
-      const cx = Math.round(bp.width / 2);
-      const cy = Math.round(bp.height / 2);
+      // The centre of the map container, not of the viewport: selecting a well centres it in
+      // `#gw-map`, and the card takes the right half of the window, so the two differ by more
+      // than the hit radius. Aiming at the viewport centre photographed empty cards over a
+      // canvas that was drawing the well perfectly well.
+      const box = await page.evaluate(() => {
+        const map = document.querySelector("#gw-map");
+        if (!map) return null;
+        const rect = map.getBoundingClientRect();
+        return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+      });
+      const cx = Math.round(box ? box.x + box.width / 2 : bp.width / 2);
+      const cy = Math.round(box ? box.y + box.height / 2 : bp.height / 2);
       let sentence = "";
-      for (const [dx, dy] of [[0, 0], [0, -6], [6, 0], [0, 6], [-6, 0], [0, -14], [14, 0],
-                              [0, 14], [-14, 0], [10, -10], [-10, 10]]) {
+      const spiral = [[0, 0]];
+      for (const r of [4, 8, 12, 18, 26]) {
+        for (const [dx, dy] of [[r, 0], [0, r], [-r, 0], [0, -r], [r, r], [-r, -r], [r, -r],
+                                [-r, r]]) {
+          spiral.push([dx, dy]);
+        }
+      }
+      for (const [dx, dy] of spiral) {
         await page.mouse.move(cx + dx, cy + dy);
-        await page.waitForTimeout(350);
+        await page.waitForTimeout(160);
         sentence = await page
           .evaluate(() => {
             const card = document.querySelector(".gw-hover");
             return card && !card.hidden ? (card.textContent ?? "") : "";
           })
           .catch(() => "");
-        if (sentence.trim().length > 0) break;
+        if (sentence.includes(api10)) break;
+        sentence = "";
       }
       const named = sentence.includes(`as ${code} filed it`);
       if (!named) {
@@ -153,11 +175,11 @@ for (const bp of WIDTHS) {
         // photograph is the visual gate's, against a deployed instance where martin serves.
         console.log(
           `  NOTE ${bp.width}: ${code} ${api10} is not on this canvas` +
-            ` (hover reads ${JSON.stringify(sentence)}); the tiles did not load`,
+            ` (hover reads ${JSON.stringify(sentence)})`,
         );
       }
       await shot(
-        `hover-disposal-${code.toLowerCase()}${named ? "" : "-NO-TILE-SERVER"}`,
+        `hover-disposal-${code.toLowerCase()}${named ? "" : "-NOT-HOVERED"}`,
         `surface 4 · ${api10} · ${sentence.slice(0, 120) || "no point on the canvas"}`,
       );
     }
