@@ -425,15 +425,31 @@ unresolved_read_time="$("${PSQL[@]}" "select coalesce(string_agg(
    and not exists (select 1 from lineage.status_resolution_resolved s
                     where s.for_state_code = j.identity_prefix)")"
 assert "every read-time status vocabulary has resolver rows" "" "$unresolved_read_time"
-# The basin mart is one row per well by construction, so "fewer rows than wells" is the only
-# shape a forgotten refresh takes: an empty table after a deploy that added wells leaves every
-# card saying no basin context has been built, which reads as a product gap rather than a
-# missed step.
+# The mart is one row per well in canonical.wells_latest at the moment it ran, and the ingest
+# timer promotes wells between deploys -- so a resident count held against a live spine count
+# refuses a healthy host the first time one well lands. Two facts that cannot race instead: the
+# mart is not empty where the spine has wells, and its resident count is the one its own
+# refresh recorded on the derivation it wrote. Staleness against a spine that has moved since
+# is the scheduler's to answer, not a deploy check's.
+basin_context_check() {
+    local rows="$1" wells="$2" recorded="$3"
+    if [ "${wells:-0}" -eq 0 ]; then
+        ok "basin context not asserted: the spine holds no wells yet"
+    elif [ "${rows:-0}" -eq 0 ]; then
+        bad "basin context populated" \
+            "the spine holds $wells wells and marts.well_basin_context is empty; did the deploy skip 6d2?"
+    elif [ "$rows" != "$recorded" ]; then
+        bad "basin context matches the run that wrote it" \
+            "$rows rows resident, $recorded recorded by the refresh derivation"
+    else
+        ok "basin context populated ($rows rows, exactly what its own refresh recorded)"
+    fi
+}
 basin_context="$("${PSQL[@]}" "select count(*) from marts.well_basin_context")"
 wells_latest="$("${PSQL[@]}" "select count(*) from canonical.wells_latest")"
-assert_true "basin context populated ($basin_context of $wells_latest wells)" \
-    "mart is empty or stale against the spine" \
-    test "${basin_context:-0}" -ge "${wells_latest:-0}"
+basin_recorded="$("${PSQL[@]}" "select coalesce(sum(d.output_rows), -1) from lineage.derivations d
+   where d.derivation_id in (select distinct derivation_id from marts.well_basin_context)")"
+basin_context_check "${basin_context:-0}" "${wells_latest:-0}" "${basin_recorded:--1}"
 cumulatives="$("${PSQL[@]}" "select count(*) from marts.well_cumulatives")"
 withholding="$("${PSQL[@]}" "select count(*) from marts.well_withholding")"
 assert_true "per-well cumulatives populated ($cumulatives)" "mart is empty" \
