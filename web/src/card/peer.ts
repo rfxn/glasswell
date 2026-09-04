@@ -70,6 +70,10 @@ function facts(control: PeerControl, envelope: Envelope<PeerControl>): HTMLEleme
   const rows: [string, string, string | null][] = [
     ["Relation", control.relation, "/relation"],
     ["Quantile convention", control.quantile_convention, "/quantile_convention"],
+    // What the quantiles measure and on what footing, both served: a volume with no stream and
+    // no normalisation beside it is a number a reader can misread by a factor of ten.
+    ["Stream", control.stream, "/stream"],
+    ["Normalisation", control.normalization, "/normalization"],
     ["Peer ladder", ladder(control), null],
     ["Peer set", control.peer_set_id ?? "none served", null],
     ["Horizon", `${control.horizon_months} months`, null],
@@ -115,6 +119,12 @@ function splitIdentity(control: PeerControl): HTMLElement {
   return details;
 }
 
+/** The served unit of the three quantile series, which the sidecar carries per column. */
+function quantileUnit(envelope: Envelope<PeerControl>): string {
+  const units = (envelope.data as { _units?: Record<string, string> })._units ?? {};
+  return units["series.monthly_p50"] ?? units["series.monthly_p10"] ?? "unit not served";
+}
+
 /**
  * The control as a table, which is its data-table alternative and its only rendering here: a
  * second plot on the card would need a second chart chunk on the card's route, and the three
@@ -129,19 +139,20 @@ function controlTable(
   frame.className = "gw-series-table gw-peer-table";
   const table = document.createElement("table");
   const caption = document.createElement("caption");
+  const unit = quantileUnit(envelope);
   caption.textContent =
     `The peer control on a producing-month axis: ${control.series.month_index.length} months,` +
-    ` P10, P50 and P90 with the peers behind each month. Knowledge cutoff` +
-    ` ${control.knowledge_cutoff ?? "not served"}.`;
+    ` P10, P50 and P90 of ${control.stream} in ${unit}, ${control.normalization}, with the` +
+    ` peers behind each month. Knowledge cutoff ${control.knowledge_cutoff ?? "not served"}.`;
   table.appendChild(caption);
 
   const head = document.createElement("thead");
   const headRow = document.createElement("tr");
   const columns: [string, string | null][] = [
     ["Producing month", "/series/month_index"],
-    ["P10", null],
-    ["P50", null],
-    ["P90", null],
+    [`P10 (${unit})`, null],
+    [`P50 (${unit})`, null],
+    [`P90 (${unit})`, null],
     ["Peers", "/series/peer_count"],
   ];
   for (const [label, pointer] of columns) {
