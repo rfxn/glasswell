@@ -44,14 +44,18 @@
 --      rename. No identifier, event id or payload below carries it.
 
 -- (1) The evidence pair, written once. 049's trigger refuses a conformance rule whose
--- publication is not registered, so this lands before the rules themselves.
+-- publication is not registered, so this lands before the rules themselves. The rollup mart's
+-- cadence rule is here for the reason docs/runbook-add-a-state.md:158-185 gives and 080:55-57
+-- follows: a track's cadence rows live in seed/conformance_schedules.py and their publication
+-- evidence in the track's own migration.
 insert into lineage.conformance_rule_publications
     (rule_id, published_vintage, evidence_tag, evidence_commit)
 select rule_id, date '2026-09-03', 'UNRELEASED',
        '0000000000000000000000000000000000000000'
   from unnest(array[
        'cr_status_class_domain_1', 'cr_status_absence_basis_1', 'cr_status_absence_share_1',
-       'cr_mt_bogc_pool_rollup_1', 'cr_nm_wcproduction_pool_rollup_2'
+       'cr_mt_bogc_pool_rollup_1', 'cr_nm_wcproduction_pool_rollup_2',
+       'cr_job_cadence_marts_well_pool_rollup_1'
   ]::text[]) rule_id
 on conflict (rule_id) do nothing;
 

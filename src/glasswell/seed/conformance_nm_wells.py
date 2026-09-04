@@ -775,6 +775,21 @@ POOL_ROLLUP_2: dict[str, object] = {
     "code_ref": "src/glasswell/marts/well_pool_rollup.py",
 }
 
+# The cadence decision the scheduler registry reads for the rollup mart, declared beside the
+# rule it schedules rather than in the scheduler's own module, the shape Texas's takes.
+# conformance_schedules.py merges it so one builder writes every cr_job_cadence_<job>_1 row.
+NM_CADENCE_DECISIONS: dict[str, dict[str, str]] = {
+    "marts_well_pool_rollup": {
+        "rule": "Rebuild the per-well rollup after the promotion that writes the pool filings"
+        " it sums, never on a clock of its own.",
+        "rationale": "The sum is a function of the promoted filings and the vintage they are"
+        " read at, so a promotion that moved no row recomputes the same 15,387,002 rows under"
+        " the same derivation and republishes nothing. It observes rather than launches,"
+        " because the launch posture is the launch flip's own act and this build writes the"
+        " second-largest relation in the database.",
+    },
+}
+
 PROMOTE_MODULE = "glasswell.ingest.nm_wells"
 
 # The correction this train appends. `promote` has never been the name of anything in that
