@@ -3,7 +3,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { scannedFiles, shippedLiterals } from "../test/literals.ts";
+import { EXCLUDED, scannedFiles, shippedLiterals } from "../test/literals.ts";
+import { JURISDICTION_LIST } from "./jurisdictions.generated.ts";
 import { SEEDED_STATUS_CLASSES } from "./status-classes.generated.ts";
 import { STATUS_VOCAB_RULES, resetStatusVocabulary, setStatusVocabulary, statusVocabulary } from "./status.ts";
 
@@ -19,7 +20,32 @@ import { STATUS_VOCAB_RULES, resetStatusVocabulary, setStatusVocabulary, statusV
  */
 const ROOT = resolve(__dirname, "..");
 const TARGET = resolve(__dirname, "status.ts");
-const EXTRAS = [resolve(__dirname, "..", "card", "status-chip.ts")];
+// The card's chip, which imports the vocabulary through the card rather than through the map;
+// and the generated registry module, which imports nothing and is imported by nine shipped
+// modules, so a class id emitted into it by a future regen would ship unscanned.
+const EXTRAS = [
+  resolve(__dirname, "..", "card", "status-chip.ts"),
+  resolve(__dirname, "jurisdictions.generated.ts"),
+];
+
+/**
+ * A class colour is also a jurisdiction colour on five registrations, and that is a different
+ * axis: `map_colour` predicts which class a jurisdiction's wells are mostly in, so it is drawn
+ * FROM the palette rather than restating a class. A literal that is a registered map colour is
+ * therefore not a restatement; anything else that equals a class colour is, unless it is named.
+ */
+const REGISTERED_MAP_COLOURS = new Set(JURISDICTION_LIST.map((row) => row.colour));
+
+/**
+ * The same reasoning for a rule id. The generated registry module is the registry's own copy,
+ * rendered from the seed and held to the wire by `test_jurisdiction_parity.py` under R-4's
+ * "keep both and gate them": a rule id in it is a registration's datum, not a hand-written
+ * search key. What rule 3 exists to stop is a module deciding which regulator owns a class,
+ * which is a literal typed by a person into code the registry never rendered.
+ */
+const REGISTERED_RULE_IDS = new Set(
+  JURISDICTION_LIST.flatMap((row) => Object.values(row.rules)),
+);
 
 const served = () => [...SEEDED_STATUS_CLASSES];
 
@@ -40,7 +66,7 @@ afterEach(() => {
 });
 
 describe("the scoped set", () => {
-  it("is the vocabulary's importers plus the card chip, test support excluded", () => {
+  it("is the vocabulary's importers plus two named extras, test support excluded", () => {
     const files = scanned().map((file) => file.slice(ROOT.length + 1));
 
     expect(files).toEqual([
@@ -48,12 +74,40 @@ describe("the scoped set", () => {
       "map/census.ts",
       "map/counts.ts",
       "map/hover-card.ts",
+      "map/jurisdictions.generated.ts",
       "map/legend.ts",
       "map/map.ts",
       "map/registry.ts",
       "map/status.ts",
       "map/style.ts",
       "map/swatch.ts",
+    ]);
+  });
+
+  it("excludes only what it names, so the scope can be reconstructed from the rule", () => {
+    // The recipe before exclusions is the importer set plus the two extras; what comes out is
+    // stated here rather than left to a regex nobody reads beside the number it produces.
+    const before = [
+      ...new Set([
+        ...scanned(),
+        resolve(__dirname, "status-classes.generated.ts"),
+        resolve(ROOT, "test", "surfaces.ts"),
+        resolve(ROOT, "test", "vocabulary-setup.ts"),
+      ]),
+    ];
+    const excluded = before.filter((file) => EXCLUDED.some((pattern) => pattern.test(file)));
+
+    expect(before).toHaveLength(14);
+    expect(excluded.map((file) => file.slice(ROOT.length + 1)).sort()).toEqual([
+      "map/status-classes.generated.ts",
+      "test/surfaces.ts",
+      "test/vocabulary-setup.ts",
+    ]);
+    expect(EXCLUDED.map(String)).toEqual([
+      "/\\.test\\.ts$/",
+      "/\\/test\\//",
+      "/fixtures?\\.ts$/",
+      "/status-classes\\.generated\\.ts$/",
     ]);
   });
 });
@@ -71,26 +125,39 @@ describe("no shipped literal restates the served vocabulary", () => {
     expect(offenders(scanned(), prose)).toEqual([]);
   });
 
-  it("names no class colour, but for one palette collision that is not a restatement", () => {
+  it("names no class colour that is not a registered jurisdiction colour", () => {
     const colours = new Set(served().map((row) => row.colour));
-    const found = offenders(scanned(), colours);
+    // The rule, not a list: a literal that is a registered `map_colour` is a palette value on
+    // the jurisdiction axis and does not follow a class that changes colour. Five in the
+    // generated registry are exactly that, and they are excused by being registered rather than
+    // by being written down here.
+    const found = offenders(scanned(), colours).filter(
+      (literal) => !REGISTERED_MAP_COLOURS.has(literal.value),
+    );
 
-    // The North Dakota spacing-unit label line is drawn in the same grey as the `permitted`
-    // swatch. It is a palette collision rather than a restatement of the vocabulary: that line
-    // is not a status and would not follow the class if the class changed colour. Exempted by
-    // name and with the reason, because a rule with one stated exception is still a rule, and
-    // filed against BRAND.md where the palette is decided.
+    // What is left is one line colour that is neither a class nor a registration: the North
+    // Dakota spacing-unit label, drawn in the same grey as the `permitted` swatch. Named with
+    // its reason, and filed against BRAND.md where the palette is decided.
     expect(
       found.map((literal) => `${literal.file.slice(ROOT.length + 1)}:${literal.value}`),
     ).toEqual(["map/registry.ts:#9FB0BC"]);
+    expect([...REGISTERED_MAP_COLOURS].filter((colour) => colours.has(colour)).sort()).toEqual([
+      "#3FA55E",
+      "#7C8B96",
+    ]);
   });
 
-  it("names no registered status-vocabulary rule id", () => {
+  it("names no registered status-vocabulary rule id outside the generated registry", () => {
     // What stops a family search coming back as a string search: the rule a class cites is the
     // registry's answer, and a literal here would be this file deciding which regulator owns it.
     const rules = new Set(STATUS_VOCAB_RULES);
+    const found = offenders(scanned(), rules).filter(
+      (literal) => !REGISTERED_RULE_IDS.has(literal.value),
+    );
 
-    expect(offenders(scanned(), rules)).toEqual([]);
+    expect(found).toEqual([]);
+    // Not vacuous: the generated module does carry them, and it is in the scanned set.
+    expect(offenders(scanned(), rules)).toHaveLength(STATUS_VOCAB_RULES.length);
   });
 
   it("leaves the class domain out of every shipped module", () => {

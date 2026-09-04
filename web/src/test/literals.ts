@@ -17,7 +17,22 @@ export interface ShippedLiteral {
   readonly value: string;
 }
 
-const TEST_SUPPORT = /(\.test\.ts$|\/test\/|fixtures?\.ts$|\.generated\.ts$)/;
+/**
+ * What the scan excludes, by name rather than by file class.
+ *
+ * `\.generated\.ts$` stood here for one seed-derived fixture and covered every generated
+ * module with it, including `jurisdictions.generated.ts`, which is imported by nine shipped
+ * modules and carries five per-jurisdiction colours. A class of filenames chosen for a
+ * test-support file is not a rule; the file it was chosen for is.
+ */
+export const EXCLUDED = [
+  /\.test\.ts$/,
+  /\/test\//,
+  /fixtures?\.ts$/,
+  /status-classes\.generated\.ts$/,
+] as const;
+
+const TEST_SUPPORT = (file: string): boolean => EXCLUDED.some((pattern) => pattern.test(file));
 
 /** Comments, then literals: a `//` inside a string must not open one. */
 export function stripComments(source: string): string {
@@ -128,7 +143,7 @@ export function scannedFiles(
   extras: readonly string[] = [],
 ): string[] {
   const scoped = new Set([...importersOf(root, target), resolve(target), ...extras.map((extra) => resolve(extra))]);
-  return [...scoped].filter((file) => !TEST_SUPPORT.test(file)).sort();
+  return [...scoped].filter((file) => !TEST_SUPPORT(file)).sort();
 }
 
 /** Every literal the scoped set ships, ready to be compared against what the wire serves. */

@@ -258,14 +258,11 @@ export function visibleStatusesAt(atZoom: number): string[] {
 /**
  * The rendered set is the zoom gate intersected with the legend's own filter, and nothing else.
  *
- * It used to carry a second arm: `not(inSet(statusProperty(), statusIds()))`, which painted
- * anything the client's closed list could not name as the absence class. That matched two
- * different things at once — a well whose source filed no status, and a well whose class this
- * build had never heard of — and the second vanished from the canvas the moment a reader
- * unticked one box. The failure it was written for, a well with a present but unknown status
- * falling out of the map, the count and the legend together, is now impossible for a different
- * reason: the domain is served, so the set of ids is complete and there is nothing left for a
- * negation to catch.
+ * No negation, and none is needed: the domain is served, so every class a well can carry is a
+ * class this set names, and a well with a present but unknown status cannot fall out of the
+ * map, the count and the legend together. Reintroducing one would paint a class the client
+ * could not name as the absence class, and take it off the canvas the moment a reader unticked
+ * that one box.
  */
 export function statusFilter(atZoom: number, on: ReadonlySet<string>): Expr {
   return inSet(statusProperty(), visibleStatusesAt(atZoom).filter((id) => on.has(id)));
