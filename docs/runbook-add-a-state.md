@@ -72,12 +72,40 @@ feed them into derivation params, so a second row for a code moves two mart addr
 `source_ids` is **complete, not curated**: every source registered to this jurisdiction, or the
 parity gate reddens. `identity_pattern` is derived from the prefix — do not spell it out.
 
-**A `status_vocabulary` rule that resolves at read time owes three spec keys, not one.**
-`lineage.refresh_status_resolution()` is driven by rows, and it selects on `mapping_table`,
-`key_col` **and** `value_col` together. `spec->>` on an absent key is SQL NULL, so a rule
-carrying only `mapping_table` is filtered out of the loop one step before the
-missing-table notice can fire: the jurisdiction is skipped in silence and every one of its
-wells resolves unmapped. Name the table and both of its columns.
+**A `status_vocabulary` rule that resolves at read time owes four spec keys, and a fifth that
+is read elsewhere.** `lineage.refresh_status_resolution()` is driven by rows, and it filters on
+`resolved_at` and then on `mapping_table`, `key_col` **and** `value_col` together. `spec->>` on
+an absent key is SQL NULL, so a rule carrying only `mapping_table` is filtered out of the loop
+one step before the missing-table notice can fire: the jurisdiction is skipped in silence and
+every one of its wells resolves unmapped. Name `resolved_at`, the table and both of its columns.
+The fifth is `unmapped_action`, which the **promotion** reads and this loop does not, so
+omitting it refuses nothing here and leaves a different decision unstated.
+
+**No trigger, and no `create or replace view`.** `lineage.attach_status_map_refresh()` attaches
+the refresh trigger to every registered read-time map, and it is called from the migration that
+created it, from the registry's own append triggers and from `seed_jurisdictions` — so a
+registration appended in a later release is three rows and nothing else. Colorado is why the
+sentence is here: it registered read-time resolution in v0.78 with a hand-written trigger step
+that nobody ran, and its map carried none until v0.81. `078:265-274` still says to write one by
+hand; that instruction is superseded and lives in `status_resolution.py`'s module docstring,
+because a migration is applied history and is never edited.
+
+**The class a map targets must be a domain row.** `lineage.status_classes` is the canonical
+class set and every registered map carries a foreign key onto it, so a map cannot introduce a
+class no rule declared. A jurisdiction whose regulator genuinely needs a class the domain does
+not hold appends the class **and** a superseding `cr_status_class_domain_2`; it does not add a
+value to its own map and hope.
+
+**A read-time state, end to end, and what refuses each step.**
+
+| | Step | Refuses if skipped |
+|---|---|---|
+| 1 | Its map table in `lineage`, keyed on the reported-code column, with a foreign key onto `lineage.status_classes` | The foreign key refuses a class outside the domain; the registration refuses a key column that is not unique within the map |
+| 2 | A `status_vocabulary` rule whose spec carries `resolved_at`, `mapping_table`, `key_col` and `value_col`, plus `unmapped_action` | The refresh filters on the four together, so a rule missing any one is filtered out one step before the missing-table notice fires. `unmapped_action` is read by the promotion, not by the refresh, so omitting it refuses nothing here |
+| 3 | The `jurisdiction_rules` row | The composite foreign key refuses a rule row with no registration at that clock pair |
+| **No** | a trigger | `attach_status_map_refresh()` attaches one on the append that registers the map |
+| **No** | a `create or replace view` on `canonical.status_resolution` | Never needed, and a second one silently drops every other jurisdiction's arm |
+| **No** | a class | Unless the regulator genuinely needs one, in which case it is a `lineage.status_classes` row **and** a superseding `cr_status_class_domain_2` |
 
 > **Refuses if skipped or wrong:** `jurisdiction_rules.rule_id` references
 > `lineage.conformance_rules`, so step 3 cannot be skipped; the composite foreign key refuses a

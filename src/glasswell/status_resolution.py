@@ -10,6 +10,24 @@ The invariant is one shared resolver, never a second mapping in the API: the til
 every serving path read `canonical.status_resolution`, and no surface translates a status code
 on its own. A mart-only resolver would leave the API serving null; an API-only one would leave
 the tiles serving null. Neither is what shipped.
+
+FOR A LATER JURISDICTION THAT RESOLVES AT READ TIME. Three rows and no trigger: (1) its map
+table in `lineage`, keyed on the reported code, with a foreign key onto `lineage.status_classes`
+so it cannot introduce a class no rule declared; (2) a status-vocabulary conformance rule whose
+spec carries `resolved_at: read_time` with `mapping_table`, `key_col` and `value_col` -- all
+four are filtered on, so a rule missing any one is filtered out one step before the
+missing-table notice can fire -- plus `unmapped_action`, which the promotion reads and this
+loop does not; (3) the `jurisdiction_rules` row, whose key column must be unique within the map,
+which the registration refuses without.
+
+`078:265-274` said to add a statement trigger by hand and to call the refresh at the end of the
+migration. That instruction is superseded and 078 is left as the applied history it is:
+`lineage.attach_status_map_refresh()` attaches the trigger to every registered read-time map,
+and it is called from the migration that created it, from the registry's own append triggers
+and from `seed_jurisdictions`, so a registration appended in a later release gets its trigger
+without one being written. What has not changed is the rest of 078's warning: a second
+`create or replace view` on `canonical.status_resolution` silently drops every other
+jurisdiction's arm, whichever order the two migrations merge in.
 """
 
 from __future__ import annotations
