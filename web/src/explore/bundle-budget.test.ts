@@ -28,8 +28,9 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 // v0.77 tree plus the 900 B the well card's rail is allowed to spend — and ratcheted at the
 // end of the v0.81 card group. The rail spent 860 of its 900 B, so measured + 5 % is 7,735
 // and would be a 315 B raise: the ratchet takes the unspent ceiling back instead, to 7,400,
-// which is the 7,367 measured on this head plus 33 B — about five times the largest jitter
-// §3 records. Spending the ceiling was deliberate; raising it is a failed exit.
+// which is the 7,367 measured on this head plus 33 B — two and a half times the 13 B, the
+// largest stylesheet jitter §3 records. Spending the ceiling was deliberate; raising it is a
+// failed exit.
 // Re-measured on the MERGED tree at the v0.81 card merge, which is the first walk that carries
 // both trains: the Texas allocation band (which raised the route from 74,838 to 76,412 on its
 // own head) and the card's six cuts. The route measured 76,103 B there, so the budget stays at
@@ -169,9 +170,10 @@ describe("what the explorer's shell costs the reader", () => {
     // never renders over Explore, so the branch that sizes it never runs here.
     const sheet = named("sheet");
     // The chart's table alternative, cut on the drawer's own ruling: it is fetched when a
-    // reader presses `Table` and by nobody who lands. Left uncut the walked total rises by
-    // about 500 B while what a reader downloads on landing falls, which is the split artifact
-    // the paragraph above describes.
+    // reader presses `Table` and by nobody who lands. Left uncut the walked total rises by the
+    // table chunk's own 788 B, which is the split artifact the paragraph above describes, and
+    // it is the difference between this route passing and failing: PERF.md §6 records both
+    // walks, and the cut stands on the owner's ruling recorded there, not on this file's.
     const table = named("table");
     const route = reach(
       [...entryChunks(), named("shell")],
