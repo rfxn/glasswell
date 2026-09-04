@@ -56,6 +56,7 @@ from glasswell.lineage.envelope import Figure, collect_handles, distinct_handles
 from glasswell.lineage.explain import MAX_HANDLES
 from glasswell.lineage.jurisdictions import NEIGHBORS_SCOPE, JurisdictionRegistry
 from glasswell.lineage.selector_registry import identity_selector_term
+from glasswell.lineage.status_classes import absence_class
 from glasswell.marts.cumulatives import (
     LIQUIDS_BASIS,
     MART_STREAMS,
@@ -242,12 +243,6 @@ select s.geom_type, s.geom_key, s.derivation_id, s.source_datum, s.source_manife
 # estimate fell to 1, the planner chose a nested loop with a join filter, and a 501-well box
 # cost 125,250 filter comparisons and 28 ms — quadratic in the wells in view, on the small
 # boxes the map spends its life in. Inlined, the same box is 3 ms. See work-output/wss-status.md.
-# `filed_no_code` is a boolean and not `status_reported` itself. The group is one row per
-# (basin, state, class, well type, producing, no_well_row); a free-text regulator code as a
-# seventh key would multiply that by the distinct codes in view, which on a Texas box is fifteen
-# or more. A boolean at most doubles it, and in practice adds less, because a class that
-# resolves is overwhelmingly one whose code was filed. It is what `unmapped_wells` is predicated
-# on now that no row on this query carries a null class.
 STATUS_SUMMARY_SQL = f"""
 with in_view as (
     select distinct api10
@@ -257,8 +252,7 @@ with in_view as (
      latest as (
     select distinct on (v.api10)
            v.api10, {resolved_status("w")} as status_canonical, w.basin, w.state_code,
-           w.well_type_reported, w.status_reported is null as filed_no_code,
-           w.derivation_id, w.effective_from
+           w.well_type_reported, w.derivation_id, w.effective_from
       from in_view v
       left join canonical.wells w
              on w.api10 = v.api10
@@ -270,12 +264,12 @@ with in_view as (
            case when %(producing_registered)s::boolean then {_PRODUCING_CLASS} end as producing
       from latest ranked)
 select basin, state_code, status_canonical, well_type_reported, producing,
-       derivation_id is null as no_well_row, filed_no_code,
+       derivation_id is null as no_well_row,
        count(*) as wells, max(derivation_id) as derivation_id,
        array_remove(array_agg(distinct derivation_id), null) as derivation_ids,
        max(effective_from) as effective_from
   from classed
- group by 1, 2, 3, 4, 5, 6, 7
+ group by 1, 2, 3, 4, 5, 6
 """
 
 # The geometry population itself, classed. Counts wells, not geometry rows; spine-free on
@@ -1094,12 +1088,13 @@ def list_wells(
 class StatusCount(BaseModel):
     status: str = Field(
         description=(
-            "Canonical status the wells in this bucket carry. Never null: a well the source"
-            " reported no status for is counted in `unmapped_wells`, and it is also in the"
-            " absence class here, because that is the class it resolves to. The two figures"
-            " answer different questions and can differ: this bucket counts wells whose class"
-            " did not resolve, `unmapped_wells` counts wells that filed no code at all, and the"
-            " first set contains the second."
+            "Canonical status the wells in this bucket carry. Never null: a well whose class"
+            " does not resolve is served the absence class, and `unmapped_wells` counts that"
+            " same population under its own name. Neither is the set of wells whose source"
+            " filed no code, which is wider and holds classed wells too: a promotion can write"
+            " a class for a well that filed nothing, and on the deployed spine 105,946 Texas"
+            " wells are in exactly that state. The filed code is served beside the class, so a"
+            " reader can tell the two apart well by well."
         ),
         json_schema_extra={GLOSSARY_KEY: "gt_well_status"},
     )
@@ -1127,9 +1122,10 @@ class BasinStatusCounts(BaseModel):
     wells: FigureModel = Field(description="Wells in this basin inside the box.")
     unmapped_wells: FigureModel | None = Field(
         description=(
-            "Wells here whose source reported no status at all; absent when there are none."
-            " A subset of the absence class in `statuses`, which also holds a well that filed"
-            " a code its registered vocabulary has no row for."
+            "Wells here whose status did not resolve to a class, counted under the absence"
+            " class; absent when there are none. The same population as the `unmapped` entry in"
+            " `statuses`, named separately because it is the figure this surface has always"
+            " served. Not the wells whose source filed no code, which is a wider set."
         )
     )
     statuses: list[StatusCount] = Field(description="One entry per class present, largest first.")
@@ -1203,11 +1199,13 @@ class WellStatusSummary(BaseModel):
     )
     unmapped_wells: FigureModel | None = Field(
         description=(
-            "Wells whose source reported no status at all, counted by the filed code rather"
-            " than by the class. Those wells are also in the absence class in `statuses`, which"
-            " additionally holds any well that filed a code its registered vocabulary has no"
-            " row for, so the class is the wider set and this figure says which part of it is"
-            " silence rather than an unmapped code."
+            "Wells whose status did not resolve to a class: neither the promotion nor the"
+            " registered vocabulary produced one, so they are served the absence class. The"
+            " same population as the `unmapped` entry in `statuses`, and served under its own"
+            " name because it is what this field has always counted. It is not the set of wells"
+            " whose source filed no code: that set is wider, because a promotion can write a"
+            " class for a well that filed nothing, and the filed code is served beside the"
+            " class so a reader can tell the two apart."
         ),
         json_schema_extra={GLOSSARY_KEY: "gt_well_status"},
     )
@@ -1420,7 +1418,11 @@ def _producing_window(
 
 
 def _basins(
-    found: list[dict[str, Any]], *, box: str, registry: JurisdictionRegistry
+    found: list[dict[str, Any]],
+    *,
+    box: str,
+    registry: JurisdictionRegistry,
+    absence: str,
 ) -> list[dict[str, Any]]:
     grouped: dict[tuple[str | None, str | None], list[dict[str, Any]]] = {}
     for row in found:
@@ -1437,7 +1439,7 @@ def _basins(
                 "status_vocabulary_rule": registry.rule_for(state_code, STATUS_VOCABULARY),
                 "wells": _count(group, selector=f"col=wells{scope}&bbox={box}"),
                 "unmapped_wells": _count(
-                    [row for row in group if row["filed_no_code"]],
+                    [row for row in group if row["status_canonical"] == absence],
                     selector=f"col=unmapped_wells{scope}&bbox={box}",
                 ),
                 "statuses": _classes(group, box=box, scope=scope),
@@ -1560,10 +1562,11 @@ def _summary_warnings(
         " at 30 requests per principal per UTC minute. Where a box produces more counts than"
         " /v1/explain accepts handles in one call, `links.explain` carries as many as it can"
         " and a warning says exactly how many it left out; each count still resolves alone."
-        " A class no well in the box carries is absent rather than zero. Wells whose source"
-        " reported no status resolve to the absence class like any other, and `unmapped_wells`"
-        " counts them separately by the filed code, so a reader can tell silence from a code"
-        " the vocabulary had no row for. Counts are split per basin with the vocabulary"
+        " A class no well in the box carries is absent rather than zero. A well whose status"
+        " does not resolve is served the absence class like any other class, and"
+        " `unmapped_wells` counts that same population under the name this surface has always"
+        " served it as. Whether the source filed a code at all is a different question, served"
+        " beside the class on the well itself. Counts are split per basin with the vocabulary"
         " rule that mapped that jurisdiction's codes, because a status class means what its"
         " rule says it means and the rules travel with the counts. The same box is classed two"
         " more ways: per provenance of the recorded geometry — canonical geom_type verbatim,"
@@ -1657,7 +1660,10 @@ def get_well_status_summary(
     )
     box = _rendered_bbox(envelope, ",")
     selector_box = _rendered_bbox(envelope, ":")
-    basins = _basins(counted, box=selector_box, registry=registry)
+    # Read once per request off the twelve-row domain, not spelled: the figure this predicates
+    # is a served one, and a second spelling of the class name is the defect the domain closes.
+    absence = absence_class(connection)
+    basins = _basins(counted, box=selector_box, registry=registry, absence=absence)
     unregistered = sorted(
         {
             row["state_code"] or "unassigned"
@@ -1681,11 +1687,12 @@ def get_well_status_summary(
     data = {
         "bbox": box,
         "wells": _count(counted, selector=f"col=wells&bbox={selector_box}"),
-        # Predicated on the filed code and not on a null class, which no row carries now. The
-        # figure goes on meaning what its descriptions say it means, and it keeps its address:
-        # retiring it would have moved a served handle without a deprecation.
+        # The population the null used to mark, named rather than absent. Before the resolver's
+        # third arm this read `status_canonical is null`; after it no row on this query is null,
+        # so the same wells are found by the class the arm gives them. The figure counts what it
+        # always counted, keeps its address, and does not move at the deploy.
         "unmapped_wells": _count(
-            [row for row in counted if row["filed_no_code"]],
+            [row for row in counted if row["status_canonical"] == absence],
             selector=f"col=unmapped_wells&bbox={selector_box}",
         ),
         "statuses": _classes(counted, box=selector_box),
