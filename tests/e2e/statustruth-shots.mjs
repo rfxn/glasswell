@@ -184,6 +184,42 @@ for (const bp of WIDTHS) {
       );
     }
 
+    // The blocker's own reproduction, which is the frame that says whether the tile agrees with
+    // the two figures beside it: Wells By, status, Texas, press the absence class. The pill,
+    // the legend row and the drawn-versus-in-view line have to agree, and they did not while
+    // seven of the nine mart projections served a null class the press could not match.
+    await page.goto(`${BASE}/?view=map&map=10/31.92000/-102.24000`, { waitUntil: "networkidle" });
+    await mapReady(page).catch(() => {});
+    await page.waitForTimeout(3000);
+    await dismissToasts(page);
+    let pressed = "";
+    try {
+      await page.locator(".gw-wells-by-button").first().click({ timeout: 5000 });
+      await page.waitForTimeout(1200);
+      const selects = page.locator(".gw-wells-by-controls select");
+      await selects.nth(0).selectOption("status");
+      await page.waitForTimeout(1200);
+      // The scope, explicitly: the panel opens on the default jurisdiction, and the absence
+      // class this frame is about is Texas's.
+      await selects.nth(1).selectOption({ label: "Wells (Texas)" });
+      await page.waitForTimeout(2000);
+      await page.locator("[data-value='unmapped']").first().click({ timeout: 5000 });
+      await page.waitForTimeout(2000);
+      pressed = await page.evaluate(() => {
+        const pill = document.querySelector(".gw-facet-pill");
+        const partial = document.querySelector(".gw-lg-partial");
+        const row = document.querySelector(".gw-lg-row[data-status='unmapped'] .gw-lg-count");
+        return [pill?.textContent ?? "", row?.textContent ?? "", partial?.textContent ?? ""]
+          .join(" | ");
+      });
+    } catch (error) {
+      console.log(`  WARN ${bp.width}: the Wells-By press did not take -- ${String(error).split("\n")[0]}`);
+    }
+    await shot(
+      `wellsby-press-unmapped-tx${pressed ? "" : "-NOT-PRESSED"}`,
+      `the blocker's frame · ${pressed || "not pressed"}`,
+    );
+
     // Surface 5: the well card's status chip. A Texas well the source filed nothing for, and a
     // New Mexico well whose class resolves at read time from the letter beside it.
     for (const [label, api10] of [["tx-absent", TX_ABSENT], ["nm-resolved", NM_RESOLVED]]) {
