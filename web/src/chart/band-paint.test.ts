@@ -54,6 +54,15 @@ describe("what the cumulative chips are painted with", () => {
   });
 });
 
+describe("what the pending-allocation panel is laid out with", () => {
+  it("puts each rule link on its own line, now that the panel names two", () => {
+    // Inline anchors with no separator between them printed "The registered grain decision:
+    // cr_tx_production_grain_1.The rule that computes the share: cr_tx_allocation_v0_1." as
+    // one run of text, which a screenshot showed and the DOM test could not.
+    expect(paintOf(".gw-pending-rule")).toMatch(/display:\s*block/);
+  });
+});
+
 describe("what the state band is painted with", () => {
   it("draws the lease's filing as its own mark, not as this well's report", () => {
     // Two rows in one key with one swatch and two subjects is the same defect as two classes

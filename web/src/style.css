@@ -1028,7 +1028,11 @@ main[data-drawer="open"] #gw-card {
   margin: 0 0 var(--gw-space-2);
 }
 
+/* One rule per line: the panel names two of them now -- the grain decision and the rule that
+   computes the share -- and inline anchors with no separator run the two sentences together. */
 .gw-pending-rule {
+  display: block;
+  margin-top: var(--gw-space-2);
   color: var(--paper);
   text-decoration: underline;
   text-underline-offset: 2px;
