@@ -220,10 +220,8 @@ export async function renderPeerControl(
     const frame = document.createElement("section");
     frame.className = "gw-peer";
 
-    const heading = document.createElement("h4");
-    heading.className = "gw-peer-title";
-    heading.textContent = "Peer control";
-    frame.appendChild(heading);
+    // No heading of its own: the section's disclosure is already titled "Peer control", and a
+    // panel that repeats its own section header is the defect the well type carried.
     // Verbatim, and never the word forecast: the wire says what this is, and a client that
     // paraphrased it would be the one place the claim could drift.
     frame.appendChild(note(control.relation, "gw-note gw-peer-relation"));

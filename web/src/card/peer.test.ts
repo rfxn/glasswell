@@ -74,6 +74,13 @@ describe("the peer control, which is not a forecast", () => {
     expect(host.textContent?.toLowerCase()).not.toContain("forecast this");
   });
 
+  it("carries no heading of its own, because the section already has one", async () => {
+    serve(envelope());
+    await renderPeerControl(host, "/v1/wells/3305310451/type-curve", {}, callbacks);
+
+    expect(host.querySelector("h4")).toBeNull();
+  });
+
   it("states the quantile convention, the ladder rung and the peer set", async () => {
     serve(envelope());
     await renderPeerControl(host, "/v1/wells/3305310451/type-curve", {}, callbacks);
