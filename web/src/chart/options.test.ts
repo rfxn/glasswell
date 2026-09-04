@@ -75,6 +75,43 @@ describe("the uPlot options", () => {
   });
 });
 
+describe("a short record gets an axis its own points fit inside", () => {
+  const oneMonth: ProductionData = {
+    ...production,
+    series: {
+      pm: ["2025-10"],
+      oil_bbl: ["70965.000"],
+      oil_bbl_null_semantics: ["reported"],
+      gas_mcf: ["76126.000"],
+      gas_mcf_null_semantics: ["reported"],
+    },
+  };
+
+  it("pins the x range around a single month rather than letting uPlot invent years", () => {
+    // v0.78 N10: a one-month series drew a 31-month axis with its only point outside the
+    // labelled range, because uPlot picks a range from a zero-width domain. The month the
+    // record has is the range the axis draws.
+    const single = chartOptions(toChartSeries(oneMonth), 640);
+    const range = (single.scales?.["x"] as { range?: [number, number] })?.range;
+
+    expect(range).toBeDefined();
+    const point = Date.UTC(2025, 9, 1) / 1000;
+    expect(range?.[0]).toBeLessThan(point);
+    expect(range?.[1]).toBeGreaterThan(point);
+    // Inside two months of the point at either end: wide enough to draw a marker, narrow
+    // enough that the axis cannot label a year the record does not carry.
+    const twoMonths = 62 * 24 * 3600;
+    expect(point - (range?.[0] ?? 0)).toBeLessThanOrEqual(twoMonths);
+    expect((range?.[1] ?? 0) - point).toBeLessThanOrEqual(twoMonths);
+  });
+
+  it("leaves a record long enough to scale itself alone", () => {
+    // Two months and up is a domain uPlot can range from, and pinning it would fight the
+    // window control rather than help it.
+    expect((options.scales?.["x"] as { range?: unknown })?.range).toBeUndefined();
+  });
+});
+
 describe("the month axis never shows one month as two", () => {
   it("drops a repeated label rather than the tick under it", () => {
     // uPlot's own splits for a 7-month series across a wide card: sub-month increments that

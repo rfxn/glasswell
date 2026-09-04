@@ -752,6 +752,29 @@ describe("well card", () => {
     expect(index()).toContain("Neighbours and spacing");
   });
 
+  it("counts the chart's own handles, which land outside the section queue", async () => {
+    // The production request runs beside the queue and the chart chunk imports lazily inside
+    // it, so an index counted when the queue drained missed the section with the most handles
+    // on the card (gate N7, the half the queue could not reach). The stub draws what the real
+    // chart draws for this purpose: a handle in the host it was given.
+    renderChart.mockImplementation((container: HTMLElement) => {
+      const ring = document.createElement("button");
+      ring.className = "gw-handle";
+      container.appendChild(ring);
+    });
+    // The deep link, which is how the gate found it: `?section=lineage` opens the index while
+    // the production request is still in flight, so it is built before the plot exists and
+    // nothing in the section queue will ever run again.
+    window.history.replaceState(null, "", `/?well=${API10}&section=lineage`);
+    await renderWellCard(host, API10, callbacks);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const index = host.querySelector("#gw-section-lineage .gw-lineage-index")?.textContent ?? "";
+    window.history.replaceState(null, "", "/");
+
+    expect(index).toContain("Production");
+  });
+
   it("prints the well type once, qualified, and never as the bare code beside it", async () => {
     // §2.3 replaces the bare `well_type_reported` with `<code> · as <regulator> filed it`.
     // Rendered in both places a reader has to choose which of two rows to believe (gate M1).

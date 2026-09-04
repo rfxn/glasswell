@@ -712,6 +712,11 @@ export async function renderWellCard(
       });
       for (const note of warningNotes(production.meta.warnings)) chartNotes.appendChild(note);
       highlight(chartFrame, termIndex());
+      // The chart's own handles arrive here, outside the section queue: the production request
+      // runs beside it and `sectionsSettled()` is long resolved by the time the plot draws, so
+      // an index counted on the queue alone still missed the section with the most handles
+      // on the card (gate N7's other half).
+      recountLineage?.();
     } catch (error) {
       chartHost.replaceChildren(errorPanel(error, callbacks));
     }

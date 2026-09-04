@@ -38,6 +38,18 @@ export function monthLabels(splits: readonly number[]): string[] {
   });
 }
 
+// A month either side of a single point. uPlot ranges a zero-width domain by inventing one,
+// which drew a 31-month axis under a one-month record with its only point outside the labels
+// (v0.78 N10). Two points already give it a domain to scale from, so the pin is for one.
+const MONTH_SECONDS = 31 * 24 * 3600;
+
+function xScale(chart: ChartSeries): uPlot.Scale {
+  const points = chart.data[0] ?? [];
+  if (points.length !== 1) return { time: true };
+  const only = Number(points[0]);
+  return { time: true, range: [only - MONTH_SECONDS, only + MONTH_SECONDS] };
+}
+
 export function chartOptions(chart: ChartSeries, width: number): uPlot.Options {
   const axisStroke = token("--slate", "#9FB0BC");
   const grid = { stroke: token("--hairline", "#1d2a33") };
@@ -47,7 +59,7 @@ export function chartOptions(chart: ChartSeries, width: number): uPlot.Options {
     padding: [8, 8, 0, 0],
     legend: { show: false },
     cursor: { drag: { x: false, y: false } },
-    scales: { x: { time: true } },
+    scales: { x: xScale(chart) },
     axes: [
       {
         stroke: axisStroke,

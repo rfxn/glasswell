@@ -1,5 +1,12 @@
 import type { Figure } from "../api/envelope.ts";
 
+/**
+ * What stands where a value is not served, in ASCII. The shipped-literal lint the release
+ * schedules refuses an em-dash, and three surfaces each spelled their own; the state beside it
+ * is what says which absence it is, and this only holds the column open.
+ */
+export const ABSENT_MARK = "--";
+
 export interface NullSemanticsMark {
   label: string;
   className: string;
@@ -242,7 +249,7 @@ export function formatVolume(value: string): string {
 }
 
 export function formatVintage(vintage: string | null): string {
-  return vintage ?? "—";
+  return vintage ?? ABSENT_MARK;
 }
 
 /**

@@ -1,3 +1,4 @@
+import { ABSENT_MARK as CARD_ABSENT_MARK } from "../card/format.ts";
 import { dispatchExplain, explainHandle, setExplainHandle } from "../chrome/handle.ts";
 import { disclosure } from "../chrome/notes.ts";
 import { labelElement } from "../glossary/gw-term.ts";
@@ -16,7 +17,9 @@ const NUMBER = new Intl.NumberFormat("en-US");
 /** Not auto-highlighted anywhere: "producing" is an ordinary word on a page full of wells. */
 const PRODUCING_CLASS_TERM = "gt_producing_class";
 const PENDING_MARK = "…";
-const ABSENT_MARK = "—";
+// The card's mark, imported rather than re-spelled: the shipped-literal lint refuses an
+// em-dash, and three surfaces each carried their own copy of this one.
+const ABSENT_MARK = CARD_ABSENT_MARK;
 const FAULT_COPY = "Counts for this area could not be read.";
 const UNMEASURED_COPY = "No jurisdiction has measured wells in this class yet.";
 const PARTIAL_NOTE =
