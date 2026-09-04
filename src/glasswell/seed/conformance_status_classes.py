@@ -50,9 +50,13 @@ MAPPED_CLASSES = (
 MAX_ABSENCE_SHARE = 0.30
 
 # The source column is not null and every cross-cutting decision in the tree is filed under the
-# founding source, as cr_producing_* and cr_tc_* already are. It is the rule's filing anchor and
-# not a claim that the domain belongs to one regulator.
+# founding source, as cr_producing_* and cr_tc_* already are: eight rows deep, and none of them
+# a North Dakota fact. It is the rule's filing anchor and not a claim that the domain belongs to
+# one regulator, and `source_is_filing_anchor` is what lets a reader and a gate tell the two
+# apart. Whether lineage.sources should carry a shape for a decision that interprets no
+# publication is the registry track's question, not this one's.
 SOURCE_ID = "nd_mpr_xlsx"
+FILING_ANCHOR = True
 
 STATUS_CLASS_RULES: tuple[dict[str, object], ...] = (
     {
@@ -66,6 +70,7 @@ STATUS_CLASS_RULES: tuple[dict[str, object], ...] = (
             "absence_class_rule": ABSENCE_BASIS_RULE_ID,
             "symbology_source": DOMAIN_TABLE,
             "module_function": "glasswell.lineage.status_classes:load_status_classes",
+            "source_is_filing_anchor": FILING_ANCHOR,
             "contract_note": (
                 "a declaration the serving path reads, not a frame transformation: the domain"
                 " is rows and the foreign keys are what enforce it"
@@ -105,6 +110,7 @@ STATUS_CLASS_RULES: tuple[dict[str, object], ...] = (
             "filed_code_present_means": "the registered vocabulary has no row for this code",
             "filed_code_absent_means": "the source filed no status",
             "module_function": "glasswell.status_resolution:resolved_status",
+            "source_is_filing_anchor": FILING_ANCHOR,
             "contract_note": (
                 "read at query-assembly time by the one helper every serving path calls, so"
                 " the tile, the facet, the filter, the count and the card change together"
@@ -136,6 +142,7 @@ STATUS_CLASS_RULES: tuple[dict[str, object], ...] = (
             "max_share": MAX_ABSENCE_SHARE,
             "measured_on": "canonical.wells_latest",
             "module_function": "glasswell.lineage.status_classes:absence_share_ceiling",
+            "source_is_filing_anchor": FILING_ANCHOR,
             "contract_note": (
                 "an operational ceiling read by infra/verify.sh V-3 through that symbol, and"
                 " by nothing on the wire: it is a property of a deployment, not of a class"

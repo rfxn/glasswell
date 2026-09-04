@@ -57,6 +57,9 @@ MT_RULES: tuple[dict[str, object], ...] = (
         "applies_to_fields": ["volume", "days_produced", "null_semantics"],
         "spec": {
             "module_function": "glasswell.ingest.mt_bogc:formation_promotion_records",
+            # The source is the filings this decision is about, so it is an interpretation
+            # rather than an anchor. Stated because the domain's own rules are the opposite.
+            "source_is_filing_anchor": False,
             "version": "1",
             "aggregation": "sum_over_pools",
             "volume": "exact sum over the pool filings of the well-month-stream",

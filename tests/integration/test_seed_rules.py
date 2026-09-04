@@ -568,3 +568,32 @@ def test_the_active_length_method_is_zone_free(db, seeded):
         "geodesic",
         None,
     )
+
+
+# The four this track registers, which is the set the assertion below is about. Named rather
+# than derived, because what it pins is that a rule filed away from its own subject says so.
+CROSS_JURISDICTION_DECLARATIONS = (
+    "cr_status_absence_basis_1",
+    "cr_status_absence_share_1",
+    "cr_status_class_domain_1",
+)
+
+
+def test_a_declaration_filed_under_a_source_it_does_not_interpret_says_so(db, seeded):
+    """`lineage.conformance_rules.source_id` is not null and every one of the 29 registered
+    sources is a regulator or publisher dataset. A policy declaration interprets none of them,
+    so the column is being used as a filing anchor, which works and was undocumented: eight
+    rows already do it, the producing and type-curve decisions under the founding North Dakota
+    source, and nothing on the row said which of the two readings applied.
+
+    `source_is_filing_anchor` is that reading, stated. Whether `lineage.sources` should carry a
+    shape for a decision with no publication to interpret is the registry track's question; what
+    this asserts is that a rule filed away from its own subject says so on the row.
+    """
+    rows = {row["rule_id"]: row for row in registry_rows(db)}
+
+    for rule_id in CROSS_JURISDICTION_DECLARATIONS:
+        assert rows[rule_id]["spec"]["source_is_filing_anchor"] is True, rule_id
+    # And the counterpart: a grain rule's source is the filings it decides about, so it is an
+    # interpretation and says the opposite rather than being silent.
+    assert rows["cr_mt_bogc_pool_rollup_1"]["spec"]["source_is_filing_anchor"] is False

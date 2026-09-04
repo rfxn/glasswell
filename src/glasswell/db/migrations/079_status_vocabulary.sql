@@ -70,6 +70,7 @@ select 'cr_status_class_domain_1', 'cr_status_class_domain', null, 'nd_mpr_xlsx'
            'absence_class_rule', 'cr_status_absence_basis_1',
            'symbology_source', 'lineage.status_classes',
            'module_function', 'glasswell.lineage.status_classes:load_status_classes',
+           'source_is_filing_anchor', true,
            'contract_note', 'a declaration the serving path reads, not a frame transformation:'
                             ' the domain is rows and the foreign keys are what enforce it',
            'superseded_by_action', 'a new rule and a single-transaction repoint of every map'
@@ -104,6 +105,7 @@ select 'cr_status_absence_basis_1', 'cr_status_absence_basis', null, 'nd_mpr_xls
            'filed_code_present_means', 'the registered vocabulary has no row for this code',
            'filed_code_absent_means', 'the source filed no status',
            'module_function', 'glasswell.status_resolution:resolved_status',
+           'source_is_filing_anchor', true,
            'contract_note', 'read at query-assembly time by the one helper every serving path'
                             ' calls, so the tile, the facet, the filter, the count and the card'
                             ' change together'),
@@ -136,6 +138,7 @@ select 'cr_status_absence_share_1', 'cr_status_absence_share', null, 'nd_mpr_xls
            'max_share', 0.30,
            'measured_on', 'canonical.wells_latest',
            'module_function', 'glasswell.lineage.status_classes:absence_share_ceiling',
+           'source_is_filing_anchor', true,
            'contract_note', 'an operational ceiling read by infra/verify.sh V-3 through that'
                             ' symbol, and by nothing on the wire: it is a property of a'
                             ' deployment, not of a class'),
@@ -437,6 +440,13 @@ begin
     loop
         -- Skipped, and said, for 078's reasons: aborting would take the migration or the
         -- deploy's seed down with it, and the transient case self-heals within one deploy.
+        --
+        -- Two failure modes skip with a notice and a third aborts, and the asymmetry is
+        -- deliberate. A missing map and a map that went non-unique are transient or local: the
+        -- jurisdiction resolves unmapped until it is fixed, which /v1/status and verify.sh
+        -- report. A class the domain does not hold is neither: the resolved_status foreign key
+        -- refuses the insert and the append fails loudly, because after the absence arm an
+        -- unresolvable jurisdiction draws grey rather than null, and a skip would hide it.
         if to_regclass('lineage.' || quote_ident(registered.mapping_table)) is null then
             raise notice 'status resolver: % (%) registers lineage.% which does not exist; its wells resolve unmapped until it lands',
                 registered.jurisdiction_code, registered.identity_prefix,
