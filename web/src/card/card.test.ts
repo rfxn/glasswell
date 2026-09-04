@@ -1484,6 +1484,11 @@ describe("a cumulative total that some months were allocated into", () => {
 describe("the third production state, and the sections it opens", () => {
   const poolGrain = {
     ...wellEnvelope,
+    links: {
+      ...wellEnvelope.links,
+      pools: "/v1/wells/3305310451/production/pools?from=served",
+      pools_rule: "/v1/conformance/cr_nm_wcproduction_pool_rollup_1",
+    },
     meta: {
       ...wellEnvelope.meta,
       warnings: [
@@ -1523,6 +1528,32 @@ describe("the third production state, and the sections it opens", () => {
     const pools = host.querySelector("#gw-section-pools");
     expect(pools).not.toBeNull();
     expect(pools?.querySelector(".gw-section-toggle")?.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("gates the Pools section on the served link, not on the client recognising a warning", async () => {
+    // M-11: the warning says why the chart is absent; the link says where the record is. A
+    // well that carries the first without the second has no section to open.
+    const unlinked = {
+      ...poolGrain,
+      links: Object.fromEntries(
+        Object.entries(poolGrain.links).filter(([key]) => key !== "pools"),
+      ),
+    };
+    vi.stubGlobal("fetch", vi.fn(stubFetch({ [`/v1/wells/${API10}`]: unlinked })));
+
+    await renderWellCard(host, API10, callbacks);
+
+    expect(host.querySelector("#gw-section-pools")).toBeNull();
+  });
+
+  it("fetches the filings from the path the link served, not one it minted", async () => {
+    const fetchSpy = vi.fn(stubFetch({ [`/v1/wells/${API10}`]: poolGrain }));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await renderWellCard(host, API10, callbacks);
+
+    const asked = fetchSpy.mock.calls.map((call) => String(call[0]));
+    expect(asked.some((url) => url.includes("/v1/wells/3305310451/production/pools?from=served"))).toBe(true);
   });
 
   it("says the pool-grain sentence once, in the panel rather than as a loose warning", async () => {

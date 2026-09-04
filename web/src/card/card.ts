@@ -534,6 +534,10 @@ export async function renderWellCard(
   const poolsBody = document.createElement("div");
   const peerBody = document.createElement("div");
   const poolGrain = well.meta.warnings.find((warning) => warning.code === POOL_GRAIN);
+  // The warning says why the well-level chart is absent; the link says where the record is.
+  // The section is gated on the link, like every other section, and fetches the path served.
+  const poolsPath = well.links?.["pools"];
+  const poolsRule = well.links?.["pools_rule"];
   const lineageBody = document.createElement("div");
   const identityHost = document.createElement("div");
 
@@ -551,6 +555,9 @@ export async function renderWellCard(
       body: cumulativeSlot,
       present: loadCumulative !== undefined,
       ...(loadCumulative ? { load: loadCumulative } : {}),
+      ...(well.links?.["cumulatives_rule"]
+        ? { absentRule: well.links["cumulatives_rule"] }
+        : {}),
     },
     {
       id: "identity",
@@ -600,14 +607,14 @@ export async function renderWellCard(
       // N-24: expanded where the Production section is in its pool-grain state, because the
       // record the reader came for is here rather than there.
       expanded: poolGrain !== undefined,
-      present: poolGrain !== undefined,
+      present: poolsPath !== undefined,
       body: poolsBody,
       load: () =>
         renderPools(
           poolsBody,
-          `/v1/wells/${api10}/production/pools`,
+          poolsPath ?? "",
           query,
-          poolGrain?.rule_id ? { reporting_rule: `/v1/conformance/${poolGrain.rule_id}` } : {},
+          poolsRule ? { reporting_rule: poolsRule } : {},
           {
             onExplain: callbacks.onExplain,
             labelTermFor: (pointer: string) => labelFor(well, pointer),

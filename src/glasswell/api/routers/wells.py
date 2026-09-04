@@ -58,6 +58,7 @@ from glasswell.lineage.ids import format_handle
 from glasswell.lineage.jurisdictions import NEIGHBORS_SCOPE, JurisdictionRegistry
 from glasswell.lineage.selector_registry import identity_selector_term
 from glasswell.marts.cumulatives import (
+    CUMULATIVES_SCOPE,
     LIQUIDS_BASIS,
     MART_STREAMS,
     STATE_API_PREFIXES,
@@ -2636,6 +2637,7 @@ def get_well(
     )
     if pool_grain and row["producing"] == UNKNOWN:
         warnings.append(reported_at_pool_grain(pool_grain))
+    cumulatives_rule = registry.rule_for(row["state_code"], CUMULATIVES_SCOPE)
     geometry = rows(
         connection,
         # No method, no metres: `length_m` is what the withheld figure would have been summed
@@ -2845,6 +2847,25 @@ def get_well(
             **(
                 {"type_curve": f"/v1/wells/{api10}/type-curve"}
                 if type_curve_scope["held_out"]
+                else {}
+            ),
+            # M-11: the card's section list is built from this envelope, so the pool-grain
+            # predicate rides here as a link like every other section's, beside the warning
+            # that says why the well-level chart is absent.
+            **(
+                {
+                    "pools": f"/v1/wells/{api10}/production/pools",
+                    "pools_rule": f"/v1/conformance/{pool_grain['rule_id']}",
+                }
+                if pool_grain and row["producing"] == UNKNOWN
+                else {}
+            ),
+            # WC-P2-4, on the envelope the section list reads: which rule decides whether this
+            # jurisdiction carries a per-well cumulative at all, so an absent Cumulative
+            # section can name it rather than say nothing.
+            **(
+                {"cumulatives_rule": f"/v1/conformance/{cumulatives_rule}"}
+                if cumulatives_rule
                 else {}
             ),
         },
