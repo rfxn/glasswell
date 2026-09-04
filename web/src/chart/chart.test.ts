@@ -678,6 +678,29 @@ describe("brushing a range, and the total that follows it", () => {
     expect(row.textContent).toContain("each point's ⌾ is beside it");
   });
 
+  it("sums normalised points on the decimal string, never through a float", () => {
+    // Three three-decimal points whose float sum is 99.45100000000001: the total is a figure
+    // on the page and has to read like one.
+    const raw = ["7.462", "10.113", "81.876"];
+    const normalised: ProductionData = {
+      ...production(months("2025-01", 3)),
+      streams: ["oil"],
+      series: {
+        pm: months("2025-01", 3),
+        oil_bbl: raw,
+        oil_bbl_report_vintage: raw.map(() => "2026-08-01"),
+        oil_bbl_null_semantics: raw.map(() => "reported"),
+      },
+      _lineage: Object.fromEntries(raw.map((_, index) => [`series.oil_bbl.${index}`, `drv_oil${index}`])),
+      _units: { "series.oil_bbl": "bbl/kft" },
+    };
+    renderChart(host, toChartSeries(normalised), callbacks);
+    drag(0, 2);
+
+    const total = host.querySelector(".gw-running-value")?.textContent ?? "";
+    expect(total).toBe("Oil 99.451 bbl/kft");
+  });
+
   it("counts the classes of the months it summed, not the ones it did not", () => {
     // The first month of the fixture reads zero, so a brush that includes it says so.
     drag(0, 2);

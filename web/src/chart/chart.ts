@@ -10,6 +10,7 @@ import {
   allocationClass,
   formatMonth,
   formatValue,
+  sumDecimal,
   nullSemantics,
   restatement,
   shareDetail,
@@ -606,10 +607,9 @@ function runningTotal(chart: ChartSeries): HTMLElement | null {
   row.appendChild(title);
 
   for (const column of chart.columns) {
-    const sum = column.values.reduce<number>((total, value) => total + (value ?? 0), 0);
     const entry = document.createElement("span");
     entry.className = "gw-running-value";
-    entry.textContent = `${column.label} ${formatValue(String(sum))} ${column.unit}`;
+    entry.textContent = `${column.label} ${formatValue(sumDecimal(column.raw))} ${column.unit}`;
     row.appendChild(entry);
   }
 
