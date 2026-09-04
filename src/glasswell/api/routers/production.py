@@ -704,6 +704,7 @@ def get_well_production(
         )
     )
     columns: list[str] = []
+    point_outputs: dict[str, dict[str, Any]] = {}
     for name in STREAM_COLUMNS:
         if name not in requested:
             continue
@@ -719,7 +720,13 @@ def get_well_production(
                     "code": "series_spans_derivations",
                     "detail": (
                         f"{len(derivations)} derivations contributed to this column;"
-                        " _lineage carries one handle per point"
+                        + (
+                            " _lineage carries one handle per point"
+                            if divisor is None
+                            else " the normalised column is one response derivation citing"
+                            " every one of them, so _lineage carries that handle and each"
+                            " point's month names its own evidence row"
+                        )
                     ),
                     "pointer": f"/series/{column}",
                 }
@@ -729,11 +736,24 @@ def get_well_production(
         first = next(iter(points.values()))
         spans = len(derivations) > 1
         drawn = [None if month in held else _volume(points.get(month)) for month in months]
+        unit = first["unit"] if divisor is None else f"{first['unit']}/kft"
         if divisor is not None:
             drawn = [_normalise(value, divisor) for value in drawn]
+            # A response series may not carry per-point handles (provenance.py refuses them),
+            # so the divided points are evidence rows on the response derivation instead: the
+            # chart addresses a point as `<column handle>&pm=<month>`, and that selector has
+            # to name an output somebody recorded. Each row names the promotion it divided.
+            for month, value in zip(months, drawn, strict=True):
+                if value is None:
+                    continue
+                point_outputs[f"api10={api10}&col={column}&pm={month_label(month)}"] = {
+                    "value": value,
+                    "unit": unit,
+                    "derivation": points[month]["derivation_id"],
+                }
         payload[column] = series(
             drawn,
-            unit=first["unit"] if divisor is None else f"{first['unit']}/kft",
+            unit=unit,
             derivation=first["derivation_id"],
             selector=f"api10={api10}&col={column}",
             granularity=first["granularity"],
@@ -751,7 +771,7 @@ def get_well_production(
                     else _point_handle(api10, column, month, points.get(month))
                     for month in months
                 ]
-                if spans
+                if spans and divisor is None
                 else None
             ),
         )
@@ -827,6 +847,7 @@ def get_well_production(
             ),
             correlation_id=request.state.request_id,
             rule_ids=[divisor.rule_id],
+            point_outputs=point_outputs,
         )
         links["length_rule"] = f"/v1/conformance/{divisor.rule_id}"
     return enveloped(

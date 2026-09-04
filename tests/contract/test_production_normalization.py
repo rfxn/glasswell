@@ -80,6 +80,13 @@ def test_the_handle_changes_with_the_number_and_resolves_both_inputs(
     # The production it divided, and the geometry it divided by.
     assert "canonical.production_monthly" in datasets
     assert "canonical.well_spatial" in datasets
+    # The chart addresses a point by appending its month to the column's handle, so every
+    # drawn month has to be evidence the response derivation recorded, not only the column.
+    month = body["data"]["series"]["pm"][
+        next(index for index, value in enumerate(body["data"]["series"]["oil_bbl"]) if value)
+    ]
+    point = client.get("/v1/explain", params={"h": f"{handle}&pm={month}", "depth": "1"})
+    assert point.status_code == 200, point.text
 
 
 def test_the_rule_that_measured_the_length_is_linked(client: TestClient) -> None:

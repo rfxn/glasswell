@@ -19,7 +19,7 @@ from glasswell.lineage.models import InputRef, OutputSpec
 from glasswell.lineage.store import PostgresRecorder
 from tests.contract.conftest import REPORT_VINTAGE, _insert_production
 from tests.support.fakes import FixedClock
-from tests.support.seed import FIXTURE_ENV, seed_manifest, seed_well
+from tests.support.seed import FIXTURE_ENV, seed_manifest, seed_well, seed_well_spatial
 
 MULTI_MONTH_API10 = "3305310469"
 MONTHS = (date(2025, 12, 1), date(2026, 1, 1), date(2026, 2, 1))
@@ -54,6 +54,32 @@ def _promote_month(connection: psycopg.Connection, month: date, manifest_id: str
         ],
     ) as context:
         context.set_output_hash("c3" * 32)
+        context.set_rows(1)
+    return context.derivation_id
+
+
+def _promote_spatial(connection: psycopg.Connection, manifest_id: str) -> str:
+    """The geometry's own promotion, so the divided point's chain names the layer it read."""
+    with lineage_session(
+        recorder=PostgresRecorder(connection),
+        environment=FIXTURE_ENV,
+        clock=FixedClock(),
+        correlation_id="run_month_join_spatial",
+    ), derive(
+        "canonical.promote",
+        output=OutputSpec(
+            store="postgres",
+            dataset="canonical.well_spatial",
+            partition={"manifest_id": manifest_id},
+        ),
+        params={"source_key": "horizontals.zip"},
+        inputs=[
+            InputRef(
+                kind="manifest", ref_id=manifest_id, role="primary", as_of_vintage=REPORT_VINTAGE
+            )
+        ],
+    ) as context:
+        context.set_output_hash("c4" * 32)
         context.set_rows(1)
     return context.derivation_id
 
@@ -152,3 +178,41 @@ def test_the_series_warns_that_its_points_span_derivations(
 
     spans = [warning for warning in warnings if warning["code"] == "series_spans_derivations"]
     assert [warning["pointer"] for warning in spans] == ["/series/oil_bbl"]
+
+
+def test_the_normalised_arm_serves_the_multi_derivation_shape_and_every_point_resolves(
+    client: TestClient, month_per_manifest: dict[date, str], db: psycopg.Connection
+) -> None:
+    """The shape 99.5 % of North Dakota has -- one promotion per month -- under the arm that
+    divides it. The column's handle is the response derivation's, each point's handle names
+    that derivation's own evidence, and the chain behind any of them reaches the month's own
+    workbook and the geometry it was divided by."""
+    geometry_manifest = seed_manifest(db, sha256="b7" * 32, source_key="horizontals.zip")
+    seed_well_spatial(
+        db,
+        api10=MULTI_MONTH_API10,
+        manifest_id=geometry_manifest,
+        derivation_id=_promote_spatial(db, geometry_manifest),
+    )
+
+    response = client.get(
+        f"/v1/wells/{MULTI_MONTH_API10}/production",
+        params={"stream": "oil", "normalization": "per_lateral_ft"},
+    )
+
+    assert response.status_code == 200, response.text
+    lineage = response.json()["data"]["_lineage"]
+    assert "series.oil_bbl" in lineage
+    assert "series.oil_bbl.0" not in lineage
+    for month in MONTHS:
+        point = f"{lineage['series.oil_bbl']}&pm={month:%Y-%m}"
+        explained = client.get("/v1/explain", params={"h": point, "depth": "full"})
+        assert explained.status_code == 200, explained.text
+        chain = explained.json()["data"]["chains"][0]
+        assert month_per_manifest[month] in chain["terminals"]
+        datasets = {(node.get("output") or {}).get("dataset") for node in chain["nodes"]}
+        assert {
+            "api.well_production",
+            "canonical.production_monthly",
+            "canonical.well_spatial",
+        } <= datasets
