@@ -136,6 +136,108 @@ describe("a well whose regulator reports at the lease", () => {
   });
 });
 
+describe("a Texas well while the allocated mart is empty", () => {
+  // The load window: `scripts/deploy.sh` refreshes the marts before the manual load, which the
+  // runbook says takes two to six hours. The API serves the disclosure on the PRODUCTION
+  // envelope -- the well's own warning was retired when the grain rule superseded the
+  // disclosure rule -- and the card read only the well's, so it printed "No production
+  // reported." over a lease that has filed every month (gate-tx H-10-W).
+  const GRAIN = "/v1/conformance/cr_tx_production_grain_1";
+  const MODEL = "/v1/conformance/cr_tx_allocation_v0_1";
+  const DETAIL =
+    "This well's regulator reports production at the lease (cr_tx_production_grain_1), and" +
+    " the allocated mart holds no rows on this instance, so no well-level figure is served" +
+    " rather than an empty series that would read as nothing produced. cr_tx_allocation_v0_1" +
+    " is the rule that computes it; the lease volumes it splits are promoted at their native" +
+    " grain and are served as the lease's own.";
+  const CUMULATIVE_PENDING = {
+    type: "https://glasswell.rpx.sh/v1/errors/not_found",
+    title: "Not found",
+    status: 404,
+    detail:
+      `no cumulative for ${API10} yet. This jurisdiction is registered for a well-grain` +
+      " cumulative row and the last refresh skipped it: the allocated mart it reads holds no" +
+      " rows on this instance, so nothing is published rather than a total over months nobody" +
+      " has split.",
+  };
+
+  function pendingProduction() {
+    return {
+      ...productionEnvelope,
+      data: {
+        ...productionEnvelope.data,
+        granularity: "lease_reported",
+        streams: [],
+        series: { pm: [] },
+        allocation: null,
+      },
+      links: {
+        ...productionEnvelope.links,
+        allocation_rule: GRAIN,
+        allocation_model_rule: MODEL,
+      },
+      meta: {
+        ...productionEnvelope.meta,
+        warnings: [
+          { code: "production_pending_allocation", detail: DETAIL, pointer: "/production" },
+        ],
+      },
+    };
+  }
+
+  async function render(): Promise<void> {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        stubFetch({
+          [`/v1/wells/${API10}/completions`]: completionContextEnvelope,
+          [`/v1/wells/${API10}/cumulatives`]: CUMULATIVE_PENDING,
+          [`/v1/wells/${API10}/neighbors`]: neighborEnvelope,
+          [`/v1/wells/${API10}/production`]: pendingProduction(),
+          [`/v1/wells/${API10}`]: wellEnvelope,
+        }),
+      ),
+    );
+    await renderWellCard(host, API10, callbacks);
+  }
+
+  it("renders the disclosure the production envelope carries, not an empty chart", async () => {
+    await render();
+    const panel = host.querySelector<HTMLElement>("[data-state='production_pending_allocation']");
+
+    expect(panel).not.toBeNull();
+    expect(panel?.querySelector(".gw-frame-title")?.textContent).toBe(
+      "Production pending allocation",
+    );
+    expect(host.textContent).not.toContain("No production reported.");
+    expect(renderChart).not.toHaveBeenCalled();
+  });
+
+  it("names both rules and links each one", async () => {
+    await render();
+    const panel = host.querySelector<HTMLElement>("[data-state='production_pending_allocation']");
+    const links = [...(panel?.querySelectorAll("a.gw-pending-rule") ?? [])];
+
+    expect(panel?.textContent).toContain("cr_tx_production_grain_1");
+    expect(panel?.textContent).toContain("cr_tx_allocation_v0_1");
+    expect(links.map((link) => link.getAttribute("href"))).toEqual([GRAIN, MODEL]);
+  });
+
+  it("says why the cumulative is absent instead of blaming the snapshot", async () => {
+    await render();
+
+    expect(host.textContent).toContain("the last refresh skipped it");
+    expect(host.textContent).not.toContain("No cumulative: not in the snapshot.");
+  });
+
+  it("leaves an observed well drawing its chart", async () => {
+    await renderWellCard(host, API10, callbacks);
+
+    expect(host.querySelector("[data-state='production_pending_allocation']")).toBeNull();
+    expect(renderChart).toHaveBeenCalled();
+  });
+});
+
 describe("well card", () => {
   it("pins the well, completion, cumulative and production requests to the route as_of", async () => {
     const requested = vi.fn(

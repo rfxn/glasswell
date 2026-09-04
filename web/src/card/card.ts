@@ -2,7 +2,7 @@ import "./gw-figure.ts";
 
 import { ApiError, getEnvelope } from "../api/client.ts";
 import { derivationFor, labelFor, unwrap } from "../api/envelope.ts";
-import type { Envelope, Figure } from "../api/envelope.ts";
+import type { Envelope, Figure, Links } from "../api/envelope.ts";
 import { readState } from "../app/state.ts";
 import { toChartSeries } from "../chart/series.ts";
 import type { ProductionData } from "../chart/series.ts";
@@ -515,9 +515,7 @@ export async function renderWellCard(
   // a Texas well whose lease reports every month (DIR-3, cr_tx_allocation_scope_1).
   const pending = well.meta.warnings.find((warning) => warning.code === PENDING_ALLOCATION);
   if (pending) {
-    chartFrame.replaceWith(
-      pendingProductionPanel(pending, well.links?.["reporting_rule"] ?? undefined),
-    );
+    chartFrame.replaceWith(pendingProductionPanel(pending, ruleLinks(well.links)));
     container.replaceChildren(card);
     highlight(card, termIndex());
     focusPanel(container);
@@ -536,6 +534,19 @@ export async function renderWellCard(
         asOfQuery,
       );
       const data = unwrap(production);
+      // The disclosure the API serves while the allocated mart is empty. It arrives on THIS
+      // envelope, not on the well's -- the well's warning was retired when the grain rule
+      // superseded the disclosure rule -- and without reading it here the card printed "No
+      // production reported." over a lease that has filed every month (gate-tx H-10-W).
+      const pendingSeries = production.meta.warnings.find(
+        (warning) => warning.code === PENDING_ALLOCATION,
+      );
+      if (pendingSeries) {
+        chartFrame.replaceWith(
+          pendingProductionPanel(pendingSeries, ruleLinks(production.links)),
+        );
+        return;
+      }
       if (data.streams.length === 0) {
         chartHost.replaceChildren(emptyState("No production reported."));
         return;
@@ -601,7 +612,12 @@ async function loadWellCumulatives(
     // An ND well the snapshot has not absorbed yet. Distinct from "produced nothing", which
     // is the null cumulative above, and from a read failure, which is the line below.
     if (error instanceof ApiError && error.code === "not_found") {
-      host.replaceChildren(emptyState("No cumulative: not in the snapshot."));
+      // The API's own sentence, where it served one: only the API knows whether this well is
+      // outside the mart's scope or inside a jurisdiction whose mart the last refresh skipped,
+      // and "not in the snapshot" said the first about the second (gate-tx H-10-W, H-10-C).
+      host.replaceChildren(
+        emptyState(error.problem.detail ?? "No cumulative: not in the snapshot."),
+      );
       host.dataset["state"] = "empty";
       return;
     }
@@ -1163,7 +1179,36 @@ export const PENDING_ALLOCATION = "production_pending_allocation";
  * The production slot for a well whose regulator reports at the lease. It is a state, not an
  * absence: the section is titled for what is pending and links to the rule that says so.
  */
-export function pendingProductionPanel(warning: ApiWarning, ruleLink?: string): HTMLElement {
+/** A rule the panel sends the reader to, named by its own id so the link says which. */
+export interface PendingRuleLink {
+  href: string;
+  label: string;
+}
+
+/** `/v1/conformance/cr_tx_allocation_v0_1` -> `cr_tx_allocation_v0_1`. */
+function ruleIdOf(href: string): string {
+  return href.split("/").filter(Boolean).pop() ?? href;
+}
+
+export function ruleLinks(links: Links | undefined): PendingRuleLink[] {
+  // Two rules, and they answer two questions: the decision that admits a well-level figure
+  // for this jurisdiction at all, and the rule that will compute the share once the mart is
+  // built. A panel that names neither is the empty envelope with a heading on it.
+  const wanted: [string, string][] = [
+    ["allocation_rule", "The registered grain decision"],
+    ["allocation_model_rule", "The rule that computes the share"],
+    ["reporting_rule", "The conformance rule that decided this"],
+  ];
+  return wanted.flatMap(([key, sentence]) => {
+    const href = links?.[key];
+    return href ? [{ href, label: `${sentence}: ${ruleIdOf(href)}.` }] : [];
+  });
+}
+
+export function pendingProductionPanel(
+  warning: ApiWarning,
+  links: PendingRuleLink[] = [],
+): HTMLElement {
   const frame = document.createElement("section");
   frame.className = "gw-card-chart gw-pending";
   frame.dataset["state"] = "production_pending_allocation";
@@ -1177,13 +1222,19 @@ export function pendingProductionPanel(warning: ApiWarning, ruleLink?: string): 
     warning.detail ??
     "This well's regulator reports production at the lease, so no well-level series has" +
       " been observed.";
-  const link = document.createElement("a");
-  link.className = "gw-pending-rule";
-  // The rule itself, not the collection: the well header already carries the link, and a
-  // reader sent to a list of thirty-three rules has to find this one again.
-  link.href = ruleLink ?? "/v1/conformance";
-  link.textContent = "See the conformance rule that decided this.";
-  body.append(detail, link);
+  body.append(detail);
+  // The rules themselves, not the collection: the reader sent to a list of thirty-three has
+  // to find these again.
+  const named = links.length
+    ? links
+    : [{ href: "/v1/conformance", label: "See the conformance rule that decided this." }];
+  for (const rule of named) {
+    const link = document.createElement("a");
+    link.className = "gw-pending-rule";
+    link.href = rule.href;
+    link.textContent = rule.label;
+    body.appendChild(link);
+  }
   frame.append(title, body);
   return frame;
 }
