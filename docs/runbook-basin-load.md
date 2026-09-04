@@ -157,7 +157,8 @@ rows permanently — derivations are never rewritten.
 Module form, if the console script is not yet deployed:
 
 ```
-/opt/glasswell/venv/bin/python -m glasswell.ingest.eia_boundaries --layer all
+GLASSWELL_RAW_ROOT=/data/raw \
+  /opt/glasswell/venv/bin/python -m glasswell.ingest.eia_boundaries --layer all
 ```
 
 It prints one JSON line per layer. **Expected, measured, exact:**

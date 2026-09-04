@@ -380,6 +380,7 @@ register.
 sudo systemd-run --unit=t3-nm-t2-stage --collect \
   --property=User=glasswell --property=Group=glasswell \
   --property=Environment=GLASSWELL_DSN=postgresql:///glasswell?host=/var/run/postgresql \
+  --property=Environment=GLASSWELL_RAW_ROOT=/data/raw \
   --property=TimeoutStartSec=3600 --property=MemoryMax=6G \
   --property=EnvironmentFile=-/etc/glasswell/code-version.env \
   --setenv=GLASSWELL_STAGING_ROOT=/data/staging \

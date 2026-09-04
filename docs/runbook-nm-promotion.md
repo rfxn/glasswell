@@ -337,6 +337,7 @@ pgrep -a pg_restore || echo "no restore drill running"
 sudo systemd-run --unit=t3-nm-stage --collect \
   --property=User=glasswell --property=Group=glasswell \
   --property=Environment=GLASSWELL_DSN=postgresql:///glasswell?host=/var/run/postgresql \
+  --property=Environment=GLASSWELL_RAW_ROOT=/data/raw \
   --property=TimeoutStartSec=7200 --property=MemoryMax=6G \
   --setenv=GLASSWELL_STAGING_ROOT=/data/staging \
   /opt/glasswell/venv/bin/python -m glasswell.ingest.nm_ocd \

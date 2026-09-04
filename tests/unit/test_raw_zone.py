@@ -99,3 +99,19 @@ def test_a_malformed_upstream_date_is_not_a_fetch_failure():
     assert _upstream_mtime({"last-modified": "Tue, 18 Aug 2026 06:15:00 GMT"}) is not None
     assert _upstream_mtime({"last-modified": "whenever"}) is None
     assert _upstream_mtime({}) is None
+
+
+def test_a_promotion_opens_a_run_without_declaring_a_raw_zone_it_never_reaches(monkeypatch):
+    """`open_ingest_run` used to resolve the root as the run opened, so a promotion that reads
+    staging and writes canonical -- co_wells, co_production, nm_wells, nm_dims, repromote --
+    would refuse over a raw zone it never touches. It is resolved where it is reached."""
+    from glasswell.ingest.base import IngestRun
+
+    monkeypatch.delenv(RAW_ROOT_ENV, raising=False)
+    run = IngestRun(connection=None, session=None, as_of=None)
+
+    with pytest.raises(RawRootUnset):
+        _ = run.raw_root
+
+    monkeypatch.setenv(RAW_ROOT_ENV, "/data/raw")
+    assert run.raw_root == Path("/data/raw")
