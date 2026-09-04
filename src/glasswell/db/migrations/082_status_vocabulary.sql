@@ -575,6 +575,16 @@ comment on column marts.well_pool_rollup.derivation_id is
 create index if not exists well_pool_rollup_state_idx
     on marts.well_pool_rollup (state_code, production_month);
 
+-- Handles are fail-closed, so the shape that may address a summed point is registered rather
+-- than assumed: one derivation covers the whole mart, so the month is a required term and a
+-- handle without it would resolve a column instead of the point a reader pressed.
+insert into lineage.selector_output_registry
+    (operation, output_dataset, selector_profile, rationale)
+values ('mart.refresh', 'marts.well_pool_rollup', 'well_pool_rollup',
+        'One summed well-month-stream per row, addressed by api10, col and pm, which is the'
+        ' whole of the mart''s primary key rendered in the wire''s own column names.')
+on conflict do nothing;
+
 grant select on marts.well_pool_rollup to glasswell_api;
 grant select, insert, delete, truncate on marts.well_pool_rollup to glasswell_pipeline;
 

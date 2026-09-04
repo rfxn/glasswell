@@ -32,6 +32,7 @@ WELL_CUMULATIVE_PROFILE = "well_cumulative"
 BASIN_CONTEXT_PROFILE = "basin_context"
 NEIGHBOR_PROFILE = "nd_neighbor"
 RESPONSE_PROFILE = "response_output"
+WELL_POOL_ROLLUP_PROFILE = "well_pool_rollup"
 TX_ALLOCATED_PROFILE = "tx_allocated_series"
 TX_LEDGER_PROFILE = "tx_allocation_ledger"
 TX_CROSSWALK_PROFILE = "tx_crosswalk_residual"
@@ -106,6 +107,10 @@ _METHOD_ERROR_COLUMNS = frozenset(
      "mean_wells_per_lease", "excluded_zero_zero_share"}
 )
 _CUMULATIVE_STREAMS = frozenset({"liquid", "gas", "water"})
+# The served column a summed point is addressed by, and the mart stream underneath it. One
+# derivation addresses the whole series, so the selector is what tells two points apart: the
+# handle without `pm` would resolve a column and not the month a reader pressed.
+_ROLLUP_STREAM_OF = {"oil_bbl": "liquid", "gas_mcf": "gas", "water_bbl": "water"}
 _KNOWN_PROFILES = frozenset(
     {
         PRODUCTION_PROFILE,
@@ -117,6 +122,7 @@ _KNOWN_PROFILES = frozenset(
         BASIN_CONTEXT_PROFILE,
         NEIGHBOR_PROFILE,
         RESPONSE_PROFILE,
+        WELL_POOL_ROLLUP_PROFILE,
         TX_ALLOCATED_PROFILE,
         TX_LEDGER_PROFILE,
         TX_CROSSWALK_PROFILE,
@@ -162,6 +168,8 @@ def validate_selector(
         _validate_well_cumulative(connection, derivation, terms, handle=handle)
     elif profile == COMPLETION_POOL_PROFILE:
         _validate_completion_pool(connection, derivation, terms, handle=handle)
+    elif profile == WELL_POOL_ROLLUP_PROFILE:
+        _validate_well_pool_rollup(connection, derivation, terms, handle=handle)
     elif profile == TX_ALLOCATED_PROFILE:
         _validate_tx_allocated(connection, derivation, terms, handle=handle)
     elif profile in (TX_LEDGER_PROFILE, TX_CROSSWALK_PROFILE, ALLOCATION_ERROR_PROFILE):
@@ -201,6 +209,8 @@ def _profile_matches(profile: str, terms: Mapping[str, str]) -> bool:
         return bool(keys & {"api10", "api10_b64"}) and "stream" in keys
     if profile == COMPLETION_POOL_PROFILE:
         return bool(keys & {"completion_key", "completion_key_b64"})
+    if profile == WELL_POOL_ROLLUP_PROFILE:
+        return {"api10", "col", "pm"} <= keys
     if profile == TX_ALLOCATED_PROFILE:
         # `lk` is required, not optional. An optional discriminator whose absence changes what
         # the selector means is the shape the registry challenge objected to, and with the
@@ -409,6 +419,36 @@ def _validate_well_cumulative(
         "select count(*) from marts.well_cumulatives"
         " where derivation_id = %s and api10 = %s and stream = %s",
         (derivation["derivation_id"], api10, stream),
+        derivation=derivation,
+        handle=handle,
+    )
+
+
+def _validate_well_pool_rollup(
+    connection: psycopg.Connection,
+    derivation: Mapping[str, Any],
+    terms: dict[str, str],
+    *,
+    handle: str,
+) -> None:
+    """One summed well-month-stream, addressed by the whole of the mart's primary key.
+
+    The refresh writes one derivation for the whole mart, which is coarser than a promotion's
+    one per month, so the selector carries the month: without `pm` a handle would resolve a
+    column rather than the point a reader pressed.
+    """
+    column = terms.pop("col", None)
+    if column not in _ROLLUP_STREAM_OF:
+        raise InvalidSelector(f"{column!r} is not a selectable rollup column")
+    month = terms.pop("pm", None)
+    api10 = _identity(terms, "api10")
+    if re.fullmatch(r"[0-9]{10}", api10) is None or terms:
+        raise InvalidSelector("rollup selectors require api10, col and pm, and nothing else")
+    _require_one(
+        connection,
+        "select count(*) from marts.well_pool_rollup"
+        " where derivation_id = %s and api10 = %s and production_month = %s and stream = %s",
+        (derivation["derivation_id"], api10, _month(month), _ROLLUP_STREAM_OF[column]),
         derivation=derivation,
         handle=handle,
     )

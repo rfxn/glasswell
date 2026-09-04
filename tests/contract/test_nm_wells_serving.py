@@ -289,6 +289,14 @@ def test_every_point_of_the_summed_series_resolves_to_the_refresh_that_produced_
     ]
 
     assert len(handles) == 2
+    # Fail-closed: the shape that may address a summed point is a registered profile, so a
+    # handle the registry does not admit resolves to a refusal rather than to a figure.
+    resolved = with_the_rollup.get(
+        "/v1/explain", params={"h": handles[0], "depth": 3}
+    )
+    assert resolved.status_code == 200, resolved.text
+    assert handles[0].split("#")[0] in resolved.text
+
     with seeded.cursor() as cursor:
         cursor.execute("select distinct derivation_id from marts.well_pool_rollup")
         refreshes = {row[0] for row in cursor.fetchall()}
