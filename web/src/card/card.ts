@@ -820,8 +820,9 @@ function normalizationControl(
     available: Boolean(detail.lateral_length_ft) && detail.length_method !== "not_served",
     reason: withheld
       ? "This jurisdiction withholds the lateral length by rule, so there is no divisor to" +
-        " normalise by; the rule is linked in the Drilling band."
+        " normalise by."
       : "No lateral length is served for this well, so there is nothing to divide by.",
+    ...(withheld ? { rule: withheld } : {}),
     onChange: (next) => setParams({ normalization: next ? PER_LATERAL_FT : null }),
   };
 }

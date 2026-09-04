@@ -54,6 +54,8 @@ export interface NormalizationControl {
   /** False where no divisor is served: no lateral, a rule that withholds it, no compute CRS. */
   available: boolean;
   reason?: string;
+  /** The rule that withholds the divisor, linked beside the reason where one decided it. */
+  rule?: string;
   onChange(on: boolean): void;
 }
 
@@ -168,7 +170,11 @@ export function renderChart(
         draw();
       }),
     );
-    if (options.normalization) axes.appendChild(normalizationControl(options.normalization));
+    if (options.normalization) {
+      axes.appendChild(normalizationControl(options.normalization));
+      const refused = normalizationReason(options.normalization);
+      if (refused) axes.appendChild(refused);
+    }
     axes.appendChild(
       tableControl(table !== null, (next) => {
         if (!next) {
@@ -576,8 +582,11 @@ function normalizationControl(control: NormalizationControl): HTMLElement {
   toggle.setAttribute("aria-pressed", String(control.on));
   toggle.textContent = "Per 1,000 ft";
   if (!control.available) {
-    toggle.disabled = true;
-    toggle.title = control.reason ?? "No lateral length is served for this well.";
+    // Not `disabled`: a disabled button is out of the tab order, so its title is mouse-only and
+    // a keyboard reader never gets the sentence. Reachable, marked unavailable, and the reason
+    // is text beside it (normalizationReason) rather than a tooltip.
+    toggle.setAttribute("aria-disabled", "true");
+    toggle.setAttribute("aria-describedby", "gw-normalize-reason");
     return toggle;
   }
   toggle.title = control.on
@@ -588,6 +597,22 @@ function normalizationControl(control: NormalizationControl): HTMLElement {
 }
 
 /** What log costs, per stream, in the months on screen. */
+/** The served refusal as text, with the rule that decided it linked where one did. */
+function normalizationReason(control: NormalizationControl): HTMLElement | null {
+  if (control.available) return null;
+  const note = document.createElement("p");
+  note.className = "gw-note gw-normalize-reason";
+  note.id = "gw-normalize-reason";
+  note.textContent = control.reason ?? "No lateral length is served for this well.";
+  if (control.rule) {
+    const link = document.createElement("a");
+    link.href = control.rule;
+    link.textContent = "the rule that decided that";
+    note.append(" See ", link, ".");
+  }
+  return note;
+}
+
 function logZeros(chart: ChartSeries): HTMLElement | null {
   const counted = chart.columns
     .map((column) => ({ label: column.label, zeros: zeroMonths(column) }))

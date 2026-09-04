@@ -738,12 +738,22 @@ describe("the per-lateral-foot control", () => {
       host,
       sparse,
       callbacks,
-      control({ available: false, reason: "cr_mt_paths_length_scope_1 withholds it" }),
+      control({
+        available: false,
+        reason: "cr_mt_paths_length_scope_1 withholds it",
+        rule: "/v1/conformance/cr_mt_paths_length_scope_1",
+      }),
     );
     const toggle = host.querySelector<HTMLButtonElement>(".gw-normalize-toggle");
 
-    expect(toggle?.disabled).toBe(true);
-    expect(toggle?.title).toContain("cr_mt_paths_length_scope_1");
+    expect(toggle?.disabled).toBe(false);
+    expect(toggle?.getAttribute("aria-disabled")).toBe("true");
+    expect(toggle?.tabIndex).toBeGreaterThanOrEqual(0);
+    const reason = host.querySelector(".gw-normalize-reason");
+    expect(reason?.textContent).toContain("cr_mt_paths_length_scope_1 withholds it");
+    expect(reason?.querySelector("a")?.getAttribute("href")).toBe(
+      "/v1/conformance/cr_mt_paths_length_scope_1",
+    );
     toggle?.click();
     expect(changed).not.toHaveBeenCalled();
   });

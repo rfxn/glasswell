@@ -124,9 +124,17 @@
   border-color: var(--cyan);
 }
 
-.gw-normalize-toggle:disabled {
-  opacity: 0.5;
+.gw-normalize-toggle[aria-disabled="true"] {
+  /* Unavailable, and still legible: the reason is text beside it, and the control stays in
+     the tab order so that text is reachable. `--slate` clears 4.5:1 in both themes. */
+  color: var(--slate);
+  border-style: dashed;
   cursor: default;
+}
+
+.gw-normalize-reason {
+  flex-basis: 100%;
+  margin: 0.2rem 0 0;
 }
 
 /* The third vocabulary's own prefix: `gw-state-*` is the null semantics, `gw-alloc-*` the
