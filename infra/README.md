@@ -559,20 +559,23 @@ grep -q '^/swapfile[[:space:]]' /etc/fstab \
     || printf '/swapfile none swap sw 0 0\n' >> /etc/fstab   # survives reboot
 #    5b. Capture the "before" numbers — the Measure section above is the full set.
 sudo -u postgres psql -d glasswell -c 'select * from pg_stat_bgwriter' > /tmp/pg-before.txt
-#    5c. Place, then apply. deploy.sh runs ./install.sh with no arguments, so this is the only
+#    5c. Place, then reload. deploy.sh runs ./install.sh with no arguments, so this is the only
 #        step that puts a changed drop-in on the host — and verify.sh compares the tree's
 #        drop-in to the running server at the end of a deploy, after install.sh, the marts and
 #        the service restarts have all happened. Skipping it is a red deploy that deployed.
+#        A revision of reload-only settings (wal_compression) is complete at the end of 5c:
+#        skip 5d, close on this block's ./verify.sh, and martin keeps its connections.
 cd /opt/glasswell/src/infra && ./install.sh --with-postgres
-#        A revision of reload-only settings (wal_compression) applies here and 5c ends on this
-#        line; martin keeps its connections.
 sudo -u postgres psql -c 'select pg_reload_conf()'
-#        Anything else needs these two, and martin's pooled connections do not survive them.
+#    5d. SKIP THIS unless the revision changed a setting that is not reload-only. Both lines
+#        are downtime: martin's pooled connections do not survive the PostgreSQL restart.
+#        `select name, context from pg_settings where name in (…)` says which class a setting
+#        is in — anything but 'sighup' or 'user' needs this sub-step.
 systemctl restart postgresql@16-main
 systemctl restart martin
-#    5d. default_statistics_target only bites after a re-analyze; nothing else needs this.
+#    5e. default_statistics_target only bites after a re-analyze; nothing else needs this.
 sudo -u postgres vacuumdb --analyze-only --all --jobs 4
-#    5e. The bulk path's work_mem, which the global value deliberately does not carry.
+#    5f. The bulk path's work_mem, which the global value deliberately does not carry.
 sudo -u postgres psql -d glasswell \
     -c "alter role glasswell_pipeline set work_mem = '512MB'" \
     -c "alter role glasswell_pipeline set maintenance_work_mem = '2GB'"

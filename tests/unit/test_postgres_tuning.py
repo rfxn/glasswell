@@ -83,3 +83,11 @@ def test_the_deploy_runbook_says_how_a_reload_only_dropin_reaches_the_host() -> 
     # to the running server at the end, after install, marts and restarts have all happened --
     # so a drop-in shipped without this step is a red deploy that already deployed.
     assert "pg_reload_conf" in step
+
+    reload_at = step.index("pg_reload_conf")
+    restart_at = step.index("systemctl restart postgresql@16-main")
+
+    assert reload_at < restart_at
+    # The restarts are their own numbered sub-step. An operator who pastes the reload-only
+    # path must not take PostgreSQL and martin down for a setting that reloads.
+    assert "5d." in step[reload_at:restart_at]
