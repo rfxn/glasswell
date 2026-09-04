@@ -125,7 +125,9 @@ def test_a_half_repoint_that_leaves_the_domain_seed_behind_blocks_the_release(
     unguarded."""
     migrations = tmp_path / release.MIGRATIONS_DIR
     migrations.mkdir(parents=True)
-    (migrations / "079_status_vocabulary.sql").write_text(
+    # A repointed scratch migration, numbered by nothing: the integer this track's file carries
+    # is the integrator's to assign at the merge train, so no test spells one.
+    (migrations / "001_repointed.sql").write_text(
         "select rule_id, date '2026-09-03', 'v0.81',\n"
         "       'c8cffbc344e1ea36e454e43f3c0a4d7696aa1c0a'\n",
         encoding="utf-8",
