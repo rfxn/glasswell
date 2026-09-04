@@ -572,6 +572,28 @@ body {
   display: none;
 }
 
+/* The coach hangs out of the header into the canvas, and the card opens under exactly that
+   corner: at 1600 it covered the well name outright. With a panel open it steps left of it
+   and drops the tick, which would otherwise point at nothing. */
+body:has(#gw-card:not([hidden])) .gw-hint,
+body:has(#gw-drawer:not([hidden])) .gw-hint {
+  right: calc(var(--gw-card-w) + var(--gw-space-4));
+}
+
+body:has(#gw-card:not([hidden])) .gw-hint::before,
+body:has(#gw-drawer:not([hidden])) .gw-hint::before {
+  display: none;
+}
+
+/* The step aside is keyed on the card's presence, and a collapsed rail is 40 px wide and does
+   not hide it: without this arm the coach sat 540 px from the edge with 500 px of empty canvas
+   beside it. The id inside :has() is what carries the weight -- :has() takes its most specific
+   argument, so #gw-card:not([hidden]) above scores (1,1,0) and an attribute selector alone
+   would lose to it. Equal weight, declared later, so this one wins on order. */
+body:has(#gw-main[data-rail="collapsed"]) .gw-hint {
+  right: calc(var(--gw-rail-strip) + var(--gw-space-4));
+}
+
 /* The tick points at the help button, which is where the sentence lives once this is gone. */
 .gw-hint::before {
   content: "";
