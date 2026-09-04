@@ -130,22 +130,27 @@ export interface RestatementMark {
  * already ships for the disclosure and its list in the same subtree.
  */
 const RESTATEMENT_MARKS: Record<string, RestatementMark> = {
-  as_filed: {
-    label: "as filed",
-    className: "gw-restate-as-filed",
-    title: "One report vintage for this month: no restatement has been captured.",
+  latest_capture: {
+    label: "latest capture",
+    className: "gw-restate-latest",
+    title: "Read at the newest report vintage in this window.",
   },
-  restated: {
-    label: "restated",
-    className: "gw-restate-restated",
+  earlier_capture: {
+    label: "earlier capture",
+    className: "gw-restate-earlier",
     title:
-      "This month was filed more than once and the later filing is drawn. The earlier one is" +
-      " still served: read it with as_of, and the point resolves to a different promotion and" +
-      " a different workbook.",
+      "Read at an older report vintage than the rest of this window: the later pulls did not" +
+      " re-report this month. It says which capture the number came from, and not that the" +
+      " operator re-filed it -- the wire carries one vintage per drawn point, so a restatement" +
+      " nobody captured is a claim this mark must not make.",
   },
 };
 
-/** Whether a month was restated, as its own mark, defaulting to the honest majority case. */
+/**
+ * Which capture a month was read at. Deliberately not "restated": the served point carries one
+ * report vintage, so a month filed twice and a month pulled twice are the same shape on the
+ * wire, and a mark that called either one a restatement would be asserting what it cannot see.
+ */
 export function restatement(state: string): RestatementMark {
   return (
     RESTATEMENT_MARKS[state] ?? {

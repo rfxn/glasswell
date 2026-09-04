@@ -761,7 +761,7 @@ function restatementRows(chart: ChartSeries): HTMLElement[] {
       row.className = "gw-state-row gw-restate-row";
       const name = document.createElement("span");
       name.className = "gw-state-name";
-      name.textContent = `${column.label} · filed`;
+      name.textContent = `${column.label} · capture`;
       const cells = document.createElement("div");
       cells.className = "gw-state-cells gw-restate-cells";
       cells.setAttribute("role", "img");
@@ -769,9 +769,13 @@ function restatementRows(chart: ChartSeries): HTMLElement[] {
         "aria-label",
         `Which months of ${column.label.toLowerCase()} were filed more than once`,
       );
-      const first = column.vintages.find(Boolean) ?? null;
+      // Against the newest vintage in the window, which is the capture the rest of the line is
+      // drawn at: a month read at an older one is the fact this row exists to show.
+      const newest = [...column.vintages].filter(Boolean).sort().pop() ?? null;
       column.vintages.forEach((vintage, index) => {
-        const mark = restatement(vintage && vintage !== first ? "restated" : "as_filed");
+        const mark = restatement(
+          vintage && vintage !== newest ? "earlier_capture" : "latest_capture",
+        );
         const cell = document.createElement("span");
         cell.className = `gw-state-mark ${mark.className}`;
         cell.setAttribute("data-index", String(index));

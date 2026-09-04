@@ -130,11 +130,11 @@
 
 /* The third vocabulary's own prefix: `gw-state-*` is the null semantics, `gw-alloc-*` the
    allocation class, and these say whether the month was filed more than once. */
-.gw-restate-as-filed {
+.gw-restate-latest {
   background: var(--hairline-strong);
 }
 
-.gw-restate-restated {
+.gw-restate-earlier {
   background: var(--amber);
 }
 

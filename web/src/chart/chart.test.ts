@@ -770,18 +770,30 @@ describe("as filed versus as restated, stated rather than toggled", () => {
     expect(details).not.toContain("as first filed");
   });
 
-  it("marks a restated month in its own row, with its own prefix", () => {
+  it("marks the month read at an older capture, in its own row and its own prefix", () => {
     renderChart(host, restated(), callbacks);
     const row = host.querySelector(".gw-restate-row");
 
     // Three vocabularies, three records, three prefixes: `gw-state-*`, `gw-alloc-*` and this.
     expect(row).not.toBeNull();
-    expect(row?.querySelectorAll(".gw-restate-restated").length).toBeGreaterThan(0);
-    expect(row?.querySelectorAll(".gw-vintage-restated").length).toBe(0);
-    expect(host.querySelector(".gw-restate-row .gw-restate-as-filed")).not.toBeNull();
+    expect(row?.querySelectorAll(".gw-restate-earlier").length).toBe(1);
+    expect(row?.querySelectorAll(".gw-vintage-earlier").length).toBe(0);
+    expect(row?.querySelectorAll(".gw-restate-latest").length).toBe(3);
   });
 
-  it("draws no restatement row where nothing was restated", () => {
+  it("says which capture it means, and never that the operator re-filed the month", () => {
+    // The wire carries one report vintage per drawn point, so a month filed twice and a month
+    // pulled twice are the same shape: a mark reading "restated" would assert what it cannot
+    // see, which is the failure the whole section is written against.
+    renderChart(host, restated(), callbacks);
+    const mark = host.querySelector(".gw-restate-earlier");
+
+    expect(mark?.getAttribute("title")).toContain("older report vintage");
+    expect(mark?.getAttribute("title")).toContain("not that the operator re-filed it");
+    expect(host.querySelector(".gw-restate-row")?.textContent).not.toContain("restated");
+  });
+
+  it("draws no capture row where every month came from one pull", () => {
     renderChart(host, sparse, callbacks);
 
     expect(host.querySelector(".gw-restate-row")).toBeNull();
