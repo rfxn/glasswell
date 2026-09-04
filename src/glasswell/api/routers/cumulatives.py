@@ -11,7 +11,7 @@ from fastapi import APIRouter, Path, Request
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.responses import JSONResponse
 
-from glasswell.api.deps import AsOf, Connection, ExplainEffect, rows
+from glasswell.api.deps import AsOf, Connection, ExplainEffect, jurisdictions, rows
 from glasswell.api.errors import ProblemError, problem_responses
 from glasswell.api.examples import (
     EXAMPLE_API10,
@@ -208,6 +208,32 @@ class CumulativeAllocation(BaseModel):
     )
 
 
+# What the last refresh actually wrote, not what the module is configured to cover. A
+# jurisdiction whose allocated mart is empty is skipped by the refresh, and a 404 naming it as
+# covered invites the reader to conclude the well is out of scope -- which is the opposite of
+# both halves of "an empty mart is a jurisdiction that is not ready, not a jurisdiction that
+# filed nothing" (gate-tx H-10-C).
+_LAST_REFRESH = """
+select params from lineage.derivations
+ where output_dataset = 'marts.well_cumulatives'
+ order by created_at desc limit 1
+"""
+
+
+def _skipped_prefixes(connection: Connection) -> tuple[str, ...]:
+    found = rows(connection, _LAST_REFRESH, {})
+    if not found:
+        return ()
+    params = found[0]["params"] or {}
+    return tuple(str(item) for item in (params.get("skipped_prefixes") or ()))
+
+
+def _scope_rule(connection: Connection, prefix: str) -> str | None:
+    """The decision that admits this jurisdiction's well-grain row, read from the registry."""
+    row = jurisdictions(connection).at_prefix(prefix)
+    return row.rule("cumulatives_scope") if row is not None else None
+
+
 @router.get(
     "/wells/{api10}/cumulatives",
     operation_id="get_well_cumulatives",
@@ -300,11 +326,27 @@ def get_well_cumulatives(
 ) -> JSONResponse:
     found = rows(connection, _CUMULATIVES, {"api10": api10})
     if not found:
+        skipped = _skipped_prefixes(connection)
+        prefix = api10[:2]
+        if prefix in skipped:
+            rule = _scope_rule(connection, prefix)
+            raise ProblemError(
+                "not_found",
+                detail=(
+                    f"no cumulative for {api10} yet. This jurisdiction is registered for a"
+                    " well-grain cumulative row and the last refresh skipped it: the allocated"
+                    " mart it reads holds no rows on this instance, so nothing is published"
+                    " rather than a total over months nobody has split. The lease months are"
+                    f" promoted and served at /v1/wells/{api10}/production"
+                    + (f", and {rule} is the rule that computes the shares." if rule else ".")
+                ),
+            )
+        covered = [item for item in STATE_API_PREFIXES if item not in skipped]
         raise ProblemError(
             "not_found",
             detail=(
                 f"no cumulative for {api10}. The cumulative mart covers state API prefix"
-                f" {', '.join(STATE_API_PREFIXES)}; a well outside it has no total here, which"
+                f" {', '.join(covered)}; a well outside it has no total here, which"
                 " is not the same fact as a well that produced nothing."
             ),
         )

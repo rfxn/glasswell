@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import psycopg
@@ -10,6 +10,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from glasswell.api.examples import EXAMPLE_API10
+from glasswell.lineage.capture import lineage_session
+from glasswell.lineage.store import PostgresRecorder
+from glasswell.marts.cumulatives import refresh_well_cumulatives
 from tests.contract.conftest import (
     NEVER_REPORTED_API10,
     STORED_CLASSES_API10,
@@ -19,7 +22,56 @@ from tests.contract.conftest import (
 from tests.contract.conftest import (
     NM_API10 as OUT_OF_SCOPE_API10,
 )
-from tests.support.seed import seed_well
+from tests.support.fakes import FixedClock
+from tests.support.seed import FIXTURE_ENV, seed_well
+
+
+@pytest.fixture
+def before_the_allocation(seeded: psycopg.Connection, client: TestClient) -> TestClient:
+    """The load window: the allocated mart emptied and the cumulative mart refreshed over it,
+    which is what `scripts/deploy.sh` does on every deploy before the manual load."""
+    with seeded.cursor() as cursor:
+        cursor.execute("delete from marts.tx_allocated_production")
+    seeded.commit()
+    with lineage_session(
+        recorder=PostgresRecorder(seeded),
+        environment=FIXTURE_ENV,
+        clock=FixedClock(datetime(2026, 8, 27, 7, 0, 0, tzinfo=UTC)),
+        correlation_id="run_contract_cumulatives_pending",
+    ):
+        refresh_well_cumulatives(seeded)
+    seeded.commit()
+    return client
+
+
+def test_a_jurisdiction_whose_mart_is_pending_is_not_told_it_is_out_of_scope(
+    before_the_allocation: TestClient,
+) -> None:
+    """H-10-C. The refresh skipped 42 and the 404 asserted the mart covers 42, which invites
+    the reader to conclude the well is outside the scope -- the opposite of both halves of
+    "an empty mart is a jurisdiction that is not ready, not a jurisdiction that filed
+    nothing"."""
+    response = before_the_allocation.get(f"/v1/wells/{TX_API10}/cumulatives")
+
+    assert response.status_code == 404
+    detail = response.json()["detail"]
+    assert "the last refresh skipped it" in detail
+    assert "cr_tx_allocation_v0_1" in detail
+    assert f"/v1/wells/{TX_API10}/production" in detail
+    assert "The cumulative mart covers state API prefix" not in detail
+
+
+def test_a_well_outside_every_registered_scope_is_still_told_which_prefixes_are_covered(
+    before_the_allocation: TestClient,
+) -> None:
+    """The other arm, and the reason the sentence is read from the refresh: with 42 skipped
+    the covered list is what the refresh wrote, not what the module is configured with."""
+    response = before_the_allocation.get(f"/v1/wells/{OUT_OF_SCOPE_API10}/cumulatives")
+
+    assert response.status_code == 404
+    detail = response.json()["detail"]
+    assert "The cumulative mart covers state API prefix" in detail
+    assert "42" not in detail.split(";")[0]
 
 
 @pytest.fixture
