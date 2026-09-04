@@ -457,7 +457,6 @@ def _cumulative(
 
 
 ALLOCATED_COVERAGE = "observed_with_allocated"
-ALLOCATION_RULE = "cr_tx_allocation_v0_1"
 
 _SHARES = """
 select count(*) as shares, min(allocation_model_id) as model_id,
@@ -478,10 +477,13 @@ def _allocation(
         return None
     counted = rows(connection, _SHARES, {"api10": api10})
     detail = counted[0] if counted else {}
+    # The mart's own rows carry the rule; where a row is missing the registration is asked
+    # rather than a literal answering for it (gate-tx RV-3).
+    registered = _scope_rule(connection, api10[:2])
     return {
         "basis": "allocated",
         "model_id": detail.get("model_id"),
-        "rule_id": detail.get("rule_id") or ALLOCATION_RULE,
+        "rule_id": detail.get("rule_id") or registered,
         "months": {
             stream: figure(
                 int(row["allocated_months"] or 0),

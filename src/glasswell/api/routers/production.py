@@ -38,6 +38,7 @@ from glasswell.lineage.ids import format_handle
 from glasswell.lineage.jurisdictions import JurisdictionRegistry
 from glasswell.lineage.selector_registry import identity_selector_term
 from glasswell.lineage.vintages import select_production
+from glasswell.marts.cumulatives import CUMULATIVES_SCOPE
 from glasswell.status.source_health import source_health_data
 
 router = APIRouter(tags=["wells"])
@@ -59,9 +60,6 @@ STREAM_COLUMNS = {"oil": "oil_bbl", "gas": "gas_mcf", "water": "water_bbl"}
 ALLOCATED_STREAM_COLUMNS = {"liquid": "oil_bbl", "gas": "gas_mcf"}
 ALLOCATED_STREAM_OF = {"oil": "liquid", "gas": "gas"}
 ALLOCATION_MART = "marts.tx_allocated_production"
-# The rule that computes the share, as against the grain decision that admits one. Read from
-# the mart's own rows where there are rows; named here for the arm that has none to read.
-ALLOCATION_MODEL_RULE = "cr_tx_allocation_v0_1"
 
 
 def stream_basis(stream: str, state_code: str | None, *, registry: JurisdictionRegistry):
@@ -605,11 +603,12 @@ def get_well_production(
             # The mart holds one snapshot per key, so an older as_of would return the current
             # allocation labelled with the caller's date -- and the back-projection makes the
             # two differ by the whole well set. A refusal is a served class, not a silence.
+            model_rule = registry.rule_for(state_code, CUMULATIVES_SCOPE)
             raise ProblemError(
                 "as_of_not_supported",
                 detail=(
                     f"as_of is not supported on this well series: {allocated_rule['rule_id']}"
-                    " admits an allocated figure and cr_tx_allocation_v0_1 records"
+                    f" admits an allocated figure and {model_rule} records"
                     " as_of_supported: false, because the mart holds one snapshot per key --"
                     " so an older date would be answered with today's allocation. The lease"
                     " series it is computed from is bitemporal and answers as_of."
@@ -767,7 +766,17 @@ def _allocated_response(
     points = allocated_rows(connection, api10, requested, window)
     if not points:
         return _allocation_not_built(
-            request, connection, api10=api10, rule=rule, explain=explain
+            request,
+            connection,
+            api10=api10,
+            rule=rule,
+            # The rule that computes the share, read from the registration rather than written
+            # here: which rule a jurisdiction's shares are computed under is a mapping
+            # decision, and one that lives in a serving module is stranded the day a
+            # supersession moves it (gate-tx RV-3). The mart's own rows carry it where there
+            # are rows; this is the arm that has none to read.
+            model_rule=registry.rule_for(state_code, CUMULATIVES_SCOPE),
+            explain=explain,
         )
     months = sorted({row["production_month"] for row in points})
     payload: dict[str, Any] = {"pm": [month_label(month) for month in months]}
@@ -940,6 +949,7 @@ def _allocation_not_built(
     *,
     api10: str,
     rule: Mapping[str, Any],
+    model_rule: str | None,
     explain: Any,
 ) -> JSONResponse:
     """The disclosure an instance owes while its allocated mart is empty.
@@ -976,7 +986,7 @@ def _allocation_not_built(
                     "This well's regulator reports production at the lease"
                     f" ({rule['rule_id']}), and the allocated mart holds no rows on this"
                     " instance, so no well-level figure is served rather than an empty series"
-                    " that would read as nothing produced. cr_tx_allocation_v0_1 is the rule"
+                    f" that would read as nothing produced. {model_rule} is the rule"
                     " that computes it; the lease volumes it splits are promoted at their"
                     " native grain and are served as the lease's own."
                 ),
@@ -986,7 +996,11 @@ def _allocation_not_built(
         links={
             "well": f"/v1/wells/{api10}",
             "allocation_rule": f"/v1/conformance/{rule['rule_id']}",
-            "allocation_model_rule": f"/v1/conformance/{ALLOCATION_MODEL_RULE}",
+            **(
+                {"allocation_model_rule": f"/v1/conformance/{model_rule}"}
+                if model_rule
+                else {}
+            ),
         },
         explain=inline_for(connection, explain),
     )

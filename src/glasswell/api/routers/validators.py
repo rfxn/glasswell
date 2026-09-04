@@ -30,7 +30,6 @@ from glasswell.seed.jurisdictions import SERVING_JURISDICTION_RULES
 
 router = APIRouter(tags=["validators"])
 
-ALLOCATION_RULE = "cr_tx_allocation_v0_1"
 CROSSWALK_ROLE_RULE = "cr_tx_ewa_role_1"
 ERROR_RULE = "cr_alloc_v0_error_bounds_1"
 DEGRADED_AT = "unallocated_share_degraded_at"
@@ -49,11 +48,28 @@ CAUSES = (
     "no_eligible_well",
 )
 
-EXAMPLE_JURISDICTION = next(
-    str(row["jurisdiction_code"])
-    for row in SERVING_JURISDICTION_RULES
-    if row["rule_id"] == ALLOCATION_RULE
-)
+# The jurisdiction the example addresses, read out of the registrations rather than written
+# as a rule id: a literal here is stranded the day a supersession moves the rule (gate-tx
+# RV-3). A registration that allocates is one whose cumulative scope is admitted by a rule
+# other than its own grain decision -- North Dakota and Colorado cite one rule for both, and
+# Texas's scope names the allocation. An example this picked wrongly would 404, and
+# `tests/contract/test_openapi_examples.py` exercises every served example against the API,
+# which is what holds this to answering.
+def _example_jurisdiction() -> str:
+    grain = {
+        str(row["jurisdiction_code"]): row["rule_id"]
+        for row in SERVING_JURISDICTION_RULES
+        if row["decision"] == GRAIN_DECISION
+    }
+    return next(
+        str(row["jurisdiction_code"])
+        for row in SERVING_JURISDICTION_RULES
+        if row["decision"] == CUMULATIVES_SCOPE
+        and grain.get(str(row["jurisdiction_code"])) != row["rule_id"]
+    )
+
+
+EXAMPLE_JURISDICTION = _example_jurisdiction()
 
 # Scoped by the registration's own identity prefix, on every query that has an api10 to scope
 # by. Unscoped, this route answered for North Dakota with Texas's totals, Texas's model id and
@@ -210,6 +226,7 @@ def _conservation(
     identity_prefix: str,
     foreign: int,
     jurisdiction: str,
+    rule_id: str,
 ) -> dict[str, Any]:
     """V-1. The split is exact by construction, so the residual is a coverage measure.
 
@@ -225,7 +242,7 @@ def _conservation(
         return {
             "name": "conservation",
             "outcome": "not_available",
-            "rule_id": ALLOCATION_RULE,
+            "rule_id": rule_id,
             "reasons": [
                 "the allocation ledger holds another jurisdiction's rows, so no residual here"
                 f" is {jurisdiction}'s"
@@ -238,7 +255,7 @@ def _conservation(
         return {
             "name": "conservation",
             "outcome": "not_available",
-            "rule_id": ALLOCATION_RULE,
+            "rule_id": rule_id,
             "reasons": ["the allocated mart has not been built on this instance"],
         }
 
@@ -255,7 +272,7 @@ def _conservation(
     block: dict[str, Any] = {
         "name": "conservation",
         "outcome": "measured",
-        "rule_id": ALLOCATION_RULE,
+        "rule_id": rule_id,
         "reasons": [],
         "lease_months_total": figure(
             int(counts["lease_months"]),
@@ -515,7 +532,7 @@ def allocation_validators(
     # The threshold the Status check reads is the rule's, so no engineer invents one: half a
     # percent of Texas volume with no well to carry it is a data question, and below that it is
     # the long tail of leases whose only well predates the crosswalk.
-    declared = rows(connection, _DEGRADED_AT, {"rule_id": ALLOCATION_RULE})
+    declared = rows(connection, _DEGRADED_AT, {"rule_id": admitting})
     degraded_at = (
         Decimal(declared[0]["degraded_at"])
         if declared and declared[0]["degraded_at"] is not None
@@ -531,6 +548,7 @@ def allocation_validators(
             identity_prefix=prefix,
             foreign=foreign,
             jurisdiction=jurisdiction,
+            rule_id=admitting,
         ),
         _crosswalk(connection, foreign=foreign, jurisdiction=jurisdiction),
         _independent_truth(connection),
@@ -555,13 +573,13 @@ def allocation_validators(
         partition={"jurisdiction": jurisdiction},
         input_derivations=sorted(_derivations(blocks)),
         correlation_id=request.state.request_id,
-        rule_ids=[ALLOCATION_RULE, ERROR_RULE],
+        rule_ids=[admitting, ERROR_RULE],
     )
     return enveloped(
         request,
         data,
         links={
-            "allocation_rule": f"/v1/conformance/{ALLOCATION_RULE}",
+            "allocation_rule": f"/v1/conformance/{admitting}",
             "error_bounds_rule": f"/v1/conformance/{ERROR_RULE}",
         },
         explain=inline_for(connection, explain),
