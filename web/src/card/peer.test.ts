@@ -181,3 +181,14 @@ describe("what the quantiles are measured in", () => {
     expect(host.querySelector(".gw-peer-table caption")?.textContent).toContain("bbl");
   });
 });
+
+describe("the relation at a phone width", () => {
+  it("offers a break at every underscore, so the token never leaves one letter on its own line", async () => {
+    serve(envelope());
+    await renderPeerControl(host, "/v1/wells/3305310451/type-curve", {}, callbacks);
+
+    const cell = host.querySelector(".gw-peer-relation");
+    expect(cell?.textContent).toBe("control_type_curve_not_a_forecast");
+    expect(cell?.querySelectorAll("wbr")).toHaveLength(5);
+  });
+});

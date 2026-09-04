@@ -83,9 +83,18 @@ function facts(control: PeerControl, envelope: Envelope<PeerControl>): HTMLEleme
     const term = document.createElement("dt");
     term.appendChild(labelElement(label, pointer ? labelFor(envelope, pointer) : null));
     const cell = document.createElement("dd");
-    if (label === "Relation") cell.className = "gw-peer-relation";
     cell.setAttribute("data-no-glossary", "");
-    cell.textContent = value;
+    if (label === "Relation") {
+      cell.className = "gw-peer-relation";
+      // Verbatim, with a break opportunity after each underscore: at 390 the token otherwise
+      // breaks mid-word and leaves one letter on a line of its own.
+      value.split(/(?<=_)/).forEach((part, index) => {
+        if (index > 0) cell.appendChild(document.createElement("wbr"));
+        cell.appendChild(document.createTextNode(part));
+      });
+    } else {
+      cell.textContent = value;
+    }
     list.append(term, cell);
   }
   return list;
