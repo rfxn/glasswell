@@ -870,6 +870,79 @@ class TestAfterJob:
         assert harness.status("second")["result"] == "complete"
 
 
+class TestTheWaitHasADeadline:
+    """`--after-job` follows a job that may never finish, and a follower that waits forever is
+    a job nobody is told is stuck. The wait is bounded, and the bound is in the file.
+    """
+
+    def test_a_follower_that_waits_past_its_deadline_stops_and_says_so(
+        self, harness: Harness
+    ) -> None:
+        harness.run("--record", "--job", "first", "--steps-total", "1", "--step", "one",
+                    "--step-index", "1", "--result", "running")
+
+        second = harness.run(
+            "--job", "second", "--after-job", "first", "--after-timeout", "1",
+            "--", "two", "/bin/echo", '{"ran": 1}',
+            GLASSWELL_WAIT_INTERVAL="1",
+        )
+
+        assert second.returncode == 1
+        status = harness.status("second")
+        assert status["result"] == "stopped"
+        assert status["finished"] is not None
+        assert status["steps"] == []
+        assert not any("second-1-two" in line for line in harness.launches()), (
+            "the chain started behind a job that had not finished"
+        )
+        assert "1 second" in harness.log("second") or "1 seconds" in harness.log("second")
+
+    def test_the_waiting_state_carries_the_deadline_it_is_waiting_to(
+        self, harness: Harness
+    ) -> None:
+        harness.run("--record", "--job", "first", "--steps-total", "1", "--step", "one",
+                    "--step-index", "1", "--result", "running")
+
+        waiting = subprocess.Popen(
+            [str(RUNNER), "--job", "second", "--after-job", "first", "--after-timeout", "600",
+             "--", "two", "/bin/echo", '{"ran": 1}'],
+            env={**harness.env, "GLASSWELL_WAIT_INTERVAL": "1"},
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        try:
+            observed = None
+            for _ in range(100):
+                path = harness.runs / "second.json"
+                if path.exists():
+                    observed = json.loads(path.read_text(encoding="utf-8"))
+                    if observed["result"] == "waiting":
+                        break
+                time.sleep(0.1)
+            assert observed is not None, "the waiting job never wrote a status file"
+            assert observed["result"] == "waiting", observed
+            # A poller reads what it is waiting for and until when, from the file alone.
+            assert observed["step"].startswith("after first until ")
+            assert STAMP.match(observed["step"].rsplit(" ", 1)[-1]), observed["step"]
+        finally:
+            waiting.kill()
+            waiting.wait(timeout=10)
+
+    def test_the_default_deadline_is_stated_where_the_option_is(self) -> None:
+        # An unstated default is one an operator has to read the source for.
+        usage = subprocess.run(
+            [str(RUNNER), "--help"], capture_output=True, text=True, check=True
+        ).stdout
+
+        assert re.search(r"--after-timeout .*default 86400", usage), usage
+
+    def test_a_deadline_that_is_not_a_number_is_refused(self, harness: Harness) -> None:
+        result = harness.run(
+            "--job", "second", "--after-timeout", "soon", "--", "two", "/bin/echo", "never"
+        )
+
+        assert result.returncode == 2
+
+
 class TestStatusFlag:
     def test_it_prints_the_json_for_a_job(self, harness: Harness) -> None:
         harness.run(*two_steps())

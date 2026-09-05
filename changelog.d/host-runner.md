@@ -18,7 +18,10 @@
 - [New] `--resume` continues a job whose status says `stopped` under the same job name, log
       and status file, numbering the new steps after the ones already recorded, and
       `--after-job` starts one job behind another by reading that job's status file rather
-      than a unit's `Result`, which answers `success` for a unit that has been collected
+      than a unit's `Result`, which answers `success` for a unit that has been collected;
+      the wait is bounded by `--after-timeout` (default 86400 s) and the deadline it is
+      waiting to is in the `waiting` state, so a follower behind a job that never finishes
+      stops and says so rather than waiting forever
 - [New] install.sh places the runner at `/usr/local/sbin/host-runner.sh` and creates
       `/var/lib/glasswell/runs` (0750) and `/var/log/glasswell`; verify.sh asserts both
       directories and holds the installed runner byte-identical to the tree

@@ -14,6 +14,7 @@ WAIT_INTERVAL="${GLASSWELL_WAIT_INTERVAL:-30}"
 
 DEFAULT_MEMORY=6G
 DEFAULT_TIMEOUT=3600
+DEFAULT_AFTER_TIMEOUT=86400
 NAME_PATTERN='^[A-Za-z0-9][A-Za-z0-9._-]*$'
 INTEGER_PATTERN='^[0-9]+$'
 
@@ -38,6 +39,9 @@ options:
                         the earlier steps kept and the new ones numbered after them
   --after-job <job>     wait for another job's status file to finish, and refuse to start
                         behind one that stopped
+  --after-timeout <s>   how long --after-job waits before it stops instead (default 86400).
+                        The job it follows may never finish; a follower that waits forever is
+                        a stuck job nobody is told about
   --stop-on-fail        stop at the first failing step (the default)
   --keep-going          run every step even after one fails; the job still reports `stopped`
   --user/--group <n>    the unit's User=/Group= (default glasswell)
@@ -95,6 +99,7 @@ force=0
 resume=0
 detach=0
 after_job=""
+after_timeout=$DEFAULT_AFTER_TIMEOUT
 stop_on_fail=1
 default_user=glasswell
 default_group=glasswell
@@ -132,6 +137,7 @@ while [[ $# -gt 0 ]]; do
         --force) force=1; shift ;;
         --resume) resume=1; shift ;;
         --after-job) after_job=$2; shift 2 ;;
+        --after-timeout) after_timeout=$2; shift 2 ;;
         --stop-on-fail) stop_on_fail=1; shift ;;
         --keep-going) stop_on_fail=0; shift ;;
         --user) default_user=$2; shift 2 ;;
@@ -335,6 +341,8 @@ if [[ $mode == record ]]; then
     esac
     exit 0
 fi
+
+[[ $after_timeout =~ $INTEGER_PATTERN ]] || fail_usage "--after-timeout must be a number of seconds"
 
 if [[ -n $after_job ]]; then
     [[ $after_job =~ $NAME_PATTERN ]] || fail_usage "job name '$after_job' is not a name"
@@ -569,12 +577,25 @@ step_summary() {
 # The job this one follows is read from its status file, never from a unit's Result: a
 # transient unit that has been collected answers `success` however it ended.
 wait_for_job() {
-    local awaited="$RUNS_DIR/$after_job.json" finished_at result_word
-    printf '== waiting for job %s (%s)\n' "$after_job" "$awaited"
+    local awaited="$RUNS_DIR/$after_job.json" finished_at result_word expires deadline
+    expires=$(( $(date -u +%s) + after_timeout ))
+    deadline=$(date -u -d "@$expires" +%Y-%m-%dT%H:%M:%SZ)
+    printf '== waiting for job %s (%s) until %s (%s seconds)\n' \
+        "$after_job" "$awaited" "$deadline" "$after_timeout"
     while :; do
         finished_at=$(status_field "$awaited" finished)
         [[ -n $finished_at ]] && break
-        write_status waiting "after $after_job" 0 "$after_job" null null
+        # The job followed may never finish, and a follower that waits forever is a stuck job
+        # nobody is told about. The deadline is in the step label, so a poller reads how long
+        # it has out of the same file it reads the state from.
+        if (( $(date -u +%s) >= expires )); then
+            printf 'STOP: job %s has not finished after %s seconds (deadline %s) — this job does not wait longer\n' \
+                "$after_job" "$after_timeout" "$deadline"
+            write_status stopped "after $after_job until $deadline" 0 "$after_job" 1 \
+                "$(json_string "$(now)")"
+            exit 1
+        fi
+        write_status waiting "after $after_job until $deadline" 0 "$after_job" null null
         sleep "$WAIT_INTERVAL"
     done
     result_word=$(status_field "$awaited" result)
