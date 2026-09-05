@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from tests.conftest import daemon_address, docker_candidates
+from tests.conftest import daemon_address, docker_candidates, provided_server_identity
 
 
 @pytest.mark.parametrize(
@@ -56,3 +56,35 @@ def test_without_a_docker_host_the_local_endpoints_are_tried_in_turn():
     candidates = docker_candidates({})
     assert candidates[0] == {}
     assert daemon_address(candidates[-1]) is None
+
+
+def test_a_provided_server_yields_the_password_and_the_sibling_address():
+    """When the workflow owns the server there is no container to inspect, so the two things
+    `postgres_password` and `database_address_for_containers` answer come out of the DSN."""
+    password, address = provided_server_identity(
+        "postgresql://glasswell:s3cret@172.17.0.2:5432/{database}?connect_timeout=5"
+    )
+
+    assert password == "s3cret"
+    assert address == "172.17.0.2:5432"
+
+
+def test_a_provided_server_without_a_port_still_names_the_one_postgres_listens_on():
+    assert provided_server_identity("postgresql://glasswell:s3cret@db/{database}") == (
+        "s3cret",
+        "db:5432",
+    )
+
+
+@pytest.mark.parametrize(
+    "dsn",
+    [
+        "postgresql://glasswell@172.17.0.2:5432/{database}",
+        "postgresql://glasswell:s3cret@/{database}",
+    ],
+)
+def test_a_provided_server_missing_either_half_is_refused_rather_than_left_empty(dsn: str):
+    """Empty answers surfaced 400 lines away as `fe_sendauth: no password supplied` and
+    `No route to host` in 37 tests. The session refuses to start instead."""
+    with pytest.raises(RuntimeError, match="must carry a password and a host"):
+        provided_server_identity(dsn)

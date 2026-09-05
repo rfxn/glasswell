@@ -257,6 +257,24 @@ def ensure_cluster_roles(dsn_template: str) -> None:
                 admin.execute(f"create role {name} {attributes}".strip())
 
 
+def provided_server_identity(dsn_template: str) -> tuple[str, str]:
+    """The password and the host:port a sibling container uses, read out of a provided DSN.
+
+    `postgres_password` and `database_address_for_containers` are set from the container this
+    session started; on the `GLASSWELL_TEST_SERVER_DSN` path there is no such container, and
+    they were left empty. Every test that hands a DSN to a subprocess or to a martin container
+    then built one with no password: 35 of them failed `fe_sendauth: no password supplied` and
+    two more `No route to host` on the first sharded CI run that got that far.
+    """
+    parts = urlsplit(dsn_template.format(database="postgres"))
+    if not parts.password or not parts.hostname:
+        raise RuntimeError(
+            f"{SERVER_DSN_ENV} must carry a password and a host that a sibling container can"
+            " reach; anything a test hands to a subprocess is built from them"
+        )
+    return parts.password, f"{parts.hostname}:{parts.port or 5432}"
+
+
 def worker_scoped(name: str) -> str:
     """A fixed database name, made unique per xdist worker.
 
@@ -271,11 +289,13 @@ def worker_scoped(name: str) -> str:
 @pytest.fixture(scope="session")
 def postgres_server() -> Iterator[str]:
     """Session-scoped PostGIS container. Yields a DSN template with a {database} slot."""
+    global _session_container, _session_volume, _session_container_address, _session_password
     provided = os.environ.get(SERVER_DSN_ENV)
     if provided:
         # The workflow starts and removes the server the shards share, because a worker's
         # teardown is not guaranteed and a leaked container outlives the job that made it.
         _wait_until_ready(provided.format(database="postgres"))
+        _session_password, _session_container_address = provided_server_identity(provided)
         ensure_cluster_roles(provided)
         yield provided
         return
@@ -287,7 +307,6 @@ def postgres_server() -> Iterator[str]:
                         f" ({_docker_probe_error})", pytrace=False)
         pytest.skip(f"docker unavailable, integration tier skipped ({_docker_probe_error})")
 
-    global _session_container, _session_volume, _session_container_address, _session_password
     _ensure_image(environment)
     name = f"glasswell-test-{uuid4().hex[:8]}"
     volume = f"{name}-data"
@@ -361,6 +380,7 @@ def session_resources(postgres_server: str) -> tuple[str, str]:
 def postgres_password(postgres_server: str) -> str:
     """`ConnectionInfo.dsn` never carries the password, so anything that reconnects from one
     needs it out of band."""
+    assert _session_password, "the session has no password recorded; nothing can reconnect"
     return _session_password
 
 
@@ -368,6 +388,7 @@ def postgres_password(postgres_server: str) -> str:
 def database_address_for_containers(postgres_server: str) -> str:
     """What a container started by a test puts in its DSN. Not the same host:port the test
     process uses once the daemon is remote."""
+    assert _session_container_address, "the session has no container-reachable address recorded"
     return _session_container_address
 
 
