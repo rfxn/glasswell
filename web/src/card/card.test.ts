@@ -1,13 +1,20 @@
 // @vitest-environment happy-dom
+import { readFileSync } from "node:fs";
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ChartSeries } from "../chart/series.ts";
+import { buildIndex } from "../glossary/index.ts";
+import { publishGlossary } from "../glossary/store.ts";
 import { statusColour } from "../map/status.ts";
 
-const renderChart = vi.fn<(container: HTMLElement, chart: ChartSeries) => void>();
+const renderChart =
+  vi.fn<(container: HTMLElement, chart: ChartSeries, callbacks: unknown, options: unknown) => void>();
 const selectWell = vi.fn<(api10: string | null, source: string) => void>();
 vi.mock("../chart/chart.ts", () => ({
-  renderChart: (container: HTMLElement, chart: ChartSeries) => renderChart(container, chart),
+  // Every argument forwarded: the R-20 case reads what the card hands the chart, not the frame.
+  renderChart: (container: HTMLElement, chart: ChartSeries, callbacks: unknown, options: unknown) =>
+    renderChart(container, chart, callbacks, options),
 }));
 vi.mock("../bus.ts", () => ({
   selectWell: (api10: string | null, source: string) => selectWell(api10, source),
@@ -26,11 +33,21 @@ const {
   wellEnvelope,
 } = await import("../test/fixtures.ts");
 
+const { resetSections, sectionsSettled } = await import("./sections.ts");
+
 const callbacks = { onExplain: vi.fn(), onClose: vi.fn() };
 let host: HTMLElement;
 
+/** A collapsed lazy section makes no request until a reader opens it, so a test that
+ *  asserts its body has to open it first, which is the contract rather than a detour. */
+async function expand(id: string): Promise<void> {
+  host.querySelector<HTMLButtonElement>(`#gw-section-${id} .gw-section-toggle`)?.click();
+  await sectionsSettled();
+}
+
 beforeEach(() => {
   window.history.replaceState(null, "", "/");
+  resetSections();
   document.body.innerHTML = "";
   host = document.createElement("aside");
   document.body.appendChild(host);
@@ -265,6 +282,21 @@ describe("well card", () => {
 
     await renderWellCard(host, API10, callbacks);
 
+    // A collapsed lazy section makes no request until it is first expanded, so what a mount
+    // asks for is the header, the expanded sections and the series. Completions and
+    // neighbours are collapsed and have asked for nothing.
+    expect(requested.mock.calls.map(([input]) => String(input)).sort()).toEqual(
+      [
+        `/v1/wells/${API10}?as_of=2026-07-01`,
+        `/v1/wells/${API10}/cumulatives?as_of=2026-07-01`,
+        `/v1/wells/${API10}/production?as_of=2026-07-01`,
+      ].sort(),
+    );
+
+    await expand("completions");
+    await expand("neighbours");
+
+    // And when they do ask, they ask through the same seam, so the pin reaches them too.
     expect(requested.mock.calls.map(([input]) => String(input)).sort()).toEqual(
       [
         `/v1/wells/${API10}?as_of=2026-07-01`,
@@ -274,6 +306,12 @@ describe("well card", () => {
         `/v1/wells/${API10}/production?as_of=2026-07-01`,
       ].sort(),
     );
+
+    // Expanded a second time it asks again for nothing: a loaded section is never re-fetched.
+    const asked = requested.mock.calls.length;
+    await expand("completions");
+    await expand("completions");
+    expect(requested.mock.calls.length).toBe(asked);
   });
 
   it("renders the header the operator would recognise", async () => {
@@ -294,6 +332,7 @@ describe("well card", () => {
 
   it("renders physical neighbours as current-only proximity, not model analogs", async () => {
     await renderWellCard(host, API10, callbacks);
+    await expand("neighbours");
 
     const frame = host.querySelector<HTMLElement>(".gw-neighbor-context");
     const links = frame?.querySelectorAll<HTMLAnchorElement>(".gw-neighbor-link");
@@ -335,6 +374,7 @@ describe("well card", () => {
     );
 
     await renderWellCard(host, API10, callbacks);
+    await expand("neighbours");
 
     const body = host.querySelector<HTMLElement>(".gw-neighbor-context .gw-frame-body");
     expect(body?.dataset["state"]).toBe("empty");
@@ -359,6 +399,7 @@ describe("well card", () => {
     );
 
     await renderWellCard(host, API10, callbacks);
+    await expand("neighbours");
 
     const body = host.querySelector<HTMLElement>(".gw-neighbor-context .gw-frame-body");
     expect(body?.dataset["state"]).toBe("unavailable");
@@ -527,13 +568,19 @@ describe("well card", () => {
     expect(
       cells.map((cell) => cell.querySelector(".gw-figure-value, .gw-absent")?.textContent),
     ).toEqual(["21,000 bbl", "unavailable: withheld", "unavailable: no report"]);
-    // The whole point: an absent month is never summed as a zero.
-    expect(cells[1]?.textContent).not.toMatch(/\b0\b/);
-    expect(cells[2]?.textContent).not.toMatch(/\b0\b/);
-    // Nothing is collapsed away — the four counts stay reachable on the cell.
-    expect(cells[1]?.getAttribute("title")).toBe(
+    // The whole point: an absent month is never summed as a zero. Against the value rather
+    // than the whole cell, because the coverage counts beside it are readable text now and a
+    // month count of zero is exactly what they are there to say.
+    const shown = (cell: Element | undefined): string =>
+      cell?.querySelector(".gw-figure-value, .gw-absent")?.textContent ?? "";
+    expect(shown(cells[1])).not.toMatch(/\b0\b/);
+    expect(shown(cells[2])).not.toMatch(/\b0\b/);
+    // Nothing is collapsed away, and nothing is hidden behind a hover: the four counts are
+    // text under the figure, where a keyboard reader and a phone reader have them too.
+    expect(cells[1]?.querySelector(".gw-coverage-line")?.textContent).toBe(
       "0 reported · 0 reported zero · 0 no report · 7 withheld of 7 months",
     );
+    expect(cells[1]?.getAttribute("title")).toBeNull();
   });
 
   it("says nothing was ever filed rather than showing a zero cumulative", async () => {
@@ -623,11 +670,12 @@ describe("well card", () => {
     await renderWellCard(host, API10, callbacks);
 
     const frame = host.querySelector(".gw-production-chart") as HTMLElement;
-    const title = frame.querySelector(".gw-frame-title") as HTMLElement;
-    // §2.6's crossing sits in this header too, so the label is the title's own text and not
-    // everything the header carries.
-    expect(title.firstElementChild?.textContent).toBe("Monthly production");
-    expect(title.querySelector('[data-crossing="open-this-series"]')).not.toBeNull();
+    // The label is the section's own head now: the frame had a title of its own and the
+    // section names it, and two headings over one plot is one heading too many.
+    const head = host.querySelector("#gw-section-production .gw-section-head") as HTMLElement;
+    const title = head.querySelector(".gw-section-title") as HTMLElement;
+    expect(title.firstElementChild?.textContent).toBe("Production");
+    expect(head.querySelector('[data-crossing="open-this-series"]')).not.toBeNull();
     expect(renderChart.mock.calls[0]?.[0]).toBe(frame.querySelector(".gw-frame-body"));
   });
 
@@ -695,6 +743,64 @@ describe("well card", () => {
     );
   });
 
+  it("counts the lineage index again when another section draws after it", async () => {
+    // Opened by deep link before Production had drawn, the index listed one section and read
+    // as a card carrying two handles. The count is of what is rendered, so it is taken again
+    // whenever more is (gate N7).
+    await renderWellCard(host, API10, callbacks);
+    const open = (id: string): void =>
+      (host.querySelector(`#gw-section-${id} .gw-section-toggle`) as HTMLElement).click();
+
+    open("lineage");
+    await sectionsSettled();
+    const index = (): string =>
+      host.querySelector("#gw-section-lineage .gw-lineage-index")?.textContent ?? "";
+    const first = index();
+
+    open("neighbours");
+    await sectionsSettled();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(first).not.toContain("Neighbours and spacing");
+    expect(index()).toContain("Neighbours and spacing");
+  });
+
+  it("counts the chart's own handles, which land outside the section queue", async () => {
+    // The production request runs beside the queue and the chart chunk imports lazily inside
+    // it, so an index counted when the queue drained missed the section with the most handles
+    // on the card (gate N7, the half the queue could not reach). The stub draws what the real
+    // chart draws for this purpose: a handle in the host it was given.
+    renderChart.mockImplementation((container: HTMLElement) => {
+      const ring = document.createElement("button");
+      ring.className = "gw-handle";
+      container.appendChild(ring);
+    });
+    // The deep link, which is how the gate found it: `?section=lineage` opens the index while
+    // the production request is still in flight, so it is built before the plot exists and
+    // nothing in the section queue will ever run again.
+    window.history.replaceState(null, "", `/?well=${API10}&section=lineage`);
+    await renderWellCard(host, API10, callbacks);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const index = host.querySelector("#gw-section-lineage .gw-lineage-index")?.textContent ?? "";
+    window.history.replaceState(null, "", "/");
+
+    expect(index).toContain("Production");
+  });
+
+  it("prints the well type once, qualified, and never as the bare code beside it", async () => {
+    // §2.3 replaces the bare `well_type_reported` with `<code> · as <regulator> filed it`.
+    // Rendered in both places a reader has to choose which of two rows to believe (gate M1).
+    await renderWellCard(host, API10, callbacks);
+
+    const labels = [...host.querySelectorAll("dt")].map((dt) => dt.textContent?.trim());
+    expect(labels.filter((label) => label === "Well type")).toHaveLength(1);
+    const drilling = [...host.querySelectorAll<HTMLElement>(".gw-facts-band")][1];
+    expect([...(drilling?.querySelectorAll("dt") ?? [])].map((dt) => dt.textContent)).not.toContain(
+      "Well type",
+    );
+  });
+
   it("drops a band whose every field is absent instead of heading an empty list", async () => {
     const bare = structuredClone(wellEnvelope);
     for (const field of ["basin", "county_code_at_permit", "land_unit_label", "surface_point"]) {
@@ -710,6 +816,7 @@ describe("well card", () => {
 
   it("marks an absent value so a skimmed column separates it from a measured one", async () => {
     await renderWellCard(host, API10, callbacks);
+    await expand("neighbours");
 
     // The neighbour rows used to print the raw enum token, so "alias unavailable" stood in the
     // Formation cell looking exactly like a formation name beside "bakken".
@@ -763,15 +870,109 @@ describe("well card", () => {
     expect(link.textContent).toContain("not_found");
     expect(link.textContent).not.toContain("https://");
   });
+
+  it("invents no problem type where the API named none", async () => {
+    // A 500 from an unhandled exception is `Internal Server Error` as plain text, so the client
+    // fills RFC 7807's `about:blank` — which names no problem. The banner read
+    // `Internal Server Error (about:blank) · What does about:blank mean?` and linked
+    // `/v1/errors/about:blank`, a page that does not exist, over the one failure a reader most
+    // needs to report accurately (visual delta, the determinism 500).
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Promise.resolve(new Response("Internal Server Error", { status: 500 }))),
+    );
+
+    await renderWellCard(host, API10, callbacks);
+
+    expect(host.textContent).not.toContain("about:blank");
+    expect(host.querySelector(".gw-error a")).toBeNull();
+    expect(host.querySelector(".gw-error h3")?.textContent).toContain("500");
+  });
+
+  it("names the status in words where the transport carries no reason phrase", async () => {
+    // HTTP/2 has no reason phrase, so `statusText` is "" in a browser for every response the
+    // Tunnel serves — and the typeless arm is the one that reads it. The heading was
+    // ` (HTTP 500)`: a leading space, then a parenthetical, over an empty body.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Promise.resolve(new Response("Internal Server Error", { status: 500 }))),
+    );
+
+    await renderWellCard(host, API10, callbacks);
+
+    expect(host.querySelector(".gw-error h3")?.textContent).toBe("Request failed (HTTP 500)");
+  });
+
+  // `problemOf` spread the served body over the fields it had just computed, so every fallback
+  // it minted was discarded whenever the key was present. glasswell's own API serves none of
+  // these shapes; a JSON error page from something else on the way through can, which is the
+  // transport the fallback exists for.
+  async function headingFor(body: Record<string, unknown>): Promise<string | undefined> {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(JSON.stringify(body), {
+            status: 500,
+            headers: { "content-type": "application/problem+json" },
+          }),
+        ),
+      ),
+    );
+    await renderWellCard(host, API10, callbacks);
+    return host.querySelector(".gw-error h3")?.textContent ?? undefined;
+  }
+
+  it("fills a served title that is empty", async () => {
+    expect(await headingFor({ title: "", status: 500 })).toBe("Request failed (HTTP 500)");
+  });
+
+  it("fills a served problem type that is null, rather than rendering no heading at all", async () => {
+    expect(await headingFor({ type: null, title: "Bad thing", status: 500 })).toBe(
+      "Bad thing (HTTP 500)",
+    );
+  });
+
+  it("fills a served status that is null with the one the response carried", async () => {
+    expect(await headingFor({ title: "Bad thing", status: null })).toBe("Bad thing (HTTP 500)");
+  });
+
+  it("names the request the API failed on when it served one", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              title: "Internal Server Error",
+              status: 500,
+              instance: `/v1/wells/${API10}/production`,
+            }),
+            { status: 500, headers: { "content-type": "application/problem+json" } },
+          ),
+        ),
+      ),
+    );
+
+    await renderWellCard(host, API10, callbacks);
+
+    expect(host.querySelector(".gw-error-instance")?.textContent).toContain(
+      `/v1/wells/${API10}/production`,
+    );
+    expect(host.textContent).not.toContain("about:blank");
+  });
 });
 
 describe("completion and formation context", () => {
   it("renders source events and reported pool mappings without design or top claims", async () => {
     await renderWellCard(host, API10, callbacks);
+    await expand("completions");
 
     const frame = host.querySelector(".gw-completion-context") as HTMLElement;
     const body = frame.querySelector<HTMLElement>(".gw-frame-body");
-    expect(frame.querySelector(".gw-frame-title")?.textContent).toBe("Completions & formations");
+    expect(
+      host.querySelector("#gw-section-completions .gw-section-title")?.textContent,
+    ).toBe("Completions and fluids");
     expect(body?.dataset["state"]).toBe("populated");
     expect(body?.getAttribute("aria-busy")).toBe("false");
     const groups = frame.querySelectorAll<HTMLElement>(".gw-context-group");
@@ -848,6 +1049,7 @@ describe("completion and formation context", () => {
     );
 
     await renderWellCard(host, API10, callbacks);
+    await expand("completions");
 
     const event = host.querySelector(".gw-context-group") as HTMLElement;
     expect(factsOf(event)["Job start"]).toBe("unavailable");
@@ -895,6 +1097,7 @@ describe("completion and formation context", () => {
     );
 
     await renderWellCard(host, API10, callbacks);
+    await expand("completions");
 
     const frame = host.querySelector(".gw-completion-context") as HTMLElement;
     expect(frame.textContent).toContain("None reported");
@@ -944,12 +1147,13 @@ describe("completion and formation context", () => {
     );
 
     await renderWellCard(host, API10, callbacks);
+    await expand("completions");
 
     const frame = host.querySelector(".gw-completion-context") as HTMLElement;
     const groups = frame.querySelectorAll<HTMLElement>(".gw-context-group");
     const designFacts = factsOf(groups[2] as HTMLElement);
     expect(designFacts["Fluid intensity"]).toBe(
-      "unavailable \u2014 lateral too short to divide by",
+      "unavailable: lateral too short to divide by",
     );
     expect(designFacts["Fluid intensity"]).not.toMatch(/\b0\b/);
   });
@@ -980,11 +1184,12 @@ describe("completion and formation context", () => {
     );
 
     await renderWellCard(host, API10, callbacks);
+    await expand("completions");
 
     const frame = host.querySelector(".gw-completion-context") as HTMLElement;
     const designFacts = factsOf(frame.querySelectorAll<HTMLElement>(".gw-context-group")[2] as HTMLElement);
-    expect(designFacts["Base fluid"]).toBe("unavailable \u2014 withheld by the regulator");
-    expect(designFacts["Fluid intensity"]).toBe("unavailable \u2014 withheld by the regulator");
+    expect(designFacts["Base fluid"]).toBe("unavailable: withheld by the regulator");
+    expect(designFacts["Fluid intensity"]).toBe("unavailable: withheld by the regulator");
     expect(designFacts["Fluid intensity"]).not.toContain("no disclosed volume");
   });
 
@@ -1014,6 +1219,7 @@ describe("completion and formation context", () => {
     );
 
     await renderWellCard(host, API10, callbacks);
+    await expand("completions");
 
     const frame = host.querySelector(".gw-completion-context") as HTMLElement;
     const designFacts = factsOf(
@@ -1022,7 +1228,7 @@ describe("completion and formation context", () => {
     // One class, one string. Two wordings for one fact is drift waiting to become confusion,
     // and the volume is named so the sentence reads on the row that is it and the row that is
     // divided by it.
-    expect(designFacts["Base fluid"]).toBe("unavailable \u2014 no disclosed volume");
+    expect(designFacts["Base fluid"]).toBe("unavailable: no disclosed volume");
     expect(designFacts["Fluid intensity"]).toBe(designFacts["Base fluid"]);
   });
 
@@ -1047,6 +1253,7 @@ describe("completion and formation context", () => {
     );
 
     await renderWellCard(host, API10, callbacks);
+    await expand("completions");
 
     const frame = host.querySelector(".gw-completion-context") as HTMLElement;
     expect(frame.textContent).toContain("None disclosed");
@@ -1081,6 +1288,7 @@ describe("completion and formation context", () => {
     );
 
     await renderWellCard(host, API10, callbacks);
+    await expand("completions");
 
     const body = host.querySelector<HTMLElement>(".gw-completion-context .gw-frame-body");
     expect(body?.dataset["state"]).toBe("empty");
@@ -1114,6 +1322,7 @@ describe("completion and formation context", () => {
     );
 
     await renderWellCard(host, API10, callbacks);
+    await expand("completions");
 
     // Summary reads on its own; the served detail and the code that raised it stay reachable
     // under it rather than being printed as a line of internal vocabulary.
@@ -1142,6 +1351,7 @@ describe("completion and formation context", () => {
     );
 
     await renderWellCard(host, API10, callbacks);
+    await expand("completions");
 
     const body = host.querySelector<HTMLElement>(".gw-completion-context .gw-frame-body");
     expect(body?.dataset["state"]).toBe("unavailable");
@@ -1167,6 +1377,7 @@ describe("completion and formation context", () => {
     );
 
     await renderWellCard(host, API10, callbacks);
+    await expand("completions");
 
     const body = host.querySelector<HTMLElement>(".gw-completion-context .gw-frame-body");
     expect(body?.dataset["state"]).toBe("unavailable");
@@ -1191,6 +1402,7 @@ describe("completion and formation context", () => {
     );
 
     await renderWellCard(host, API10, callbacks);
+    await expand("completions");
 
     const body = host.querySelector<HTMLElement>(".gw-completion-context .gw-frame-body");
     expect(body?.dataset["state"]).toBe("unavailable");
@@ -1364,5 +1576,473 @@ describe("a cumulative total that some months were allocated into", () => {
 
     expect(scope?.dataset["handle"]).toBe("drv_a#api10=x&stream=liquid");
     expect(scope?.getAttribute("title")).toContain("cr_tx_allocation_v0_1");
+  });
+});
+
+describe("a section title that is a glossary term", () => {
+  // `land()` highlighted once at mount and nothing re-ran it for statically built markup, so a
+  // title painted before the glossary arrived lost the race almost every cold load. The
+  // store's `onGlossaryReady` exists for exactly this.
+  const empty = { index_version: "none", entries: [], stopwords: [] };
+
+  afterEach(() => {
+    publishGlossary(buildIndex(empty), new Map());
+  });
+
+  it("is marked when the glossary lands after the card did", async () => {
+    publishGlossary(buildIndex(empty), new Map());
+    vi.stubGlobal("fetch", vi.fn(stubFetch({ [`/v1/wells/${API10}`]: wellEnvelope })));
+
+    await renderWellCard(host, API10, callbacks);
+    expect(host.querySelector("#gw-section-head-lineage gw-term")).toBeNull();
+
+    publishGlossary(
+      buildIndex({
+        index_version: "test",
+        entries: [{ surface: "Lineage", term_id: "gt_lineage", n_words: 1 }],
+        stopwords: [],
+      }),
+      new Map([
+        [
+          "gt_lineage",
+          {
+            term_id: "gt_lineage",
+            term: "Lineage",
+            aliases: [],
+            short_definition: "Where a number came from.",
+            domain_tags: [],
+            highlightable: true,
+          },
+        ],
+      ]),
+    );
+
+    expect(host.querySelector("#gw-section-head-lineage gw-term")).not.toBeNull();
+  });
+});
+
+describe("a reloaded brushed link", () => {
+  // R-20: the server answered the brushed window, so the client holds only those months. The
+  // card tells the chart so, and the way back drops the two parameters through the same seam
+  // a brush writes them through. The bar itself is chart.test.ts's subject.
+  it("hands the chart a served span and the widening that drops both parameters", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        stubFetch({
+          [`/v1/wells/${API10}/cumulatives`]: cumulativesEnvelope,
+          [`/v1/wells/${API10}/production`]: productionEnvelope,
+          [`/v1/wells/${API10}`]: wellEnvelope,
+        }),
+      ),
+    );
+    window.history.replaceState(null, "", `/?well=${API10}&from=2026-01&to=2026-03`);
+    const announced: unknown[] = [];
+    document.addEventListener("gw-param-set", (event) => {
+      announced.push((event as CustomEvent<{ params: unknown }>).detail.params);
+    });
+
+    await renderWellCard(host, API10, callbacks);
+
+    const options = renderChart.mock.calls[renderChart.mock.calls.length - 1]?.[3] as
+      | { span?: string; onWiden?: () => void }
+      | undefined;
+    expect(options?.span).toBe("served");
+    options?.onWiden?.();
+    expect(announced).toEqual([{ from: null, to: null }]);
+  });
+
+  it("marks the three server-answered controls, and a brush as not one", async () => {
+    // Every one of them wrote the URL and fetched nothing: the card re-landed only on a
+    // reload, so `Per 1,000 ft` divided nothing and `Widen` widened nothing (visual M4). A
+    // brush is the opposite -- the months are already on hand and narrowing them is a view.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        stubFetch({
+          [`/v1/wells/${API10}/cumulatives`]: cumulativesEnvelope,
+          [`/v1/wells/${API10}/production`]: productionEnvelope,
+          [`/v1/wells/${API10}`]: wellEnvelope,
+        }),
+      ),
+    );
+    window.history.replaceState(null, "", `/?well=${API10}&from=2026-01&to=2026-03`);
+    const announced: { params: unknown; refetch?: boolean }[] = [];
+    document.addEventListener("gw-param-set", (event) => {
+      announced.push((event as CustomEvent<{ params: unknown; refetch?: boolean }>).detail);
+    });
+
+    await renderWellCard(host, API10, callbacks);
+    const call = renderChart.mock.calls[renderChart.mock.calls.length - 1];
+    const chartCallbacks = call?.[2] as {
+      onBrush?: (from: string | null, to: string | null) => void;
+      onVintage?: (asOf: string) => void;
+    };
+    const options = call?.[3] as {
+      onWiden?: () => void;
+      normalization?: { onChange: (on: boolean) => void };
+    };
+    options?.onWiden?.();
+    options?.normalization?.onChange(true);
+    chartCallbacks?.onVintage?.("2026-06-01");
+    chartCallbacks?.onBrush?.("2026-01", "2026-02");
+
+    expect(announced.map((each) => each.refetch)).toEqual([true, true, true, false]);
+  });
+
+  it("hands the chart no served span where nothing narrowed the request", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        stubFetch({
+          [`/v1/wells/${API10}/cumulatives`]: cumulativesEnvelope,
+          [`/v1/wells/${API10}/production`]: productionEnvelope,
+          [`/v1/wells/${API10}`]: wellEnvelope,
+        }),
+      ),
+    );
+    window.history.replaceState(null, "", `/?well=${API10}`);
+
+    await renderWellCard(host, API10, callbacks);
+
+    const options = renderChart.mock.calls[renderChart.mock.calls.length - 1]?.[3] as
+      | { span?: string }
+      | undefined;
+    expect(options?.span).toBeUndefined();
+  });
+});
+
+describe("the third production state, and the sections it opens", () => {
+  const poolGrain = {
+    ...wellEnvelope,
+    links: {
+      ...wellEnvelope.links,
+      pools: "/v1/wells/3305310451/production/pools?from=served",
+      pools_rule: "/v1/conformance/cr_nm_wcproduction_pool_rollup_1",
+    },
+    meta: {
+      ...wellEnvelope.meta,
+      warnings: [
+        {
+          code: "production_reported_at_pool_grain",
+          detail:
+            "This well's regulator files production at the well_completion_pool and glasswell" +
+            " performs no rollup to the well (cr_nm_wcproduction_pool_rollup_1).",
+          pointer: "/producing",
+          rule_id: "cr_nm_wcproduction_pool_rollup_1",
+        },
+      ],
+    },
+  };
+
+  it("draws a titled panel that names the rule and points down at the filings", async () => {
+    vi.stubGlobal("fetch", vi.fn(stubFetch({ [`/v1/wells/${API10}`]: poolGrain })));
+
+    await renderWellCard(host, API10, callbacks);
+
+    const panel = host.querySelector('[data-state="production_reported_at_pool_grain"]');
+    expect(panel?.querySelector(".gw-frame-title")?.textContent).toBe(
+      "Production is filed by pool",
+    );
+    expect(panel?.querySelector(".gw-identity-rule")?.textContent).toBe(
+      "cr_nm_wcproduction_pool_rollup_1",
+    );
+    expect(panel?.querySelector(".gw-section-link")?.textContent).toBe("Production by pool");
+  });
+
+  it("opens the Pools section by default, because the record is there and not above", async () => {
+    // N-24: the reader came for the filings, and on this well the chart is a stated absence.
+    vi.stubGlobal("fetch", vi.fn(stubFetch({ [`/v1/wells/${API10}`]: poolGrain })));
+
+    await renderWellCard(host, API10, callbacks);
+
+    const pools = host.querySelector("#gw-section-pools");
+    expect(pools).not.toBeNull();
+    expect(pools?.querySelector(".gw-section-toggle")?.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("gates the Pools section on the served link, not on the client recognising a warning", async () => {
+    // M-11: the warning says why the chart is absent; the link says where the record is. A
+    // well that carries the first without the second has no section to open.
+    const unlinked = {
+      ...poolGrain,
+      links: Object.fromEntries(
+        Object.entries(poolGrain.links).filter(([key]) => key !== "pools"),
+      ),
+    };
+    vi.stubGlobal("fetch", vi.fn(stubFetch({ [`/v1/wells/${API10}`]: unlinked })));
+
+    await renderWellCard(host, API10, callbacks);
+
+    expect(host.querySelector("#gw-section-pools")).toBeNull();
+  });
+
+  it("fetches the filings from the path the link served, not one it minted", async () => {
+    const fetchSpy = vi.fn(stubFetch({ [`/v1/wells/${API10}`]: poolGrain }));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await renderWellCard(host, API10, callbacks);
+
+    const asked = fetchSpy.mock.calls.map((call) => String(call[0]));
+    expect(asked.some((url) => url.includes("/v1/wells/3305310451/production/pools?from=served"))).toBe(true);
+  });
+
+  it("says the pool-grain sentence once, in the panel rather than as a loose warning", async () => {
+    vi.stubGlobal("fetch", vi.fn(stubFetch({ [`/v1/wells/${API10}`]: poolGrain })));
+
+    await renderWellCard(host, API10, callbacks);
+
+    for (const warning of host.querySelectorAll(".gw-warning")) {
+      expect(warning.textContent).not.toContain("performs no rollup");
+    }
+  });
+
+  it("offers no Pools section on a well whose regulator files at the well", async () => {
+    await renderWellCard(host, API10, callbacks);
+
+    expect(host.querySelector("#gw-section-pools")).toBeNull();
+  });
+});
+
+describe("a re-land keeps the card the reader has", () => {
+  // A press of `Per 1,000 ft`, `Read at …` or `Widen to the whole record` re-asks the server
+  // for the figures. What it must not do is charge the reader their place for it: the guard
+  // in main.ts's `showWell` names the cost -- every disclosure, every opened section and the
+  // scroll -- and refuses to pay it on a replay. A control the reader pressed is no different.
+  async function reland(): Promise<void> {
+    window.history.replaceState(null, "", "/?normalization=per_lateral_ft");
+    const landing = renderWellCard(host, API10, callbacks);
+    expect(host.querySelector(".gw-card"), "the card was torn down mid-request").not.toBeNull();
+    expect(host.textContent).not.toContain("Loading well");
+    await landing;
+  }
+
+  it("leaves the card standing rather than flashing back to a placeholder", async () => {
+    await renderWellCard(host, API10, callbacks);
+    const first = host.querySelector(".gw-card");
+
+    await reland();
+
+    expect(first).not.toBeNull();
+    expect(host.querySelector(".gw-card")).not.toBe(first);
+  });
+
+  it("keeps a section the reader opened open, and asks it again for the new figures", async () => {
+    await renderWellCard(host, API10, callbacks);
+    await expand("completions");
+
+    await reland();
+    await sectionsSettled();
+
+    expect(
+      host
+        .querySelector("#gw-section-completions .gw-section-toggle")
+        ?.getAttribute("aria-expanded"),
+    ).toBe("true");
+  });
+
+  it("re-opens the disclosure the reader had open", async () => {
+    await renderWellCard(host, API10, callbacks);
+    const note = host.querySelector<HTMLDetailsElement>(".gw-card-notes details");
+    expect(note, "the fixture serves no card-level disclosure to open").not.toBeNull();
+    note!.open = true;
+
+    await reland();
+    await sectionsSettled();
+
+    expect(host.querySelector<HTMLDetailsElement>(".gw-card-notes details")?.open).toBe(true);
+  });
+
+  it("puts the reader back where they were in the scroll", async () => {
+    await renderWellCard(host, API10, callbacks);
+    const body = host.querySelector<HTMLElement>(".gw-panel-body");
+    body!.scrollTop = 240;
+
+    await reland();
+    await sectionsSettled();
+
+    expect(host.querySelector<HTMLElement>(".gw-panel-body")?.scrollTop).toBe(240);
+  });
+
+  it("marks the standing card busy, and the sheet dims it, while the figures are re-asked", async () => {
+    await renderWellCard(host, API10, callbacks);
+
+    const landing = renderWellCard(host, API10, callbacks);
+    expect(host.querySelector(".gw-card")?.getAttribute("aria-busy")).toBe("true");
+    await landing;
+
+    expect(host.querySelector(".gw-card")?.getAttribute("aria-busy")).toBeNull();
+    expect(readFileSync("src/card/card.css", "utf8")).toContain('.gw-card[aria-busy="true"]');
+  });
+
+  it("states a refused vintage in the section that asked and keeps the rest of the card", async () => {
+    // `Read at …` re-lands with `as_of` in the URL, and where no such vintage resolves the well
+    // request 404s. The banner replaced the whole card — every section, every disclosure and the
+    // window bar gone — over a refusal one control the chart drew had asked for.
+    await renderWellCard(host, API10, callbacks);
+    const sections = host.querySelectorAll(".gw-section").length;
+    expect(sections, "the fixture card carries no sections to lose").toBeGreaterThan(0);
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(problem(404, "not_found"))));
+
+    window.history.replaceState(null, "", "/?as_of=2026-06-01");
+    await renderWellCard(host, API10, callbacks);
+
+    expect(host.querySelector(".gw-card"), "the refusal took the whole card").not.toBeNull();
+    expect(host.querySelectorAll(".gw-section").length).toBe(sections);
+    expect(host.querySelector(".gw-production-chart .gw-error h3")?.textContent).toContain(
+      "Not found",
+    );
+    expect(host.querySelector(".gw-card")?.getAttribute("aria-busy")).toBeNull();
+  });
+
+  it("takes the whole card when the session is gone, not one section of it", async () => {
+    // The guard keys on what the failure is, not on whether a card is standing: a 403 is not an
+    // answer about the vintage a control asked for, and eight sections of the previous reading
+    // left standing under it read live while the only sign of a lost session sits in the chart
+    // frame.
+    await renderWellCard(host, API10, callbacks);
+    expect(host.querySelectorAll(".gw-section").length).toBeGreaterThan(0);
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(problem(403, "unauthenticated"))));
+
+    window.history.replaceState(null, "", "/?as_of=2026-06-01");
+    await renderWellCard(host, API10, callbacks);
+
+    expect(host.querySelector(".gw-card"), "stale figures left standing under a lost session")
+      .toBeNull();
+    expect(host.querySelector(".gw-production-chart .gw-error")).toBeNull();
+    expect(host.textContent).toContain("no live session");
+  });
+
+  it("reads a served status that is a string, so the arm is not chosen by its type", async () => {
+    // `problemOf` hardened `type` and `title` against a foreign responder and passed `status`
+    // through however it was typed. A JSON `"403"` coerces in the 4xx range test and fails both
+    // strict equalities, so a lost session kept the card, kept eight stale sections, and lost
+    // the one control that leads back into a session.
+    const onSignIn = vi.fn();
+    await renderWellCard(host, API10, { ...callbacks, onSignIn });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              type: "https://glasswell.rpx.sh/v1/errors/unauthenticated",
+              title: "Not authenticated",
+              status: "403",
+            }),
+            { status: 403, headers: { "content-type": "application/problem+json" } },
+          ),
+        ),
+      ),
+    );
+
+    window.history.replaceState(null, "", "/?as_of=2026-06-01");
+    await renderWellCard(host, API10, { ...callbacks, onSignIn });
+
+    expect(host.querySelector(".gw-card"), "stale sections stood under a lost session").toBeNull();
+    expect(host.querySelector(".gw-production-chart .gw-error")).toBeNull();
+    expect(host.querySelector(".gw-error-key"), "the way back into a session was lost").not.toBeNull();
+  });
+
+  it("puts no card-closing dismiss inside a refusal it scoped to one section", async () => {
+    // The × reads `Dismiss this error` and is wired to `onClose`, which main.ts binds to
+    // `selectWell(null)`. Inside the panel the round scoped to the production section, that is
+    // the one-press card loss the scoping exists to prevent, under a label that promises the
+    // opposite.
+    const onClose = vi.fn();
+    await renderWellCard(host, API10, { ...callbacks, onClose });
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(problem(404, "not_found"))));
+
+    window.history.replaceState(null, "", "/?as_of=2026-06-01");
+    await renderWellCard(host, API10, { ...callbacks, onClose });
+
+    const scoped = host.querySelector(".gw-production-chart .gw-error");
+    expect(scoped, "the refusal did not land in the production section").not.toBeNull();
+    for (const button of scoped!.querySelectorAll("button")) button.click();
+    expect(onClose, "a control inside the scoped refusal closed the card").not.toHaveBeenCalled();
+  });
+
+  it("puts no card-closing dismiss in the panel the series' own failure draws", async () => {
+    // The second site of the same class: the production request fails on a card whose well
+    // request answered, so the panel is the chart's frame and not the card. Reverting only this
+    // call site reds nothing else in the suite (the sentinel's plant N), which is what this
+    // case is for.
+    const onClose = vi.fn();
+    const onSignIn = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        stubFetch({
+          [`/v1/wells/${API10}/completions`]: completionContextEnvelope,
+          [`/v1/wells/${API10}/cumulatives`]: cumulativesEnvelope,
+          [`/v1/wells/${API10}/neighbors`]: neighborEnvelope,
+          [`/v1/wells/${API10}/production`]: {
+            type: "https://glasswell.rpx.sh/v1/errors/unauthenticated",
+            title: "Not authenticated",
+            status: 403,
+          },
+          [`/v1/wells/${API10}`]: wellEnvelope,
+        }),
+      ),
+    );
+
+    await renderWellCard(host, API10, { ...callbacks, onClose, onSignIn });
+
+    const scoped = host.querySelector(".gw-production-chart .gw-error");
+    expect(scoped, "the series failure drew no panel in the chart's frame").not.toBeNull();
+    expect(host.querySelector(".gw-card"), "a failed series took the card").not.toBeNull();
+    for (const button of scoped!.querySelectorAll("button")) button.click();
+    expect(onClose, "a control inside the scoped panel closed the card").not.toHaveBeenCalled();
+    expect(onSignIn, "the sign-in path the 403 arm offers was not wired").toHaveBeenCalled();
+  });
+
+  it("keeps the dismiss on the banner that is the whole card", async () => {
+    // The other half of the same rule: where the panel replaced the card there is nothing else
+    // to dismiss, and the × is how a reader gets rid of it.
+    const onClose = vi.fn();
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(problem(404, "not_found"))));
+
+    await renderWellCard(host, API10, { ...callbacks, onClose });
+    host.querySelector<HTMLButtonElement>(".gw-error .gw-close")?.click();
+
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("moves the reader's focus nowhere, because they are already reading this card", async () => {
+    // `land`'s `if (kept) return` — the one H-30 property with no red behind it (H-35).
+    // Without it `focusPanel(container)` runs on every press of a server-answered control and
+    // lands focus on the card heading, which is the same theft the re-land exists to stop.
+    await renderWellCard(host, API10, callbacks);
+
+    await reland();
+
+    expect(host.contains(document.activeElement)).toBe(false);
+    expect(document.activeElement?.tagName).not.toBe("H2");
+  });
+
+  it("does not re-scroll or re-focus the section a deep link named", async () => {
+    // The other arm of the same guard: `applySection` scrolls its section into view and focuses
+    // its disclosure, which is right for a link somebody opened and wrong for a control the
+    // reader pressed while looking at it.
+    window.history.replaceState(null, "", "/?section=completions");
+    await renderWellCard(host, API10, callbacks);
+    await sectionsSettled();
+
+    window.history.replaceState(null, "", "/?section=completions&normalization=per_lateral_ft");
+    await renderWellCard(host, API10, callbacks);
+    await sectionsSettled();
+
+    expect(document.activeElement).not.toBe(
+      host.querySelector("#gw-section-completions .gw-section-toggle"),
+    );
+    expect(host.contains(document.activeElement)).toBe(false);
+  });
+
+  it("still starts from a placeholder for a well the container is not already showing", async () => {
+    await renderWellCard(host, API10, callbacks);
+
+    const landing = renderWellCard(host, "3305399999", callbacks);
+    expect(host.textContent).toContain("Loading well 3305399999");
+    await landing.catch(() => undefined);
   });
 });

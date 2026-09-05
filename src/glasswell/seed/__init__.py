@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import psycopg
 
+from glasswell.seed.conformance_basin_context import (
+    BASIN_CONTEXT_RULES,
+    seed_conformance_basin_context,
+)
 from glasswell.seed.conformance_basins import BASIN_RULES, seed_conformance_basins
 from glasswell.seed.conformance_c115b import (
     C115B_RULES,
@@ -26,6 +30,11 @@ from glasswell.seed.conformance_producing import PRODUCING_RULES, seed_conforman
 from glasswell.seed.conformance_schedules import (
     SCHEDULE_RULES,
     seed_conformance_schedules,
+)
+from glasswell.seed.conformance_status_history import (
+    HISTORY_RULE_IDS,
+    STATUS_HISTORY,
+    seed_conformance_status_history,
 )
 from glasswell.seed.conformance_tx import (
     ALLOCATION_RULES,
@@ -62,6 +71,7 @@ from glasswell.seed.schedules import (
 
 __all__ = [
     "ALLOCATION_RULES",
+    "BASIN_CONTEXT_RULES",
     "BASIN_RULES",
     "C115B_RULES",
     "CO_RULES",
@@ -71,6 +81,7 @@ __all__ = [
     "FORMATION_ALIASES",
     "FRACFOCUS_RULES",
     "GLOSSARY_SEED_PATH",
+    "HISTORY_RULE_IDS",
     "JOBS",
     "JOB_SOURCES",
     "JURISDICTIONS",
@@ -88,12 +99,14 @@ __all__ = [
     "SCHEDULES",
     "SCHEDULE_RULES",
     "SOURCES",
+    "STATUS_HISTORY",
     "TX_RULES",
     "TYPECURVE_RULES",
     "VINTAGE_RULES",
     "load_glossary_seed",
     "seed_all",
     "seed_conformance_allocation",
+    "seed_conformance_basin_context",
     "seed_conformance_basins",
     "seed_conformance_c115b",
     "seed_conformance_fracfocus",
@@ -105,6 +118,7 @@ __all__ = [
     "seed_conformance_nm_wells_gis",
     "seed_conformance_producing",
     "seed_conformance_schedules",
+    "seed_conformance_status_history",
     "seed_conformance_tx",
     "seed_conformance_typecurve",
     "seed_conformance_vintage",
@@ -128,6 +142,11 @@ def seed_all(connection: psycopg.Connection) -> dict[str, int]:
     # numbers differ from the second's, which is the only thing the idempotence check has to
     # go on.
     return {
+        # First of all, and for the reason the block above gives twice over: one of its five
+        # rule ids carries the `cr_tx_` prefix seed_conformance_tx counts on, so seeded after
+        # it the first run's number would differ from the second's. It registers the boundary
+        # source it is filed under, exactly as the seeder below it does.
+        "conformance_rules_basin_context": seed_conformance_basin_context(connection),
         "conformance_rules_tx": seed_conformance_tx(connection),
         "conformance_rules_land": seed_conformance_land(connection),
         "conformance_rules_c115b": seed_conformance_c115b(connection),
@@ -172,6 +191,9 @@ def seed_all(connection: psycopg.Connection) -> dict[str, int]:
         # nm_ocd_ source ids and the count seed_conformance_nm returns is a registry total over
         # that prefix. Seeded after it, the first run's number would differ from the second's.
         "conformance_rules_nm_wells": seed_conformance_nm_wells(connection),
+        # Same place, same reason: one nm_ocd_wellhistory row. It must also land before
+        # seed_jurisdictions, whose rule insert is guarded on the conformance row existing.
+        "conformance_rules_status_history": seed_conformance_status_history(connection),
         "conformance_rules_nm": seed_conformance_nm(connection),
         "conformance_rules_mt": seed_conformance_mt(connection),
         "nm_stream_map": seed_nm_streams(connection),

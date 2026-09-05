@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from "vitest";
 
+import { ABSENT_MARK } from "../card/format.ts";
 import { EXPLAIN_EVENT } from "../chrome/handle.ts";
 import { createLegend } from "./legend.ts";
 import { PRODUCING_CLASSES, PRODUCING_RULES, producingLabel } from "./producing.ts";
@@ -80,7 +81,7 @@ describe("the legend's producing section", () => {
 
     setProducing({ counts: { producing: 12 }, handles: {}, window: WINDOW, bbox: BOX });
 
-    expect(countFor(element, "unknown")).toBe("—");
+    expect(countFor(element, "unknown")).toBe(ABSENT_MARK);
   });
 
   it("states the window and the liquids basis beside the numbers", () => {

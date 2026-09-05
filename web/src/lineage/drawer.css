@@ -1,0 +1,36 @@
+/*
+ * The drawer's own chrome. On this stylesheet rather than the entry one because the drawer is
+ * fetched on the first handle a reader opens and by nobody who never opens one.
+ */
+/* Below 1600 the drawer fills the rail's column and the card is behind it, so the way back is
+   a control and not a memory. It reads as a return rather than as a dismissal, which is what
+   the × beside it does not say. */
+.gw-drawer-back {
+  order: -1;
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--cyan);
+  font: inherit;
+  font-size: var(--gw-fs-micro);
+  cursor: pointer;
+}
+
+.gw-drawer-back:hover {
+  text-decoration: underline;
+}
+
+/* Beside the marker that says the chain stopped, because a limit shown without a way past it
+   is a limit rather than a lineage. */
+.gw-drawer-deeper {
+  margin-top: var(--gw-space-3);
+  padding: 0 var(--gw-space-2);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--gw-radius-pill);
+  background: none;
+  color: var(--cyan);
+  font: inherit;
+  font-size: var(--gw-fs-micro);
+  cursor: pointer;
+}

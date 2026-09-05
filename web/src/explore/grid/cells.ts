@@ -5,6 +5,9 @@ import "../../components/gw-count.ts";
 import type { Column } from "./columns.ts";
 import type { Cell, Row } from "./rows.ts";
 
+/** The absent-value mark, ASCII: an em dash is punctuation and this is a data mark. */
+const ABSENT_MARK = "--";
+
 const ABSENT =
   "This field was absent from the response. That is not the same as a zero and not the same" +
   " as a value the source withheld.";
@@ -198,7 +201,7 @@ function missing(title: string): HTMLElement {
   const element = document.createElement("span");
   element.className = "gw-value-absent";
   element.setAttribute("data-no-glossary", "");
-  element.textContent = "—";
+  element.textContent = ABSENT_MARK;
   element.title = title;
   return element;
 }

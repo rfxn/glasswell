@@ -22,19 +22,27 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 // because the card and its tail — figures, formatting, the completion and neighbour panels —
 // had been riding it for every reader, including one who never opens a well. Re-tightened for
 // the same reason the chart's move was: leaving 9 kB of slack in place would stop it ratcheting.
-// Re-measured at the v0.80 fix round: the route is 76,412 B on this head, and the 71,511 B
-// this comment cited as the before-figure was stale -- the well-card track's P0 measured the
-// same walk at 74,838 B at its own base. The budget is unchanged at 79,700, which is this
-// head's measurement plus 4.3%; web/PERF.md carries the three figures and the arithmetic.
-// Re-measured for the allocation band: the explorer route rose 71,511 → 75,958 B, because the
-// chart chunk gained a second band with its own six-class vocabulary, its own key, and the
-// per-month class, divisor and completeness arrays behind them. It is on the route rather than
-// split because it renders inside the plot itself — a chart that had to fetch a second chunk
-// before it could say whether a point was observed or allocated would draw the number first
-// and the label after it, which is the one ordering this band exists to prevent.
+// The fourth budget closes a gap the other three left open: the resolver below reads `.js`
+// out of `dist/index.html` and nothing has ever measured the stylesheet beside it, so a
+// 30 kB CSS addition passed all three. Set once at 7,420 B — the 6,520 B measured on the
+// v0.77 tree plus the 900 B the well card's rail is allowed to spend — and ratcheted at the
+// end of the v0.81 card group. The rail spent 860 of its 900 B, so measured + 5 % is 7,735
+// and would be a 315 B raise: the ratchet takes the unspent ceiling back instead, to 7,400,
+// which is the 7,367 measured on this head plus 33 B — two and a half times the 13 B, the
+// largest stylesheet jitter §3 records. Spending the ceiling was deliberate; raising it is a
+// failed exit.
+// Re-measured on the MERGED tree at the v0.81 card merge, which is the first walk that carries
+// both trains: the Texas allocation band (which raised the route from 74,838 to 76,412 on its
+// own head) and the card's six cuts. The route measured 76,103 B there, so the budget stays at
+// the 79,700 B the Texas train set and the merge raises nothing. Neither branch's own number
+// describes the tree they land in. Re-walked at the card group's last phase, with P5's chart
+// controls and P6's three sections landed: 78,971 B, which is 729 B of headroom rather than
+// 3,597. The chart, table, peer, pools and export modules all ride cut chunks; what grew on
+// the route is the card's request layer and the shell that reaches it.
 const BUDGET_BYTES = {
   entryGzip: 14_000,
-  explorerRouteGzip: 79_700,
+  entryCssGzip: 7_400,
+  explorerRouteGzip: 79_750,
   mapChunkGzip: 330_000,
 };
 
@@ -101,10 +109,52 @@ const entryChunks = (): string[] =>
     (match) => match[1]!,
   );
 
+/** The same resolution one extension along, because the stylesheet ships on the same document. */
+const entryStyles = (): string[] =>
+  [...readFileSync(join(dist, "index.html"), "utf8").matchAll(/assets\/([\w.-]+\.css)/g)].map(
+    (match) => match[1]!,
+  );
+
+// The map cut, written once for the budget and the drift check alike.
+function routeUntilMap(): string[] {
+  const map = named("map");
+  return reach([...entryChunks(), named("shell")], (name) => name === map);
+}
+
+// The explorer route is one cut, enforced and quoted from the same walk: everything the entry
+// and the shell reach until the chunks a reader downloads only by landing on them.
+function explorerRouteChunks(): string[] {
+  const stops = new Set(
+    ["map", "surface", "neighbors", "status-chip", "card", "drawer", "sheet", "table"].map(named),
+  );
+  return reach([...entryChunks(), named("shell")], (name) => stops.has(name));
+}
+
 describe("what the explorer's shell costs the reader", () => {
   it("keeps the entry chunk inside its budget", () => {
     const measured = entryChunks().reduce((sum, name) => sum + gzip(name), 0);
     expect(measured, `entry chunk ${measured} B gzipped`).toBeLessThanOrEqual(BUDGET_BYTES.entryGzip);
+  });
+
+  it("keeps the entry stylesheet inside its budget", () => {
+    const styles = entryStyles();
+    expect(styles, "index.html names no stylesheet").not.toHaveLength(0);
+    const measured = styles.reduce((sum, name) => sum + gzip(name), 0);
+    expect(measured, `entry stylesheet ${measured} B gzipped`).toBeLessThanOrEqual(
+      BUDGET_BYTES.entryCssGzip,
+    );
+  });
+
+  it("keeps the lineage drawer out of the entry chunk", () => {
+    // The same structural shape as the maplibre assertion below: the drawer opens on a click
+    // that most readers never make, and a static import from any module the entry reaches
+    // would put its 7.9 kB of source back on every first paint. Counted with a global match
+    // rather than `grep -c`, which counts lines and answers 1 for a minified chunk.
+    for (const name of entryChunks()) {
+      const source = readFileSync(join(dist, "assets", name), "utf8");
+      const occurrences = source.match(/gw-chain/g)?.length ?? 0;
+      expect(occurrences, `${name} carries the lineage drawer`).toBe(0);
+    }
   });
 
   it("keeps the explorer route, other surfaces excluded, inside its budget", () => {
@@ -122,15 +172,28 @@ describe("what the explorer's shell costs the reader", () => {
     // it rode inside the entry chunk, so an explorer reader was measured — and charged — for a
     // panel that only ever renders over the map. Cutting it is the same ruling as its children.
     const card = named("card");
-    const route = reach(
-      [...entryChunks(), named("shell")],
-      (name) =>
-        name === map ||
-        name === status ||
-        name === neighbors ||
-        name === statusChip ||
-        name === card,
-    );
+    // The lineage drawer is the sixth, and it is cut on the sentence above rather than on the
+    // map-only one: it renders over both surfaces, and it is downloaded over neither until the
+    // reader clicks a handle. `openExplain` runs at boot only behind `state.view === "map"`
+    // (main.ts's `start`), and `followHistory` takes its else-branch on every other view, so no
+    // reader reaches it by landing. Cutting it is what keeps this number meaning first paint:
+    // moving a module out of the entry chunk always raises the walked total, because a 4 kB
+    // chunk gzips worse alone than inside a 40 kB one, while the bytes the reader downloads on
+    // landing fall. That is the trap the card's own cut was added for in v0.73.
+    const drawer = named("drawer");
+    // The bottom sheet's gesture is cut on the map-only ruling, not the drawer's: the card
+    // never renders over Explore, so the branch that sizes it never runs here.
+    const sheet = named("sheet");
+    // The chart's table alternative, cut on the drawer's own ruling: it is fetched when a
+    // reader presses `Table` and by nobody who lands. Left uncut the walked total rises by the
+    // table chunk's own weight, which is the split artifact the paragraph above describes, and
+    // it is the difference between this route passing and failing: PERF.md §6 records both
+    // walks against the head each was measured at, and the cut stands on the owner's ruling
+    // recorded there, not on this file's. No byte count is quoted here on purpose: the chunk
+    // statically imports the stamped entry chunk, so its own gzip moves with every commit and
+    // a figure in a source file read at a later head is a figure that disagrees with the tree.
+    const table = named("table");
+    const route = explorerRouteChunks();
     const measured = route.reduce((sum, name) => sum + gzip(name), 0);
 
     expect(route, "the map chunk is not on the explorer route").not.toContain(map);
@@ -142,6 +205,9 @@ describe("what the explorer's shell costs the reader", () => {
     expect(route, "the well-card status chip is not on the explorer route").not.toContain(
       statusChip,
     );
+    expect(route, "the lineage drawer is not on the explorer route").not.toContain(drawer);
+    expect(route, "the well card's bottom sheet is not on the explorer route").not.toContain(sheet);
+    expect(route, "the table view is not on the explorer route").not.toContain(table);
     expect(measured, `explorer route ${measured} B gzipped over ${route.join(", ")}`).toBeLessThanOrEqual(
       BUDGET_BYTES.explorerRouteGzip,
     );
@@ -149,7 +215,7 @@ describe("what the explorer's shell costs the reader", () => {
 
   it("keeps the map chunk inside its budget", () => {
     const map = named("map");
-    const route = reach([...entryChunks(), named("shell")], (name) => name === map);
+    const route = routeUntilMap();
     const mapOnly = reach([map]).filter((name) => !route.includes(name));
     const measured = mapOnly.reduce((sum, name) => sum + gzip(name), 0);
 
@@ -181,6 +247,43 @@ describe("what the explorer's shell costs the reader", () => {
       expect(perf, `PERF.md does not record the ${budget} B budget`).toContain(
         budget.toLocaleString("en-US"),
       );
+    }
+  });
+
+  /**
+   * The budget table states headroom "over" a measured figure, and that figure went stale
+   * without anything noticing: at v0.81 the map row still read "+5.2% over 313,823" when the
+   * chunk measured 325,660, so the stated headroom was +1.3% and §6's own trend row had
+   * recorded the larger number three days earlier. A budget whose recorded measurement is
+   * fiction reports headroom the tree does not have.
+   *
+   * 3% rather than the byte: this catches a figure a train has left behind (the map row was
+   * 3.6% out) without reddening on the single-digit build jitter §3 documents.
+   */
+  it("keeps the measurement PERF.md quotes beside each budget within 3% of the tree", () => {
+    const map = named("map");
+    const routeCut = routeUntilMap();
+    const measured = {
+      "entry chunk": entryChunks().reduce((sum, name) => sum + gzip(name), 0),
+      "explorer route, map excluded": explorerRouteChunks().reduce((sum, name) => sum + gzip(name), 0),
+      "map chunk": reach([map])
+        .filter((name) => !routeCut.includes(name))
+        .reduce((sum, name) => sum + gzip(name), 0),
+    };
+    const perf = readFileSync(join(WEB, "PERF.md"), "utf8");
+
+    for (const [row, actual] of Object.entries(measured)) {
+      const stated = new RegExp(`^\\| ${row} \\|[^|]*\\|[^|]*over ([\\d,]+)`, "m").exec(perf);
+      expect(stated, `PERF.md's budget table has no "over" figure for ${row}`).not.toBeNull();
+      const recorded = Number((stated as RegExpExecArray)[1]!.split(",").join(""));
+      const drift = Math.abs(recorded - actual) / actual;
+
+      expect(
+        drift,
+        `PERF.md records ${row} at ${recorded} B; it measures ${actual} B here` +
+          " -- re-measure the row and append to \u00a76's trend rather than leaving the budget" +
+          " stating headroom over a figure that no longer exists",
+      ).toBeLessThan(0.03);
     }
   });
 });

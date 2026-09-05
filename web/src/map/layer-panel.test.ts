@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it, vi } from "vitest";
 
+import { HANDLE_GLYPH } from "../chrome/handle.ts";
 import { EMPTY_CENSUS, censusOf, loadCensus, resetCensus } from "./census.ts";
 import { LAYER_GROUPS } from "./groups.ts";
 import { JURISDICTIONS } from "./jurisdictions.generated.ts";
@@ -839,6 +840,19 @@ describe("the row's provenance handles are the app's, not a third dialect", () =
     expect(node.className).toContain("gw-handle");
     node.click();
     expect(seen).toEqual(["drv_01J9"]);
+  });
+
+  it("spells the affordance's glyph through chrome/handle.ts and not a second time itself", () => {
+    // `setProvenance` replaced the button's whole textContent with a hand-written string that
+    // began with a literal U+233E. style.css pins that codepoint to the GW Symbols face for
+    // exactly one reason, and a second spelling of it is a second thing to keep in step with
+    // the face, the coach mark and the handle module.
+    const { handle } = panel();
+    handle.setProvenance("wells", "drv_01J9");
+    const node = rowFor(handle.element, "wells")!.querySelector(".gw-layer-derivation")!;
+
+    expect(node.textContent).toBe(`${HANDLE_GLYPH} geometry build drv_01J9`);
+    expect(readFileSync("src/map/layer-panel.ts", "utf8")).not.toContain(HANDLE_GLYPH);
   });
 
   it("resolves the snapshot the row's own counts were read at", () => {

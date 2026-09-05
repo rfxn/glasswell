@@ -16,7 +16,12 @@ const NUMBER = new Intl.NumberFormat("en-US");
 /** Not auto-highlighted anywhere: "producing" is an ordinary word on a page full of wells. */
 const PRODUCING_CLASS_TERM = "gt_producing_class";
 const PENDING_MARK = "…";
-const ABSENT_MARK = "—";
+// ASCII, and the same mark `card/format.ts` exports: the shipped-literal lint refuses an
+// em-dash. Spelled here rather than imported because the map chunk importing the card's
+// format module drags it onto a shared chunk and costs the explorer route 792 B for one
+// string; `legend.test.ts` imports the card's constant and holds the two equal, which is the
+// guard without the edge.
+const ABSENT_MARK = "--";
 const FAULT_COPY = "Counts for this area could not be read.";
 const UNMEASURED_COPY = "No jurisdiction has measured wells in this class yet.";
 const PARTIAL_NOTE =

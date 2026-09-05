@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from glasswell.api import REFUSED_QUERY_PARAMS
+from glasswell.api import REFUSED_QUERY_PARAMS, UNREAD_CREDENTIAL_HEADERS
 from glasswell.api.csrf import CSRF_HEADER
 from glasswell.api.examples import KEY_HEADER
 
@@ -47,6 +47,30 @@ def test_every_listener_that_proxies_has_its_own_log_block() -> None:
 def test_the_log_block_deletes_the_key_the_cookie_and_the_csrf_header(header: str) -> None:
     for block in log_blocks():
         assert f"request>headers>{header} delete" in block, f"{header} survives into a log"
+
+
+@pytest.mark.parametrize("header", UNREAD_CREDENTIAL_HEADERS)
+def test_the_log_block_deletes_the_headers_a_caller_guesses_the_key_into(header: str) -> None:
+    """The API reads none of these, so a request carrying one is refused -- and logged first,
+    header value intact. That is the whole incident: a probe sent the owner key in X-Api-Key,
+    got its 403, and left the key in tunnel.log. Redaction cannot depend on the API agreeing
+    that a header is a credential."""
+    for block in log_blocks():
+        assert f"request>headers>{header} delete" in block, f"{header} survives into a log"
+
+
+@pytest.mark.parametrize("header", UNREAD_CREDENTIAL_HEADERS)
+def test_no_route_reads_a_header_the_log_filter_redacts(header: str) -> None:
+    """Redacting a header the API does read would hide a live credential path from the log
+    rather than keep a dead one out of it."""
+    read_by = [
+        f"{path}:{number}"
+        for path in (Path(__file__).resolve().parents[2] / "src" / "glasswell").rglob("*.py")
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
+        if f'"{header}"' in line and "UNREAD_CREDENTIAL_HEADERS" not in line
+    ]
+
+    assert not read_by, f"{header} is named in {read_by}; it is not an unread header"
 
 
 @pytest.mark.parametrize("parameter", REFUSED_QUERY_PARAMS)

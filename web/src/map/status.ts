@@ -13,6 +13,7 @@ import type { Expr } from "./expr.ts";
  * `cr_nd_status_vocab_1`; the glyph grammar follows the ND DMR `STATUS-TYPE` legend, where
  * plugging is a modifier struck through the fluid glyph rather than a colour of its own.
  */
+
 /** The registry decision that names a jurisdiction's status vocabulary. */
 const STATUS_VOCABULARY = "status_vocabulary";
 

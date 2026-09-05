@@ -276,6 +276,130 @@
         "title": "AvailableOrigin",
         "type": "object"
       },
+      "BasinContext": {
+        "additionalProperties": false,
+        "description": "The published boundary a well's geometry falls in, beside the label the ingest wrote.",
+        "properties": {
+          "_lineage": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Field path to the derivation handle of the mart run that answered it.",
+            "title": "Lineage",
+            "type": "object"
+          },
+          "basin_class": {
+            "description": "in_published_boundary, outside_published_boundaries, or no_geometry. Outside is an answer about the boundary set, not a gap: it says the publisher draws no basin here.",
+            "title": "Basin Class",
+            "type": "string"
+          },
+          "basin_label_filed": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The `basin` string on the well row, kept and labelled as what it is: a scope label from the ingest, not a geological finding.",
+            "title": "Basin Label Filed"
+          },
+          "basin_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The published basin polygon the answering geometry falls in.",
+            "title": "Basin Name"
+          },
+          "basin_overlap": {
+            "description": "How many published basin polygons contain the answering geometry.",
+            "title": "Basin Overlap",
+            "type": "integer",
+            "x-glasswell-not-a-figure": "How many published basin polygons contain this well's answering geometry. A count of boundary rows, served so a reader can see where the publisher's own polygons overlap; not a measured petroleum quantity."
+          },
+          "boundary_vintage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The boundary row's published vintage.",
+            "title": "Boundary Vintage"
+          },
+          "geometry_basis": {
+            "description": "Which geometry answered: surface, lateral_midpoint, bottomhole, or no_geometry. Stated because a long lateral can cross a boundary and saying which end was asked is the difference between a fact and an accident.",
+            "title": "Geometry Basis",
+            "type": "string"
+          },
+          "label_agrees": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Whether the filed label and the polygon answer agree. Null where there is nothing to compare.",
+            "title": "Label Agrees"
+          },
+          "label_class": {
+            "description": "agrees, disagrees, not_labelled, or no_label_to_compare.",
+            "title": "Label Class",
+            "type": "string"
+          },
+          "play_class": {
+            "description": "plays, or no_play_at_this_location.",
+            "title": "Play Class",
+            "type": "string"
+          },
+          "play_name": {
+            "description": "Every play polygon the geometry falls in. Plural because plays stack.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Play Name",
+            "type": "array"
+          },
+          "rule_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The basin_context rule that decided this row, where one is registered.",
+            "title": "Rule Id"
+          }
+        },
+        "required": [
+          "basin_name",
+          "basin_class",
+          "basin_overlap",
+          "play_name",
+          "play_class",
+          "basin_label_filed",
+          "label_class",
+          "label_agrees",
+          "boundary_vintage",
+          "geometry_basis",
+          "rule_id",
+          "_lineage"
+        ],
+        "title": "BasinContext",
+        "type": "object"
+      },
       "BasinStatusCounts": {
         "properties": {
           "basin": {
@@ -3313,6 +3437,39 @@
           "links"
         ],
         "title": "EnvelopeModel[WellNeighbors]",
+        "type": "object"
+      },
+      "EnvelopeModel_WellStatusHistory_": {
+        "properties": {
+          "_explain": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only when `?explain=true` was sent: one SB-07 \u00a79.3 chain per derivation handle in this response, keyed by the handle itself. It sits beside `data` rather than inside it because it is keyed by handle, not by pointer, and because the flag must add nothing to the payload it explains (SB-07 \u00a79.2).",
+            "title": "Explain"
+          },
+          "data": {
+            "$ref": "#/components/schemas/WellStatusHistory"
+          },
+          "links": {
+            "$ref": "#/components/schemas/LinksModel"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/MetaModel"
+          }
+        },
+        "required": [
+          "data",
+          "meta",
+          "links"
+        ],
+        "title": "EnvelopeModel[WellStatusHistory]",
         "type": "object"
       },
       "EnvelopeModel_WellStatusSummary_": {
@@ -8822,6 +8979,165 @@
         "title": "StatusDisclosure",
         "type": "object"
       },
+      "StatusHistoryBasis": {
+        "additionalProperties": false,
+        "description": "Which clock the dates beside these codes are on, and what follows from that.",
+        "properties": {
+          "class_column_is_historical": {
+            "description": "Always false in this release; resolution under the rule clock is next.",
+            "title": "Class Column Is Historical",
+            "type": "boolean"
+          },
+          "class_column_label": {
+            "description": "What the class column is, said in the words it must be headed with.",
+            "title": "Class Column Label",
+            "type": "string"
+          },
+          "clock": {
+            "description": "source_valid_time where effective_from is the regulator's own stamp; load_stamp where it is the vintage of the extract glasswell pulled.",
+            "title": "Clock",
+            "type": "string"
+          },
+          "detail": {
+            "description": "The decision in one served sentence.",
+            "title": "Detail",
+            "type": "string"
+          },
+          "rule_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The rule that decided the clock, where the jurisdiction registers one.",
+            "title": "Rule Id"
+          },
+          "served": {
+            "description": "False on a load stamp: the rows would be a log of when glasswell looked.",
+            "title": "Served",
+            "type": "boolean"
+          },
+          "status_vocabulary_rule": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The jurisdiction's own status vocabulary rule, which is what an absence is stated by.",
+            "title": "Status Vocabulary Rule"
+          }
+        },
+        "required": [
+          "clock",
+          "served",
+          "rule_id",
+          "status_vocabulary_rule",
+          "class_column_label",
+          "class_column_is_historical",
+          "detail"
+        ],
+        "title": "StatusHistoryBasis",
+        "type": "object"
+      },
+      "StatusHistoryCap": {
+        "additionalProperties": false,
+        "description": "What the cap kept and what it held back, so a short list is never read as a short life.",
+        "properties": {
+          "limit": {
+            "description": "The cap this response was cut at.",
+            "title": "Limit",
+            "type": "integer",
+            "x-glasswell-not-a-figure": "The cut a status history was taken at. A property of the response, not of the well: New Mexico holds 15,590 distinct filed effective dates across its population and its fullest single well carries 15 of them, 248 wells carry more than ten, and ten is a readable answer with the remainder counted beside it."
+          },
+          "returned": {
+            "description": "Rows this response carries.",
+            "title": "Returned",
+            "type": "integer",
+            "x-glasswell-not-a-figure": "How many status-history rows this response carries."
+          },
+          "total": {
+            "description": "Effective-dated headers the well carries at this vintage, whether or not a history is served for its jurisdiction.",
+            "title": "Total",
+            "type": "integer",
+            "x-glasswell-not-a-figure": "How many effective-dated headers the well carries at this vintage. Served so a short list is never read as a short life; a count of rows in this response's own population, not a measured petroleum quantity."
+          },
+          "withheld": {
+            "description": "Rows the cap held back. Never rows nobody has.",
+            "title": "Withheld",
+            "type": "integer",
+            "x-glasswell-not-a-figure": "Status-history rows the cap held back. Never rows nobody has."
+          }
+        },
+        "required": [
+          "limit",
+          "returned",
+          "total",
+          "withheld"
+        ],
+        "title": "StatusHistoryCap",
+        "type": "object"
+      },
+      "StatusHistoryRow": {
+        "additionalProperties": false,
+        "description": "One effective-dated header, as the regulator filed it.",
+        "properties": {
+          "effective_from": {
+            "description": "The date this header took effect, on whichever clock basis.clock names.",
+            "title": "Effective From",
+            "type": "string"
+          },
+          "status_canonical": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The class as glasswell maps this code today. Not historical: it is a read-time join against today's registry, so a superseded vocabulary rule changes every row at once. Null where no registered vocabulary maps the code.",
+            "title": "Status Canonical"
+          },
+          "status_reported": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The status code exactly as filed.",
+            "title": "Status Reported"
+          },
+          "status_rule_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The mapping rule that produced the class on this row.",
+            "title": "Status Rule Id"
+          }
+        },
+        "required": [
+          "effective_from",
+          "status_reported",
+          "status_canonical",
+          "status_rule_id"
+        ],
+        "title": "StatusHistoryRow",
+        "type": "object"
+      },
       "StreamCoverage": {
         "additionalProperties": false,
         "description": "The record one total is taken over: four counts that add up to the span.",
@@ -9216,6 +9532,93 @@
           "cumulative_peer_count"
         ],
         "title": "TypeCurveIndexSeries",
+        "type": "object"
+      },
+      "TypeCurveScope": {
+        "additionalProperties": false,
+        "description": "What the published control covers, and whether this well is one of its test subjects.",
+        "properties": {
+          "basin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The basin the publication is scoped to.",
+            "title": "Basin"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why this well has no control, in served words. Null where it has one.",
+            "title": "Detail"
+          },
+          "eval_vintage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The evaluation vintage it was accepted at.",
+            "title": "Eval Vintage"
+          },
+          "held_out": {
+            "description": "Whether this well is a test subject of the pinned split set. Only a held-out subject gets links.type_curve: a control fitted on the well it is compared against measures its own training data.",
+            "title": "Held Out",
+            "type": "boolean"
+          },
+          "publication_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The accepted publication in force.",
+            "title": "Publication Id"
+          },
+          "published": {
+            "description": "Whether any accepted publication is servable at all.",
+            "title": "Published",
+            "type": "boolean"
+          },
+          "split_set_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The split set the subject list comes from.",
+            "title": "Split Set Id"
+          }
+        },
+        "required": [
+          "published",
+          "held_out",
+          "basin",
+          "publication_id",
+          "eval_vintage",
+          "split_set_id",
+          "detail"
+        ],
+        "title": "TypeCurveScope",
         "type": "object"
       },
       "TypeCurveSeries": {
@@ -9899,6 +10302,17 @@
             "description": "Basin the well is assigned to.",
             "title": "Basin"
           },
+          "basin_context": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BasinContext"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The published boundary answer for this well. Null only where the mart has not been refreshed since the well landed, which is a pipeline state and not a fact about the well."
+          },
           "completion_date": {
             "anyOf": [
               {
@@ -9967,6 +10381,30 @@
             },
             "title": "Geometry Provenance",
             "type": "array"
+          },
+          "geometry_provenance_rule": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The rule that says what this jurisdiction's geometry means. Null where the jurisdiction registers no geometry_provenance decision, which is a registry gap to be stated rather than another jurisdiction's rule to be inherited.",
+            "title": "Geometry Provenance Rule"
+          },
+          "jurisdiction_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The registered name of the jurisdiction this well is filed with.",
+            "title": "Jurisdiction Name"
           },
           "land_unit_label": {
             "anyOf": [
@@ -10063,6 +10501,30 @@
             "description": "Whether the well is producing on the evidence held, which is a different fact from its status: `producing` where a positive oil or gas month was filed inside the window, `not_producing` where the well filed but no such month, and `unknown` where it filed nothing, where the regulator withheld the months, where the jurisdiction reports at the lease, or where it reports below the well and nothing rolls up \u2014 the last two are both jurisdictions with no well-level series to evaluate, and the rule that says which is served as a warning beside the figure rather than left for the reader to guess. Defined by cr_producing_window_1, cr_producing_streams_1 and cr_producing_evidence_1; liquids are oil plus condensate. Null where the definition is not registered, which is disclosed as a warning.",
             "title": "Producing"
           },
+          "regulator_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The regulator that holds the record, as the registry names it.",
+            "title": "Regulator Name"
+          },
+          "regulator_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The regulator's portal, which is a portal root and not this well's own record: no per-well URL template is registered for any jurisdiction yet, so a link labelled as the record for this well would be a lie the size of one click.",
+            "title": "Regulator Url"
+          },
           "spud_date": {
             "anyOf": [
               {
@@ -10156,6 +10618,10 @@
             "description": "Total wellbore depth as the regulator reported it, with its handle.",
             "x-glasswell-glossary": "gt_wellbore"
           },
+          "type_curve_scope": {
+            "$ref": "#/components/schemas/TypeCurveScope",
+            "description": "Whether a published peer control covers this well, and what it is scoped to. Served for every well: the section's absence sentence is the publication's own scope, and a client writing that sentence would be writing a basin name into the card."
+          },
           "well_name": {
             "anyOf": [
               {
@@ -10211,7 +10677,13 @@
           "completion_date",
           "geometry",
           "surface_point",
-          "neighbors_reason"
+          "neighbors_reason",
+          "type_curve_scope",
+          "basin_context",
+          "jurisdiction_name",
+          "regulator_name",
+          "regulator_url",
+          "geometry_provenance_rule"
         ],
         "title": "WellDetail",
         "type": "object"
@@ -10451,6 +10923,56 @@
           "neighbors"
         ],
         "title": "WellNeighbors",
+        "type": "object"
+      },
+      "WellStatusHistory": {
+        "additionalProperties": false,
+        "properties": {
+          "api10": {
+            "description": "Ten-digit API well number.",
+            "title": "Api10",
+            "type": "string",
+            "x-glasswell-glossary": "gt_api_10_api_12_api_14",
+            "x-glasswell-not-a-figure": "Identifier. A 10-digit API number is an identity string, not a measurement."
+          },
+          "basis": {
+            "$ref": "#/components/schemas/StatusHistoryBasis",
+            "description": "Which clock these dates are on."
+          },
+          "cap": {
+            "$ref": "#/components/schemas/StatusHistoryCap",
+            "description": "What the cap kept and what it held back."
+          },
+          "history": {
+            "description": "Newest first, capped; `cap` says how many rows the cap held back.",
+            "items": {
+              "$ref": "#/components/schemas/StatusHistoryRow"
+            },
+            "title": "History",
+            "type": "array"
+          },
+          "state_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "API state prefix; an identifier, not a count.",
+            "title": "State Code",
+            "x-glasswell-not-a-figure": "FIPS-style state code carried as reported; an identifier, not a quantity."
+          }
+        },
+        "required": [
+          "api10",
+          "state_code",
+          "basis",
+          "history",
+          "cap"
+        ],
+        "title": "WellStatusHistory",
         "type": "object"
       },
       "WellStatusSummary": {
@@ -20393,6 +20915,153 @@
         }
       }
     },
+    "/v1/wells/{api10}/history": {
+      "get": {
+        "description": "Every effective-dated header this well carries, newest first, over the status code the regulator filed. Not over the canonical class: a canonical class is glasswell's own mapping decision and can be superseded by a rule, so a history over it would show a rule edit as if the regulator had changed its mind, and it would be empty everywhere \u2014 zero wells in the spine carry more than one distinct canonical class, while 31,707 carry a changed filed code. Whether there is a history at all is a property of the jurisdiction's clock, not of the well: where effective_from is the regulator's own valid time a new header means the regulator restamped the status, and where it is the vintage of the extract glasswell pulled it means only that glasswell looked again. Each jurisdiction's own status_history rule records which of the two its headers are on, and that registration is the only thing that emits links.history on the well record. A 200 with an empty history and basis.served false is therefore the honest answer for a load-stamp jurisdiction: it says no history was captured, which an empty list on its own cannot tell apart from a well that never changed. The class column is labelled rather than claimed. It is resolved through the one shared read-time resolver \u2014 the same join the tile mart, the facets and the well record use, so no two surfaces can answer differently \u2014 and it is today's mapping applied to a historical code, which is what its label says.",
+        "operationId": "get_well_status_history",
+        "parameters": [
+          {
+            "description": "Ten-digit API well number.",
+            "in": "path",
+            "name": "api10",
+            "required": true,
+            "schema": {
+              "description": "Ten-digit API well number.",
+              "pattern": "^\\d{10}$",
+              "title": "Api10",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Knowledge-time cut: serve the greatest vintage at or before this date. Defaults to the latest published vintage, never to wall-clock now.",
+            "in": "query",
+            "name": "as_of",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Knowledge-time cut: serve the greatest vintage at or before this date. Defaults to the latest published vintage, never to wall-clock now.",
+              "title": "As Of"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvelopeModel_WellStatusHistory_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "not_found": {
+                    "summary": "Not found",
+                    "value": {
+                      "detail": "The resource does not exist, or exists but is not visible to this principal. Both answer the same way so probing reveals nothing.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 404,
+                      "title": "Not found",
+                      "type": "/v1/errors/not_found"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "validation_failed": {
+                    "summary": "Request validation failed",
+                    "value": {
+                      "detail": "A parameter failed validation, including declared caps. `errors[]` names each offending pointer. Caps are refused, never silently clamped.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "Request validation failed",
+                      "type": "/v1/errors/validation_failed"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Request validation failed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "service_degraded": {
+                    "summary": "Service degraded",
+                    "value": {
+                      "detail": "A required store is unavailable.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 503,
+                      "title": "Service degraded",
+                      "type": "/v1/errors/service_degraded"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Service degraded"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Status history for one well",
+        "tags": [
+          "wells"
+        ],
+        "x-glasswell-request-example": {
+          "path": {
+            "api10": "3305310451"
+          },
+          "query": {}
+        },
+        "x-glasswell-semantics": {
+          "as_of": {
+            "so": "Walks the knowledge axis: a header promoted after the date asked for is not in the answer, so a reader can see the history as it stood.",
+            "x-glasswell-glossary": "gt_report_vintage"
+          }
+        }
+      }
+    },
     "/v1/wells/{api10}/neighbors": {
       "get": {
         "description": "Current-snapshot physical neighbours, not model analogs. The mart measures the minimum projected distance over every promoted lateral component pair, retaining the exact winning geometry keys. Surface points, vertical traces and sidetracks never enter. Eligibility is strictly completion_date < at_date; equality is co-development and is excluded. Completion is the earliest current FracFocus job-end anchor, never spud or first production. Missing completion and formation context remains counted and explicit. API reads are indexed scalar joins over the persisted mart with no spatial work. Because canonical geometry is current-only, as_of may only pin the current mart snapshot.",
@@ -20735,7 +21404,7 @@
     },
     "/v1/wells/{api10}/production": {
       "get": {
-        "description": "Monthly produced volumes for one well, in the SB-07 \u00a79.1(b) sidecar form: derivation handles in `_lineage`, units in `_units`, the liquids basis in `_basis`, and per-point `report_vintage` and `null_semantics` arrays. ND publishes one workbook a month, so a month is promoted by its own derivation: `_lineage` keys a handle per point (`series.oil_bbl.0`) whenever the points of a column disagree, and each handle explains to the file that carries that month. In North Dakota these are well-level regulator reports, so `granularity` is `well_observed` \u2014 nothing here is allocated. A series never silently mixes vintages: `as_of` selects the greatest report vintage at or before the date and every point says which one it used. `null_semantics` keeps a reported zero, an absent report and a withheld value apart; they are never collapsed into a gap. A month the regulator withheld rides the axis with a null value. A well that filed in more than one pool is served the exact sum of its pool rows, never a serve-time sum: the point's handle resolves to the aggregation derivation over those rows, `*_aggregation` reads `sum_over_pools`, `reporting_level` reads `well_completion_pool`, and `links.pools` carries the per-pool breakdown. Where two filings share one pool label the rule cannot say which is the well, so that point is withdrawn as multi_pool_pending instead. meta.warnings names every case with the rule that decided it. GOR and water cut are deliberately not served in this slice.",
+        "description": "Monthly produced volumes for one well, in the SB-07 \u00a79.1(b) sidecar form: derivation handles in `_lineage`, units in `_units`, the liquids basis in `_basis`, and per-point `report_vintage` and `null_semantics` arrays. ND publishes one workbook a month, so a month is promoted by its own derivation: `_lineage` keys a handle per point (`series.oil_bbl.0`) whenever the points of a column disagree, and each handle explains to the file that carries that month. It keys per point for the same reason where one promotion filed a month more than once: a restatement is a second row and never an edit, so that point's handle also names the report vintage (`&rv=`) it was read at. In North Dakota these are well-level regulator reports, so `granularity` is `well_observed` \u2014 nothing here is allocated. A series never silently mixes vintages: `as_of` selects the greatest report vintage at or before the date and every point says which one it used. `null_semantics` keeps a reported zero, an absent report and a withheld value apart; they are never collapsed into a gap. A month the regulator withheld rides the axis with a null value. A well that filed in more than one pool is served the exact sum of its pool rows, never a serve-time sum: the point's handle resolves to the aggregation derivation over those rows, `*_aggregation` reads `sum_over_pools`, `reporting_level` reads `well_completion_pool`, and `links.pools` carries the per-pool breakdown. Where two filings share one pool label the rule cannot say which is the well, so that point is withdrawn as multi_pool_pending instead. meta.warnings names every case with the rule that decided it. GOR and water cut are deliberately not served in this slice.",
         "operationId": "get_well_production",
         "parameters": [
           {
@@ -20767,6 +21436,25 @@
               ],
               "description": "Knowledge-time cut: serve the greatest vintage at or before this date. Defaults to the latest published vintage, never to wall-clock now.",
               "title": "As Of"
+            }
+          },
+          {
+            "description": "Divide every point by the well's lateral length in thousands of feet and serve the result in `<unit>/kft`. Refused with the rule that decided it where the jurisdiction withholds the length, where no lateral is held, or where no compute CRS is registered for the well's basin: a normalised figure whose divisor nobody can name is a naked number.",
+            "in": "query",
+            "name": "normalization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "const": "per_lateral_ft",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Divide every point by the well's lateral length in thousands of feet and serve the result in `<unit>/kft`. Refused with the rule that decided it where the jurisdiction withholds the length, where no lateral is held, or where no compute CRS is registered for the well's basin: a normalised figure whose divisor nobody can name is a naked number.",
+              "title": "Normalization"
             }
           },
           {
@@ -21051,6 +21739,10 @@
           "from": {
             "so": "Windows on the production month, not on the report vintage, so it changes which months you see and never which restatement of them you get. Pair it with as_of to hold both still.",
             "x-glasswell-glossary": "gt_production_month"
+          },
+          "normalization": {
+            "so": "Divides every point by this well's lateral length in thousands of feet and serves the result in `<unit>/kft`, with the length and the method that measured it on the basis and one handle per column resolving both the production and the geometry. It is a served arm rather than a client division because a number divided in a browser keeps the handle of the number it was divided from, which is a naked figure wearing someone else's papers.",
+            "x-glasswell-glossary": "gt_lateral"
           },
           "stream": {
             "so": "Repeat it to ask for more than one; omit it and you get oil, gas and water. Dropping a stream drops its column, never a month \u2014 the shared axis is the same either way, which is what keeps two streams comparable point for point.",
