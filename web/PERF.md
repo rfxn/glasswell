@@ -143,10 +143,10 @@ rest on it.
 
 | budget | B gzipped | headroom over measured |
 |---|---:|---|
-| entry chunk | 14,000 | +7.5% over 13,026 (v0.80 P0, drawer split; was +0.4% over 13,950 at v0.78 and +0.5% over 13,928 at v0.76) |
+| entry chunk | 14,000 | +1.9% over 13,737 (v0.82 train head ca7dce7, re-walked; 13,026 at v0.80 P0, 13,950 at v0.78) |
 | **entry stylesheet** | **7,400** | the ratcheted value: 7,367 measured at the card group's last phase plus 33 B. Was 7,420 — the 6,520 measured on the v0.77 tree plus the 900 B ceiling the rail was allowed to spend |
-| explorer route, map excluded | 79,700 | +0.9% over **78,971**, re-walked at the card group's last phase. The same build on the merge commit measures 76,110 (76,103 at the merge itself; the 7 B is the jitter above), so P5 and P6 spent **2,861 B**. Texas measured 76,412 on its own head and set 79,700; the card measured 74,544 on its own; neither number described the tree both landed in |
-| map chunk | 330,000 | +5.2% over 313,823 |
+| explorer route, map excluded | 79,700 | +0.04% over 79,672 (v0.82 train head, re-walked: the card at 506c460 measured 79,645 and the register's layer-panel change adds 27 B; 28 B of headroom, the budget unraised — see REG-WC-1) |
+| map chunk | 330,000 | +1.3% over 325,632 (v0.82 train head, re-walked; 313,823 at C11) |
 
 **The fourth budget, and why it is the only one carrying deliberate slack.** The other three
 were set at about 5% over a measurement and ratchet downwards. `entryCssGzip` was set at
@@ -448,6 +448,7 @@ scale of the difference and the reason a row names its own commit rather than th
 | 2026-09-02 | facets-all-jurisdictions | 13,930 | 73,634 | 325,700 | scope becomes a set: +473 gz on the explorer route, +4 on the entry (jitter class — the panel is not on the entry path) and +15 on the map chunk, against a v0.76 baseline re-measured on this toolchain at 13,927 / 73,167 / 325,217. Re-measured after merging v0.77, which is the row shown; the pre-merge measurement was 13,931 / 73,640 / 325,232. The map chunk figure is not comparable with the 313,823 two rows below: the v0.74–v0.76 layers moved it, and nothing here did |
 | 2026-08-31 | facets | 21,340 | 71,511 | 313,823 | "Wells by ..." panel: +3,362 gz on the explorer route, entry and map chunk unchanged. Not split behind a dynamic import — it renders on the `wells` dataset, the one the explorer opens on, so a split buys a second round trip for nearly every reader |
 | 2026-09-05 | `fix/v082-register` @ `ea1d0c4` | 13,947 | 76,415 | 325,660 | a re-measurement, not a change: §3's budget table still stated its map-chunk headroom over C11's 313,823, and the +5.2% that implied was really +1.3%. Nothing on this branch touches a byte budget — the five em-dash rewordings replace a 3-byte glyph with two ASCII characters in four modules, which is inside the jitter band this section already records |
+| 2026-09-05 | v0.82 train head (`ca7dce7`: card `506c460` + register `21ef55f`) | 13,737 | 79,672 | 325,632 | the merge re-walked, not a change of either track: +27 on the route over the card's 79,645 (the register's layer-panel change rides the route), +19 on the entry over the card's 13,718, −12 on the map chunk; 28 B of route headroom, the budget unraised (REG-WC-1) |
 
 ---
 
