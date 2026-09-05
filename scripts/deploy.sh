@@ -17,6 +17,18 @@ SOCKET_DSN='postgresql:///glasswell?host=/var/run/postgresql'
 PIPELINE_ROLE=glasswell
 MIGRATIONS_DIR=src/glasswell/db/migrations
 CODE_ENV_FILE=/etc/glasswell/code-version.env
+# Every remote step records a transition into a status file ON THE HOST, through the runner the
+# tree carries. A workstation dies mid-ship; the file it wrote to survives that and is what the
+# verdict below is read out of. install.sh has not run when the first records are written, so
+# the path is the copy step 1 unpacks rather than the installed one.
+HOST_RUNNER="$DEPLOY_SRC/infra/bin/host-runner.sh"
+# The positions one run takes. Step 6 is written twice and exactly one of them runs;
+# tests/unit/test_deploy_status.py holds this equal to the distinct step numbers.
+DEPLOY_STEP_COUNT=23
+deploy_step_index=0
+deploy_step_label=""
+deploy_job=""
+recording=0
 
 dry_run=0
 with_migrations=0
@@ -35,11 +47,14 @@ src/glasswell/marts/tiles.py moved, and infra/README.md carries the command.
 
 Runbook step 3b, the mart refresh after a migration that touched a tile mart, is not scripted
 either. Its canonical form runs as postgres — the tile views are postgres-owned, and uid
-glasswell gets InsufficientPrivilege — and carries the code identity this deploy stamped:
-  systemd-run --uid=postgres --pipe --wait \
-      --setenv=GLASSWELL_CODE_VERSION=<tag>+<short-commit> \
-      /opt/glasswell/venv/bin/python -m glasswell.marts.nd_wells \
-      --dsn 'postgresql:///glasswell?host=/var/run/postgresql'
+glasswell gets InsufficientPrivilege — and takes the code identity from the file this deploy
+stamps, which the runner puts in the unit's environment:
+  /usr/local/sbin/host-runner.sh --job nd-wells-mart --detach -- \
+      mart --user postgres --group postgres \
+      /opt/glasswell/venv/bin/python -m glasswell.marts.nd_wells
+
+This deploy's own progress is a job of the same shape. Poll it from anywhere:
+  ssh $GW_DEPLOY_HOST /opt/glasswell/src/infra/bin/host-runner.sh --status deploy-<version>
 EOF
 }
 
@@ -56,8 +71,29 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-refuse() { printf 'deploy refused: %s\n' "$1" >&2; exit 1; }
-step() { printf '\n== %s\n' "$1"; }
+refuse() {
+    record_state stopped 1
+    printf 'deploy refused: %s\n' "$1" >&2
+    exit 1
+}
+
+step() {
+    deploy_step_index=$(( deploy_step_index + 1 ))
+    deploy_step_label="${1//\'/}"
+    printf '\n== %s\n' "$1"
+    record_state running
+}
+
+# One transition per step, best effort: a ship is not failed by a record that did not land, and
+# the record that did not land is visible as a gap in the file.
+record_state() {
+    (( recording )) || return 0
+    local result=$1 exit_code=${2:-}
+    remote "$HOST_RUNNER --record --job $deploy_job --step '$deploy_step_label' \
+        --step-index $deploy_step_index --steps-total $DEPLOY_STEP_COUNT \
+        --result $result ${exit_code:+--exit $exit_code}" \
+        >/dev/null || printf '  (the host did not record this step)\n' >&2
+}
 
 cd "$REPO_DIR" || refuse "cannot enter $REPO_DIR"
 
@@ -78,6 +114,9 @@ if [[ -z $tag ]]; then
 else
     code_version="$tag+$short_commit"
 fi
+# A file name, so anything that is not one becomes a dash: `v0.83+abc1234` is one job per
+# shipped commit, which is what makes two ships of one tag two readable records.
+deploy_job="deploy-${code_version//[^A-Za-z0-9._-]/-}"
 
 repo_head=0
 for migration_file in "$MIGRATIONS_DIR"/[0-9][0-9][0-9]_*.sql; do
@@ -138,6 +177,11 @@ printf '  %s here / %s there\n' "${lock_here:0:12}" "${lock_before:0:12}"
 step "1. the tree at HEAD"
 remote "mkdir -p $DEPLOY_SRC $WEB_ROOT" || refuse "cannot prepare $DEPLOY_SRC on $HOST"
 git archive HEAD | pipe_remote "tar -x -C $DEPLOY_SRC" || refuse "the tree did not unpack"
+# The runner is on the host from here, so this step is the first one recordable — and it is
+# recorded now rather than at the top, because nothing before it could have written a file.
+recording=1
+record_state running
+printf '  poll: ssh %s %s --status %s\n' "$HOST" "$HOST_RUNNER" "$deploy_job"
 
 # .gitattributes export-ignores tests/, and `git archive` honours that — but scripts/smoke.sh
 # reads tests/contract/openapi_snapshot.json on the host, so the suite ships from the working
@@ -339,8 +383,27 @@ step "9. smoke.sh"
 remote "$DEPLOY_SRC/scripts/smoke.sh"
 smoke_status=$?
 
+if (( verify_status == 0 && smoke_status == 0 )); then
+    record_state complete
+else
+    record_state stopped 1
+fi
+
 printf '\n== result\n'
 printf '  deployed  %s to %s\n' "$tag" "$HOST"
 printf '  verify.sh exit %d\n' "$verify_status"
 printf '  smoke.sh  exit %d\n' "$smoke_status"
+
+# The host's own record of the ship, read back. This shell's exit says what this shell saw; a
+# ship that outlived the shell is only readable here, and a deploy is not complete because the
+# last ssh returned 0.
+if (( recording )) && (( dry_run == 0 )); then
+    ship_status="$(remote "$HOST_RUNNER --status $deploy_job")"
+    ship_result="$(printf '%s' "$ship_status" | sed -n 's/.*,"result":"\([^"]*\)".*/\1/p')"
+    ship_step="$(printf '%s' "$ship_status" | sed -n 's/.*,"step":"\([^"]*\)".*/\1/p')"
+    printf '  status    %s says %s at %s\n' "$deploy_job" "${ship_result:-unreadable}" \
+        "${ship_step:-no step}"
+    [[ $ship_result == complete ]] || exit 1
+fi
+
 (( verify_status == 0 && smoke_status == 0 )) || exit 1
