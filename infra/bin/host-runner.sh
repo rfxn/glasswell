@@ -467,8 +467,17 @@ fi
 
 (( steps_total > index_offset )) || fail_usage "no steps"
 
-self_path="$(cd -- "$(dirname -- "$0")" && pwd)/$(basename -- "$0")" || {
-    printf 'host-runner.sh: cannot resolve my own path\n' >&2
+# A simple assignment takes the exit of the LAST substitution in it, so the guard on the old
+# one-liner watched `basename` and a `cd` that failed left `/host-runner.sh` here — the path
+# `--detach` re-executes and every runbook's poll line quotes.
+resolve_self_path() {
+    local invoked=$1 directory
+    directory=$(cd -- "$(dirname -- "$invoked")" && pwd) || return 1
+    printf '%s/%s' "$directory" "$(basename -- "$invoked")"
+}
+
+self_path=$(resolve_self_path "$0") || {
+    printf 'host-runner.sh: cannot resolve my own path from %s\n' "$0" >&2
     exit 1
 }
 

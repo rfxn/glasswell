@@ -1107,6 +1107,68 @@ class TestRecordMode:
         assert second.returncode == 0
 
 
+class TestItResolvesItsOwnPath:
+    """`--detach` re-executes this script and every runbook's poll line quotes it, so the path
+    it prints has to be the one it is running from, or the refusal has to be the answer.
+
+    The helper is lifted out and executed the way `tests/unit/test_verify_run_state.py` runs
+    verify.sh's, because the failure — a `cd` into a directory that is not there — cannot be
+    staged through the shebang: the kernel puts the real script path in `$0` whatever argv[0]
+    says.
+    """
+
+    @staticmethod
+    def resolve(tmp_path: Path, argument: str) -> subprocess.CompletedProcess[str]:
+        source = RUNNER.read_text(encoding="utf-8")
+        opening = "resolve_self_path() {"
+        assert opening in source, "the runner does not name the resolution it guards"
+        body = opening + source.split(opening, 1)[1].split("\n}\n", 1)[0] + "\n}\n"
+        harness = tmp_path / "resolve.sh"
+        harness.write_text(
+            "\n".join(["#!/bin/bash", "set -uo pipefail", body, f'resolve_self_path "{argument}"']),
+            encoding="utf-8",
+        )
+        return subprocess.run(
+            ["/bin/bash", str(harness)], capture_output=True, text=True, check=False
+        )
+
+    def test_a_directory_it_cannot_enter_is_a_refusal_not_a_root_level_guess(
+        self, tmp_path: Path
+    ) -> None:
+        completed = self.resolve(tmp_path, "/nonexistent-dir/host-runner.sh")
+
+        assert completed.returncode != 0, (
+            "the cd failed and the caller was handed a path anyway"
+        )
+        assert completed.stdout.strip() != "/host-runner.sh"
+        assert completed.stdout.strip() == ""
+
+    def test_it_answers_the_absolute_path_it_was_invoked_by(self, tmp_path: Path) -> None:
+        completed = self.resolve(tmp_path, str(RUNNER))
+
+        assert completed.returncode == 0, completed.stderr
+        assert completed.stdout.strip() == str(RUNNER)
+
+    def test_a_relative_invocation_resolves_to_the_same_absolute_path(
+        self, tmp_path: Path
+    ) -> None:
+        # `--detach` hands this to systemd, which starts it from `/`.
+        completed = self.resolve(tmp_path, f"{RUNNER.parent}/./{RUNNER.name}")
+
+        assert completed.stdout.strip() == str(RUNNER)
+
+    def test_the_chain_refuses_rather_than_printing_a_poll_line_it_cannot_run(
+        self, harness: Harness
+    ) -> None:
+        # The guard is on the assignment, not on the last substitution in it: a caller that
+        # took the exit of `basename` would carry on with a path that is not there.
+        source = RUNNER.read_text(encoding="utf-8")
+
+        assert re.search(
+            r"self_path=\$\(resolve_self_path \"\$0\"\) \|\| \{", source
+        ), "the resolution is not guarded where it is used"
+
+
 class TestDetach:
     def test_it_hands_the_job_to_a_transient_unit_and_prints_the_poll_command(
         self, harness: Harness
