@@ -140,11 +140,16 @@ means something tagged it. Stop and hand it back if it is not zero.
 
 ## Step 2 — the production archive
 
-The long one. Run it under `screen`, `tmux` or `systemd-run --scope`; an SSH drop mid-run
-aborts the transaction and you start over.
+The long one, and the reason it runs as a job on the host: an SSH drop mid-run aborts the
+transaction and you start over.
 
 ```bash
-sudo --preserve-env=GLASSWELL_DSN -u glasswell $VENV/bin/glasswell-mt-bogc --raw-root /data/raw
+sudo /usr/local/sbin/host-runner.sh --job mt-production --detach -- \
+  production --timeout 7200 --memory 6G \
+    /opt/glasswell/venv/bin/glasswell-mt-bogc --raw-root /data/raw
+
+# Poll the status file; the summary line below is what `steps[].summary` holds when it lands.
+sudo /usr/local/sbin/host-runner.sh --status mt-production
 ```
 
 Expected, from the 2026-08-17 artifact:
