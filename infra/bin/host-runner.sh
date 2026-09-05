@@ -213,7 +213,7 @@ collect_records() {
 
 write_status() {
     local result=$1 step=$2 index=$3 unit=$4 exit_json=$5 finished_json=$6
-    local line position first=1
+    local line position first=1 published=0
     collect_records
     {
         printf '{"job":%s,"started":%s,"updated":%s,' \
@@ -238,7 +238,13 @@ write_status() {
             done < "$stamps_file"
         fi
         printf ']}\n'
-    } > "$status_file.tmp" && command mv "$status_file.tmp" "$status_file"
+    } > "$status_file.tmp" && command mv "$status_file.tmp" "$status_file" && published=1
+    # Silence here is the failure this script exists to remove: the poller would read the last
+    # transition that did land and call the job stuck rather than unwritable.
+    if (( published == 0 )); then
+        printf 'host-runner.sh: could not write %s — this transition is not published\n' \
+            "$status_file" >&2
+    fi
 }
 
 # Anchored on the document this script writes: the top-level keys are the first two, and a

@@ -687,6 +687,23 @@ class TestTheStatusFileIsReplacedNotRewritten:
         ]
 
 
+class TestAStatusWriteThatCouldNotLand:
+    def test_it_says_so_rather_than_leaving_a_stale_file_to_be_polled(
+        self, harness: Harness
+    ) -> None:
+        # Deterministic for any uid, root included: a directory where the temp file goes makes
+        # the redirection fail. The runs directory is root-owned on the host and every step
+        # runs as glasswell, so a write that cannot land is a real shape, and a poller reading
+        # a file nobody could update reads a job that looks stuck at its last transition.
+        harness.runs.mkdir(parents=True)
+        (harness.runs / "blocked.json.tmp").mkdir()
+
+        harness.run("--job", "blocked", "--", "one", "/bin/echo", '{"ran": 1}')
+
+        assert not (harness.runs / "blocked.json").exists()
+        assert "could not write" in harness.log("blocked")
+
+
 class TestRefusals:
     def test_a_finished_job_refuses_to_run_again(self, harness: Harness) -> None:
         harness.run(*two_steps())

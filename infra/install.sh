@@ -171,7 +171,9 @@ install -o root -g root -m 0755 "$INFRA_DIR/bin/host-runner.sh" "$SBIN_DIR/host-
 retire_adhoc_runs() {
     local archive="$RUNS_DIR/archive" script job status sidecar unit live
     local -a active_units
-    command install -d -o root -g "$RUN_USER" -m 0750 "$archive"
+    # No -o: install.sh is root-only (line 65). -g, so reading the archive is not root-only,
+    # which is what runbook-co-tier2.md tells an operator to do.
+    command install -d -g "$RUN_USER" -m 0750 "$archive"
 
     active_units=()
     while read -r unit; do
