@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import contextlib
 import os
+import re
 import subprocess
 import time
 from collections.abc import Callable, Iterator, Mapping
@@ -17,7 +19,7 @@ from glasswell.api import create_app
 from glasswell.api.csrf import CSRF_KEY_ENV
 from glasswell.api.deps import ALLOW_ANON_ENV, OWNER_KEY_ENV, get_connection
 from glasswell.api.examples import KEY_HEADER
-from glasswell.db.migrate import migrate
+from glasswell.db.migrate import discover_migrations, migrate
 from glasswell.lineage.fetch import RAW_ROOT_ENV
 from glasswell.lineage.models import DeriveEnvironment
 
@@ -228,6 +230,33 @@ def _wait_until_ready(dsn: str) -> None:
     raise RuntimeError(f"PostGIS container never accepted connections: {last_error}")
 
 
+ROLE_DECLARATION = re.compile(r"create role (\w+)((?: (?:no)?login)?)\s*;")
+
+
+def ensure_cluster_roles(dsn_template: str) -> None:
+    """Create every role the migrations declare, before any worker migrates.
+
+    A role is cluster-global, not per-database. 001, 026 and 076 each create theirs inside a
+    `if not exists (select 1 from pg_roles ...)` block, and four xdist workers migrating their
+    own template against one shared server all pass that check in the same instant and then all
+    issue the CREATE. The first sharded CI run errored 843 tests on
+    `duplicate key value violates unique constraint "pg_authid_rolname_index"`. Every migration
+    that runs afterwards -- the templates, and the `empty_db` tests that migrate from scratch --
+    finds the roles present and never takes the branch. The names and their login attribute are
+    read from the migrations rather than restated here, so a new role needs no edit.
+    """
+    declared: dict[str, str] = {}
+    for migration in discover_migrations():
+        for name, attributes in ROLE_DECLARATION.findall(migration.sql):
+            declared[name] = attributes.strip()
+    with psycopg.connect(dsn_template.format(database="postgres"), autocommit=True) as admin:
+        for name, attributes in declared.items():
+            # Another worker winning the same race is the expected outcome, not a failure;
+            # autocommit means the connection survives it and the next role still runs.
+            with contextlib.suppress(psycopg.errors.DuplicateObject):
+                admin.execute(f"create role {name} {attributes}".strip())
+
+
 def worker_scoped(name: str) -> str:
     """A fixed database name, made unique per xdist worker.
 
@@ -247,6 +276,7 @@ def postgres_server() -> Iterator[str]:
         # The workflow starts and removes the server the shards share, because a worker's
         # teardown is not guaranteed and a leaked container outlives the job that made it.
         _wait_until_ready(provided.format(database="postgres"))
+        ensure_cluster_roles(provided)
         yield provided
         return
     environment = docker_environment()
@@ -287,6 +317,7 @@ def postgres_server() -> Iterator[str]:
             f"postgresql://glasswell:{password}@{address}/{{database}}?{CONNECTION_PARAMETERS}"
         )
         _wait_until_ready(dsn_template.format(database="postgres"))
+        ensure_cluster_roles(dsn_template)
         yield dsn_template
     finally:
         subprocess.run(

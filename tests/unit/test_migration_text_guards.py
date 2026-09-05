@@ -46,3 +46,24 @@ def test_the_scheduler_observe_migration_states_one_evidence_pair() -> None:
 
     assert len(tags) == 1, f"the file states its evidence tag {len(tags)} times: {tags}"
     assert len(commits) == 1, f"the file states its evidence commit {len(commits)} times"
+
+
+def test_the_harness_finds_every_role_a_migration_declares() -> None:
+    """The harness pre-creates these before any worker migrates, because a role is
+    cluster-global and `if not exists` is not a lock. A migration that spelled its CREATE
+    differently would slip past the pattern, the pre-create would miss the role, and the
+    duplicate-key race would come back silently on the next sharded run.
+    """
+    from tests.conftest import ROLE_DECLARATION
+
+    declarations = 0
+    resolved: set[str] = set()
+    for migration in discover_migrations():
+        declarations += len(re.findall(r"(?i)\bcreate\s+role\b", migration.sql))
+        resolved.update(name for name, _ in ROLE_DECLARATION.findall(migration.sql))
+
+    assert declarations > 0, "no migration creates a role; the pattern moved"
+    assert len(resolved) == declarations, (
+        f"{declarations} create-role statements resolved to {sorted(resolved)} — the harness's"
+        " pattern does not read one of them, so ensure_cluster_roles would not pre-create it"
+    )
