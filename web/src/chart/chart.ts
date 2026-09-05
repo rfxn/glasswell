@@ -258,8 +258,17 @@ export function renderChart(
       plot,
     );
     signal.addEventListener("abort", () => instance.destroy());
-    align(band, instance.over, plot);
-    track(plot, container, band, instance, signal);
+    // A frame later, never the layout that was current when uPlot was handed the element: its
+    // second y axis has no width until it has drawn, so aligning here read a right gutter of
+    // zero and the band was correct only where a later resize happened to arrive (REG-WC-4).
+    let frame = 0;
+    const realign = (): void => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => align(band, instance.over, plot));
+    };
+    signal.addEventListener("abort", () => cancelAnimationFrame(frame));
+    realign();
+    track(plot, container, instance, signal, realign);
 
     // The whole plot rectangle and the whole band answer the pointer, because at 131 months a
     // per-point target measured 2 CSS px across and the reader could not land on one.
@@ -367,9 +376,9 @@ function measure(plot: HTMLElement, container: HTMLElement): number {
 function track(
   plot: HTMLElement,
   container: HTMLElement,
-  band: HTMLElement,
   instance: uPlot,
   signal: AbortSignal,
+  realign: () => void,
 ): void {
   if (typeof ResizeObserver === "undefined") return;
   let last = measure(plot, container);
@@ -379,7 +388,9 @@ function track(
       last = width;
       instance.setSize({ width, height: PLOT_HEIGHT });
     }
-    align(band, instance.over, plot);
+    // Through the same frame: a `setSize` has not laid out yet either, which is why a resize
+    // landed on the gutter before it.
+    realign();
   });
   observer.observe(container);
   signal.addEventListener("abort", () => observer.disconnect());

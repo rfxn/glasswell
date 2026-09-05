@@ -184,6 +184,12 @@
       the refusal now stands in the production section, the card stays up and the panel
       carries no dismiss that would close it; a lost session still takes the whole card,
       because a card of the previous reading standing under one reads live
+- [Fix] the capture band spans exactly the plot it captions, measured after the axes are
+      placed rather than before: the band took the gutter of the layout that existed one
+      tick earlier, so on a card where nothing mounts after the chart it ran 76 px wider
+      than the drawing area at 1600, its cells a month off their ticks and the focused
+      month's outline clipped at the card's edge, and it was only ever right where a
+      later resize happened to arrive
 - [Fix] the report-vintages disclosure a reader opened stays open across the chart's own
       redraws: a stream toggle, the log axis, a span press, a drag, clearing it and the
       table view each rebuilt the chart with the disclosure closed, and the summary those
