@@ -1962,6 +1962,40 @@ describe("a re-land keeps the card the reader has", () => {
     expect(onClose, "a control inside the scoped refusal closed the card").not.toHaveBeenCalled();
   });
 
+  it("puts no card-closing dismiss in the panel the series' own failure draws", async () => {
+    // The second site of the same class: the production request fails on a card whose well
+    // request answered, so the panel is the chart's frame and not the card. Reverting only this
+    // call site reds nothing else in the suite (the sentinel's plant N), which is what this
+    // case is for.
+    const onClose = vi.fn();
+    const onSignIn = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        stubFetch({
+          [`/v1/wells/${API10}/completions`]: completionContextEnvelope,
+          [`/v1/wells/${API10}/cumulatives`]: cumulativesEnvelope,
+          [`/v1/wells/${API10}/neighbors`]: neighborEnvelope,
+          [`/v1/wells/${API10}/production`]: {
+            type: "https://glasswell.rpx.sh/v1/errors/unauthenticated",
+            title: "Not authenticated",
+            status: 403,
+          },
+          [`/v1/wells/${API10}`]: wellEnvelope,
+        }),
+      ),
+    );
+
+    await renderWellCard(host, API10, { ...callbacks, onClose, onSignIn });
+
+    const scoped = host.querySelector(".gw-production-chart .gw-error");
+    expect(scoped, "the series failure drew no panel in the chart's frame").not.toBeNull();
+    expect(host.querySelector(".gw-card"), "a failed series took the card").not.toBeNull();
+    for (const button of scoped!.querySelectorAll("button")) button.click();
+    expect(onClose, "a control inside the scoped panel closed the card").not.toHaveBeenCalled();
+    expect(onSignIn, "the sign-in path the 403 arm offers was not wired").toHaveBeenCalled();
+  });
+
   it("keeps the dismiss on the banner that is the whole card", async () => {
     // The other half of the same rule: where the panel replaced the card there is nothing else
     // to dismiss, and the × is how a reader gets rid of it.
