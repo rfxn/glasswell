@@ -42,6 +42,8 @@ NM_VINTAGE = date(2026, 8, 20)
 ZERO_MONTH = date(2026, 7, 1)
 # Later than the other two, so a per-point vintage cannot be the well's maximum by coincidence.
 ZERO_VINTAGE = date(2026, 8, 25)
+NO_NUMBER_MONTH = date(2026, 8, 1)
+NO_NUMBER_VINTAGE = date(2026, 8, 27)
 
 
 @pytest.fixture
@@ -164,6 +166,62 @@ def with_a_zero_month(
                 NM_API10, f"{NM_API10}:{NM_POOL}", NM_POOL, ZERO_MONTH,
                 ZERO_VINTAGE, "f" * 64, manifest_id, derivation_id,
             ),
+        )
+    seeded.commit()
+    with lineage_session(recorder=PostgresRecorder(seeded), environment=lineage_env):
+        refresh_well_pool_rollup(seeded)
+    seeded.commit()
+    return with_new_mexico
+
+
+@pytest.fixture
+def with_a_month_its_pools_filed_no_number_for(
+    with_new_mexico: TestClient, seeded: psycopg.Connection, lineage_env
+) -> TestClient:
+    """A fourth month where oil is filed, gas says `no_report` and water says `withheld`.
+
+    The sum admits neither of the last two, so both reach the arm through the same door, in a
+    month the axis holds because oil filed. `withheld` has no New Mexico producer today
+    (`nm_ocd.py:139`) but is in the store's own jurisdiction-neutral vocabulary, and filing both
+    tokens in one month is the only way to tell a served token from a served constant.
+    """
+    with seeded.cursor() as cursor:
+        cursor.execute(
+            "select source_manifest_id, derivation_id from canonical.production_monthly limit 1"
+        )
+        manifest_id, derivation_id = cursor.fetchone()
+        cursor.executemany(
+            "insert into canonical.production_monthly (api10, entity_type, entity_key,"
+            " reporting_level, well_completion_pool, production_month, stream, source_id,"
+            " report_vintage, volume, unit, granularity, value_hash, null_semantics,"
+            " source_manifest_id, derivation_id)"
+            " values (%(api10)s, 'well_completion_pool', %(entity_key)s, 'well_completion_pool',"
+            " %(pool)s, %(month)s, %(stream)s, 'nm_ocd_wcproduction', %(vintage)s, %(volume)s,"
+            " %(unit)s, 'well_observed', %(value_hash)s, %(semantics)s, %(manifest_id)s,"
+            " %(derivation_id)s)",
+            [
+                {
+                    "api10": NM_API10,
+                    "entity_key": f"{NM_API10}:{NM_POOL}",
+                    "pool": NM_POOL,
+                    "month": NO_NUMBER_MONTH,
+                    "stream": stream,
+                    "vintage": NO_NUMBER_VINTAGE,
+                    # canonical.volume is NOT NULL, so an unfiled volume is carried as zero and
+                    # null_semantics is all that separates it from a filed one (nm_ocd.py:858).
+                    "volume": volume,
+                    "unit": unit,
+                    "value_hash": digit * 64,
+                    "semantics": semantics,
+                    "manifest_id": manifest_id,
+                    "derivation_id": derivation_id,
+                }
+                for stream, unit, volume, semantics, digit in (
+                    ("oil", "bbl", Decimal("55.000"), "reported", "1"),
+                    ("gas", "mcf", Decimal("0"), "no_report", "2"),
+                    ("water", "bbl", Decimal("0"), "withheld", "3"),
+                )
+            ],
         )
     seeded.commit()
     with lineage_session(recorder=PostgresRecorder(seeded), environment=lineage_env):
@@ -375,6 +433,27 @@ def test_a_stream_with_no_filing_in_a_served_month_says_no_report_not_null(
     assert series["gas_mcf_null_semantics"] == ["reported", "reported", "no_report"]
     assert series["water_bbl_null_semantics"] == ["reported", "reported", "no_report"]
     assert None not in series["gas_mcf_null_semantics"]
+
+
+def test_a_summed_month_whose_filings_all_say_no_report_is_not_called_withheld(
+    with_a_month_its_pools_filed_no_number_for: TestClient,
+) -> None:
+    """H-12. The arm inferred `withheld` from the sum admitting no filing, so on the only
+    jurisdiction it serves -- one that files no `withheld` at all -- a stream that filed no
+    number was served as one the operator held back. `format.ts:47` is the client's invariant
+    that the four states are never collapsed, and the token that keeps them apart is in the
+    filings: this month carries both unadmitted tokens, so a constant cannot answer it.
+    """
+    series = body(
+        with_a_month_its_pools_filed_no_number_for, f"/v1/wells/{NM_API10}/production"
+    )["data"]["series"]
+    month = series["pm"].index("2026-08")
+
+    assert series["pm"] == ["2026-05", "2026-06", "2026-08"]
+    assert [series["gas_mcf"][month], series["water_bbl"][month]] == [None, None]
+    assert series["oil_bbl_null_semantics"][month] == "reported"
+    assert series["gas_mcf_null_semantics"][month] == "no_report"
+    assert series["water_bbl_null_semantics"][month] == "withheld"
 
 
 def test_every_point_of_a_summed_series_carries_its_own_months_vintage(

@@ -1315,10 +1315,11 @@ select coalesce(array_agg(distinct source_id), '{}') as source_ids,
  where api10 = %(api10)s and entity_type = 'well_completion_pool'
 """
 
-# The same filings per month and stream, for the two facts that are per point and were served
-# as one scalar each: whether every filing under a summed month was an explicit zero, and the
-# vintage that month was read at. The ranking window is the mart's own, so a restated month is
-# described by the restatement the mart summed rather than beside it.
+# The same filings per month and stream, for the facts that are per point and were served as
+# one scalar each or inferred: whether every filing under a summed month was an explicit zero,
+# whether the ones a month was kept out of the sum for say withheld, and the vintage that month
+# was read at. The ranking window is the mart's own, so a restated month is described by the
+# restatement the mart summed rather than beside it.
 _ROLLUP_FILING_MONTHS = """
 with ranked as (
     select p.production_month, p.stream, p.null_semantics, p.source_id, p.report_vintage,
@@ -1330,8 +1331,8 @@ with ranked as (
      where p.api10 = %(api10)s and p.entity_type = %(entity_type)s
 )
 select production_month, stream,
-       count(*) filter (where admitted) as admitted,
        bool_and(null_semantics = 'reported_zero') filter (where admitted) as all_zero,
+       bool_and(null_semantics = 'withheld') filter (where not admitted) as all_withheld,
        max(report_vintage) filter (where admitted) as report_vintage
   from (select production_month, stream, null_semantics, report_vintage,
                null_semantics = any(%(admitted)s) as admitted
@@ -1348,8 +1349,8 @@ def _rollup_rows(connection: psycopg.Connection, api10: str) -> list[dict[str, A
 class _FilingMonth:
     """What the pool filings under one summed month and stream say about it."""
 
-    admitted: int
     all_zero: bool
+    all_withheld: bool
     vintage: date | None
 
 
@@ -1367,8 +1368,8 @@ def _rollup_filing_months(
     )
     return {
         (row["production_month"], row["stream"]): _FilingMonth(
-            admitted=row["admitted"],
             all_zero=bool(row["all_zero"]),
+            all_withheld=bool(row["all_withheld"]),
             vintage=row["report_vintage"],
         )
         for row in read
@@ -1382,11 +1383,13 @@ def _summed_semantics(filed: _FilingMonth | None, *, summed: bool) -> str:
     A month with no mart row is not a hole in the axis: either its filings were all withheld,
     which is why the sum admits none of them, or the stream filed nothing that month. Serving
     null for both painted the band in the gas red with nothing in the key to read it by.
+
+    Which of the two it is comes from the filings' own tokens, never from the sum admitting
+    none of them: New Mexico files no `withheld` (`nm_ocd.py:139`), so a count would answer
+    "the operator held this back" over every month its pools filed no number for.
     """
     if not summed:
-        if filed is None:
-            return "no_report"
-        return "withheld" if filed.admitted == 0 else "no_report"
+        return "withheld" if filed is not None and filed.all_withheld else "no_report"
     return "reported_zero" if filed is not None and filed.all_zero else "reported"
 
 

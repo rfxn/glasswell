@@ -49,6 +49,9 @@
       and a stream with no filing in a served month as `no_report`, where both read as
       `reported` and as a null; each point carries its own month's report vintage rather than
       the whole well's maximum
+- [Fix] A summed month the rollup admits no filing of is served `withheld` only where the
+      filings themselves say so, and `no_report` otherwise, where the token was inferred from
+      the sum admitting none of them — a word New Mexico's pools never file
 - [Fix] `?normalization=per_lateral_ft` is refused on the summed series for the reason the
       allocated arm gives, where it was accepted and silently ignored
 - [Fix] The well card opens Production by pool on whether the regulator filed below the well,
