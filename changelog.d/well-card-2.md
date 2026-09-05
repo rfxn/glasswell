@@ -153,8 +153,17 @@
       pool-grain well the chart never loads, so both pool tables overflowed the card
       with no way to scroll to the columns past its edge. The peer, pools and export
       rules moved off the chart's sheet for the same reason
-- [Fix] the data table's pinned month column marks the edge it covers with a border
-      rather than a shadow, which Chromium paints on no cell of a collapsed-border
-      table: a half-covered `10100.000 mcf` read as `000 mcf` with nothing to say so
+- [Fix] the data table's pinned month column marks the edge it covers, on a separated
+      border model that travels with the cell: a shadow was painted on no cell of a
+      collapsed-border table and a border was painted where the cell used to be, so a
+      half-covered `10100.000 mcf` read `000 mcf` for three rounds with nothing to say
+      so; a headless-Chromium gate now reads the pixels at max scroll in both themes
+- [Fix] a month that is both withheld at pool grain and filed twice is served no
+      `_lineage` handle: the two sets come from different tables and are not disjoint,
+      and the response offered a resolvable chain for a figure it had not served
+- [Fix] a press of `Per 1,000 ft`, `Read at …` or `Widen to the whole record` re-lands
+      the card without taking the reader's place: the card stays on screen instead of
+      flashing back to a loading placeholder, and the disclosures they opened and their
+      scroll position come back with it
 - [Fix] the capture band's row names fit at every width, the vintage control uses the
       text-safe cyan, and the widening control no longer abuts the sentence it follows
