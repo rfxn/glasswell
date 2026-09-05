@@ -231,30 +231,48 @@ def _wait_until_ready(dsn: str) -> None:
 
 
 ROLE_DECLARATION = re.compile(r"create role (\w+)((?: (?:no)?login)?)\s*;")
+# Advisory locks share one space per database and every caller here connects to `postgres`.
+CLUSTER_ROLE_LOCK = 0x6757524F
+# 42710 is "the role already exists"; 23505 is losing the insert race on pg_authid_rolname_index.
+CLUSTER_ROLE_RACE = (psycopg.errors.DuplicateObject, psycopg.errors.UniqueViolation)
+
+
+def declared_cluster_roles() -> dict[str, str]:
+    """Every role the migrations create, with its login attribute, read out of their SQL."""
+    declared: dict[str, str] = {}
+    for migration in discover_migrations():
+        for name, attributes in ROLE_DECLARATION.findall(migration.sql):
+            declared[name] = attributes.strip()
+    return declared
+
+
+def create_cluster_roles(dsn_template: str, declared: Mapping[str, str]) -> None:
+    """Create the named roles, serialised against every other session doing the same.
+
+    A role is cluster-global, not per-database, so 001, 026 and 076's
+    `if not exists (select 1 from pg_roles ...)` is a check and not a lock: concurrent sessions
+    all pass it and all issue the CREATE. The advisory lock is what makes the check-then-create
+    atomic between sessions; the suppression is the second line, and it names both outcomes
+    because they are different SQLSTATEs -- an existing role is 42710, and losing the insert
+    race on `pg_authid_rolname_index` is 23505.
+    """
+    with psycopg.connect(dsn_template.format(database="postgres"), autocommit=True) as admin:
+        admin.execute("select pg_advisory_lock(%s)", (CLUSTER_ROLE_LOCK,))
+        try:
+            for name, attributes in declared.items():
+                with contextlib.suppress(*CLUSTER_ROLE_RACE):
+                    admin.execute(f"create role {name} {attributes}".strip())
+        finally:
+            admin.execute("select pg_advisory_unlock(%s)", (CLUSTER_ROLE_LOCK,))
 
 
 def ensure_cluster_roles(dsn_template: str) -> None:
     """Create every role the migrations declare, before any worker migrates.
 
-    A role is cluster-global, not per-database. 001, 026 and 076 each create theirs inside a
-    `if not exists (select 1 from pg_roles ...)` block, and four xdist workers migrating their
-    own template against one shared server all pass that check in the same instant and then all
-    issue the CREATE. The first sharded CI run errored 843 tests on
-    `duplicate key value violates unique constraint "pg_authid_rolname_index"`. Every migration
-    that runs afterwards -- the templates, and the `empty_db` tests that migrate from scratch --
-    finds the roles present and never takes the branch. The names and their login attribute are
-    read from the migrations rather than restated here, so a new role needs no edit.
+    Every migration that runs afterwards -- the templates, and the `empty_db` tests that migrate
+    from scratch -- finds the roles present and never takes the branch.
     """
-    declared: dict[str, str] = {}
-    for migration in discover_migrations():
-        for name, attributes in ROLE_DECLARATION.findall(migration.sql):
-            declared[name] = attributes.strip()
-    with psycopg.connect(dsn_template.format(database="postgres"), autocommit=True) as admin:
-        for name, attributes in declared.items():
-            # Another worker winning the same race is the expected outcome, not a failure;
-            # autocommit means the connection survives it and the next role still runs.
-            with contextlib.suppress(psycopg.errors.DuplicateObject):
-                admin.execute(f"create role {name} {attributes}".strip())
+    create_cluster_roles(dsn_template, declared_cluster_roles())
 
 
 def provided_server_identity(dsn_template: str) -> tuple[str, str]:
