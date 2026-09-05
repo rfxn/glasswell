@@ -1304,6 +1304,18 @@
             "description": "Exclusive valid-time upper bound, if any.",
             "title": "Effective To"
           },
+          "evidence_commit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Commit that release resolves to, as checked against git history, or forty zeros beside `UNRELEASED`. The pair travels together; one is never repointed without the other.",
+            "title": "Evidence Commit"
+          },
           "evidence_sha256": {
             "anyOf": [
               {
@@ -1315,6 +1327,18 @@
             ],
             "description": "Hash of the evidence artifact, if taken.",
             "title": "Evidence Sha256"
+          },
+          "evidence_tag": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Release tag whose publication first carried this immutable rule id, or `UNRELEASED` while the branch that registered the rule has not been through a merge train. Present for every served rule: the registry refuses a rule without a publication row.",
+            "title": "Evidence Tag"
           },
           "evidence_url": {
             "anyOf": [
@@ -1408,7 +1432,9 @@
           "published_vintage",
           "effective_from",
           "effective_to",
-          "code_ref"
+          "code_ref",
+          "evidence_tag",
+          "evidence_commit"
         ],
         "title": "ConformanceRuleDetail",
         "type": "object"

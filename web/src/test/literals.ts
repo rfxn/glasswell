@@ -34,6 +34,74 @@ export const EXCLUDED = [
 
 const TEST_SUPPORT = (file: string): boolean => EXCLUDED.some((pattern) => pattern.test(file));
 
+const CONTROL: Record<string, string> = {
+  n: "\n",
+  t: "\t",
+  r: "\r",
+  b: "\b",
+  f: "\f",
+  v: "\v",
+  "0": "\0",
+};
+const HEX = /^[0-9a-fA-F]+$/;
+
+/**
+ * Decode a literal's escapes the way the engine does, so a gate reads the text a reader sees.
+ *
+ * `raw.replace(/\\(.)/g, "$1")` was the spelling here, and it reads `\u2014` as the four
+ * letters `u2014`: a scanner looking for the em dash misses every escaped spelling of it,
+ * which is also the one spelling a reviewer's eye slides over. CSS spells the same code point
+ * `\2014` with an optional whitespace terminator, and the tofu gate walks stylesheets.
+ */
+export function unescapeLiteral(raw: string, dialect: "ts" | "css" = "ts"): string {
+  let out = "";
+  let index = 0;
+  while (index < raw.length) {
+    const char = raw[index]!;
+    if (char !== "\\" || index + 1 >= raw.length) {
+      out += char;
+      index += 1;
+      continue;
+    }
+    const next = raw[index + 1]!;
+    if (dialect === "css") {
+      const digits = /^[0-9a-fA-F]{1,6}/.exec(raw.slice(index + 1))?.[0];
+      if (digits) {
+        out += String.fromCodePoint(parseInt(digits, 16));
+        index += 1 + digits.length;
+        // One whitespace character terminates a CSS escape and is consumed with it.
+        if (/\s/.test(raw[index] ?? "")) index += 1;
+        continue;
+      }
+      out += next;
+      index += 2;
+      continue;
+    }
+    if (next === "u" && raw[index + 2] === "{") {
+      const end = raw.indexOf("}", index + 3);
+      const digits = end === -1 ? "" : raw.slice(index + 3, end);
+      if (HEX.test(digits)) {
+        out += String.fromCodePoint(parseInt(digits, 16));
+        index = end + 1;
+        continue;
+      }
+    }
+    if (next === "u" || next === "x") {
+      const width = next === "u" ? 4 : 2;
+      const digits = raw.slice(index + 2, index + 2 + width);
+      if (digits.length === width && HEX.test(digits)) {
+        out += String.fromCharCode(parseInt(digits, 16));
+        index += 2 + width;
+        continue;
+      }
+    }
+    // A line continuation contributes nothing; an unknown escape is the character itself.
+    if (next !== "\n") out += CONTROL[next] ?? next;
+    index += 2;
+  }
+  return out;
+}
+
 /** Comments, then literals: a `//` inside a string must not open one. */
 export function stripComments(source: string): string {
   let out = "";
@@ -81,14 +149,6 @@ function readLiteral(source: string, start: number): number {
 }
 
 /** Every single- or double-quoted literal in one module, comments already removed. */
-// A literal spelled as "\\u2014" renders the same character as one spelled with it, so the gates
-// must see the character; the generic unescape below would have turned it into "u2014".
-export function decodeUnicodeEscapes(raw: string): string {
-  return raw.replace(/\\u\{([0-9a-fA-F]+)\}|\\u([0-9a-fA-F]{4})/g, (_m, braced: string | undefined, plain: string | undefined) =>
-    String.fromCodePoint(parseInt((braced ?? plain) as string, 16)),
-  );
-}
-
 export function literalsIn(file: string, source: string): ShippedLiteral[] {
   const stripped = stripComments(source);
   const found: ShippedLiteral[] = [];
@@ -104,7 +164,7 @@ export function literalsIn(file: string, source: string): ShippedLiteral[] {
     if (char === '"' || char === "'") {
       const end = readLiteral(stripped, index);
       const raw = stripped.slice(index + 1, end - 1);
-      found.push({ file, line, value: decodeUnicodeEscapes(raw).replace(/\\(.)/g, "$1") });
+      found.push({ file, line, value: unescapeLiteral(raw) });
       line += stripped.slice(index, end).split("\n").length - 1;
       index = end;
       continue;
@@ -129,7 +189,7 @@ export function templatesIn(file: string, source: string): ShippedLiteral[] {
     found.push({
       file,
       line: stripped.slice(0, match.index).split("\n").length,
-      value: match[0].slice(1, -1),
+      value: unescapeLiteral(match[0].slice(1, -1)),
     });
   }
   return found;

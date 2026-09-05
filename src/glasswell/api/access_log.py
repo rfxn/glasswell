@@ -11,12 +11,29 @@ import re
 ACCESS_LOGGER = "uvicorn.access"
 REDACTED = "REDACTED"
 
-# Every credential-shaped query parameter, not just `key`, and the match runs *inside* an
-# identifier: `\b` before a bare `password` fails on `new_password=`, because `_` is a word
-# character. Over-redacting `monkey=` is the safe direction -- a redacted log value is
-# recoverable from the request, a leaked credential is not.
+# One list for the origin and the edge: infra/caddy/Caddyfile's `request>uri regexp` carries
+# this alternation verbatim, and tests/unit/test_caddy_log_filter.py reds when the two differ.
+# A stem anywhere in the name redacts it -- `pass` covers password and passwd, `sig` covers
+# signature, `auth` covers authorization -- so `monkey=` and `source_key=` are redacted too.
+# Over-redacting is the safe direction: a log value is recoverable from the request, a leaked
+# credential is not.
+CREDENTIAL_QUERY_STEMS = (
+    "key",
+    "pass",
+    "pwd",
+    "secret",
+    "token",
+    "session",
+    "csrf",
+    "auth",
+    "credential",
+    "sig",
+    "jwt",
+    "bearer",
+    "otp",
+)
 _CREDENTIAL_QUERY_RE = re.compile(
-    r"(?i)\b([\w-]*(?:key|password|token|session|csrf))=[^&\s\"']+"
+    rf"(?i)\b([\w-]*(?:{'|'.join(CREDENTIAL_QUERY_STEMS)})[\w-]*)=[^&\s\"']+"
 )
 # A session token anywhere in a record, not only in a query string -- a stray repr() of a
 # cookie header would otherwise put a live credential in journald.

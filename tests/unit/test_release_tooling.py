@@ -9,15 +9,15 @@ from __future__ import annotations
 
 import difflib
 import hashlib
-import importlib.util
 import os
 import re
 import subprocess
-import sys
 from itertools import pairwise
 from pathlib import Path
 
 import pytest
+
+from tests.support.scripts import load_script
 
 pytestmark = pytest.mark.unit
 
@@ -28,20 +28,9 @@ WEB = ROOT / "web"
 STYLE = WEB / "src" / "style.css"
 
 
-def _load(name: str, filename: str):
-    spec = importlib.util.spec_from_file_location(name, SCRIPTS / filename)
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    # Registered before execution: @dataclass resolves its own module out of sys.modules.
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-release = _load("gw_release", "release.py")
-render = _load("gw_render_changelog", "render-changelog.py")
-assemble = _load("gw_changelog_assemble", "changelog-assemble.py")
+release = load_script("gw_release", "release.py")
+render = load_script("gw_render_changelog", "render-changelog.py")
+assemble = load_script("gw_changelog_assemble", "changelog-assemble.py")
 
 Version = release.Version
 

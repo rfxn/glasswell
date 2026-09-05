@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import importlib
+import pkgutil
 from datetime import date
 from decimal import Decimal
 
@@ -8,8 +10,15 @@ import psycopg
 import pytest
 from psycopg.rows import dict_row
 
+import glasswell.seed
 from glasswell.lengths import LATERALS_SOURCE_ID, resolve_length_method
-from glasswell.lineage.conformance import RULE_KINDS, apply_registry_rules, apply_rules, load_rules
+from glasswell.lineage.conformance import (
+    RULE_KINDS,
+    apply_registry_rules,
+    apply_rules,
+    executor_for,
+    load_rules,
+)
 from glasswell.seed import seed_all
 from glasswell.seed.conformance_nd import ND_RULES
 from glasswell.seed.conformance_schedules import SCHEDULE_RULES
@@ -627,3 +636,65 @@ def test_a_declaration_filed_under_a_source_it_does_not_interpret_says_so(db, se
     # And the counterpart: a grain rule's source is the filings it decides about, so it is an
     # interpretation and says the opposite rather than being silent.
     assert rows["cr_mt_bogc_pool_rollup_1"]["spec"]["source_is_filing_anchor"] is False
+
+
+def declared_policy_pairs() -> list[tuple[str, str]]:
+    """Every `(source_id, stage)` the seed declares a `code_ref` rule at.
+
+    Read out of the seed modules so a new declaration is parametrised without an edit here,
+    and pinned to the registry itself by the census below.
+    """
+    pairs: set[tuple[str, str]] = set()
+    for module in pkgutil.iter_modules(glasswell.seed.__path__):
+        loaded = importlib.import_module(f"glasswell.seed.{module.name}")
+        for value in vars(loaded).values():
+            if not isinstance(value, list | tuple):
+                continue
+            for row in value:
+                if isinstance(row, dict) and row.get("rule_kind") == "code_ref":
+                    pairs.add((str(row["source_id"]), str(row["stage"])))
+    return sorted(pairs)
+
+
+POLICY_PAIRS = declared_policy_pairs()
+
+
+def test_every_pair_the_registry_declares_a_policy_rule_at_is_covered(db, seeded):
+    """The parametrisation below is derived from the seed modules; the registry is what the
+    ingests read. A rule inserted by a migration rather than a seed module would otherwise
+    declare a policy at a pair no case covers."""
+    with db.cursor() as cursor:
+        cursor.execute(
+            "select distinct source_id, stage from lineage.conformance_rules"
+            " where rule_kind = 'code_ref' order by source_id, stage"
+        )
+        registered = [(row[0], row[1]) for row in cursor.fetchall()]
+
+    assert registered == POLICY_PAIRS
+
+
+@pytest.mark.parametrize(("source_id", "stage"), POLICY_PAIRS)
+def test_a_stage_that_declares_a_policy_rule_cannot_be_executed_wholesale(
+    db, seeded, source_id: str, stage: str
+):
+    """H-16: the census proves every declaration is well-formed, not that the ingest reading
+    that stage drops it. A `code_ref` row has no executor, so the whole-stage load at this
+    pair cannot be handed to `apply_rules` -- which is why no ingest reaches
+    `apply_registry_rules` here, and why one that started to would fail on its first run
+    rather than conform a column by accident.
+
+    Filtering the declarations out has to be sufficient, not merely necessary: the rest of
+    the pair's load is executable kinds, so an ingest that drops the declarations has a load
+    it can run.
+    """
+    loaded = load_rules(db, source_id=source_id, stage=stage)
+    declarations = [rule for rule in loaded if rule.rule_kind == "code_ref"]
+    assert declarations, f"{source_id}/{stage} no longer declares a policy rule"
+
+    for rule in declarations:
+        with pytest.raises(NotImplementedError, match="code_ref"):
+            executor_for(rule.rule_kind)(pl.DataFrame(), rule)
+
+    for rule in loaded:
+        if rule.rule_kind != "code_ref":
+            assert executor_for(rule.rule_kind), f"{rule.rule_id} has no executor either"
