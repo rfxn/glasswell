@@ -99,6 +99,20 @@ def test_the_handle_changes_with_the_number_and_resolves_both_inputs(
     assert point.status_code == 200, point.text
 
 
+def test_a_withheld_month_is_served_as_an_absence_and_not_as_a_figure(
+    client: TestClient,
+) -> None:
+    """The other half of R8's second rule: the normalised arm records an evidence row per
+    divided point, so a month with no volume has none — and a ⌾ drawn on it would answer
+    `selector_ambiguous` for a figure that was never served (visual M5)."""
+    body = served(client)["data"]
+    at = body["series"]["water_bbl_null_semantics"].index("withheld")
+
+    assert body["series"]["water_bbl"][at] is None
+    handle = f"{body['_lineage']['series.water_bbl']}&pm={body['series']['pm'][at]}"
+    assert client.get("/v1/explain", params={"h": handle, "depth": "1"}).status_code == 422
+
+
 def test_the_rule_that_measured_the_length_is_linked(client: TestClient) -> None:
     assert served(client)["links"]["length_rule"].startswith("/v1/conformance/cr_")
 

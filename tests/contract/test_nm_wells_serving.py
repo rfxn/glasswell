@@ -213,6 +213,34 @@ def test_the_grain_rule_the_pool_series_links_is_a_registry_row(
     )
 
 
+def test_every_pool_cell_the_card_draws_a_ring_on_resolves(
+    with_new_mexico: TestClient,
+) -> None:
+    """The pool table is the same table the chart draws, so its cells compose the same
+    `<column handle>&pm=<month>` selector. On a pool-grain well this table is the whole
+    record, and a cell whose ⌾ does not resolve is R8's "untraceable equals wrong"."""
+    data = body(with_new_mexico, f"/v1/wells/{NM_API10}/production/pools")["data"]
+
+    checked = 0
+    for index, pool in enumerate(data["pools"]):
+        prefix = f"pools.{index}.series."
+        for column in ("oil_bbl", "gas_mcf", "water_bbl"):
+            values = pool["series"].get(column)
+            if values is None:
+                continue
+            shared = data["_lineage"].get(f"{prefix}{column}")
+            for at, month in enumerate(pool["series"]["pm"]):
+                if values[at] is None:
+                    continue
+                handle = data["_lineage"].get(f"{prefix}{column}.{at}") or shared
+                assert handle is not None, f"{column} {month} is drawn with no handle"
+                point = handle if "&pm=" in handle else f"{handle}&pm={month}"
+                answer = with_new_mexico.get("/v1/explain", params={"h": point, "depth": "1"})
+                assert answer.status_code == 200, f"{column} {month}: {answer.text}"
+                checked += 1
+    assert checked > 0
+
+
 def test_the_liquids_basis_on_a_new_mexico_oil_figure_is_new_mexicos(
     with_new_mexico: TestClient,
 ) -> None:

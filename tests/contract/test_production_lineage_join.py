@@ -13,11 +13,12 @@ import psycopg
 import pytest
 from fastapi.testclient import TestClient
 
+from glasswell.api.examples import EXAMPLE_API10
 from glasswell.lineage.capture import derive, lineage_session
 from glasswell.lineage.ids import parse_handle
 from glasswell.lineage.models import InputRef, OutputSpec
 from glasswell.lineage.store import PostgresRecorder
-from tests.contract.conftest import REPORT_VINTAGE, _insert_production
+from tests.contract.conftest import REPORT_VINTAGE, RESTATED_MONTH, _insert_production
 from tests.support.fakes import FixedClock
 from tests.support.seed import FIXTURE_ENV, seed_manifest, seed_well, seed_well_spatial
 
@@ -216,3 +217,51 @@ def test_the_normalised_arm_serves_the_multi_derivation_shape_and_every_point_re
             "canonical.production_monthly",
             "canonical.well_spatial",
         } <= datasets
+
+
+NOT_MEASURED = {"withheld", "no_report", "multi_pool_pending"}
+
+
+def _drawn_points(data: dict, column: str) -> list[tuple[str, str]]:
+    """Every point the chart draws a ⌾ on, with the handle it composes — `chart/series.ts`."""
+    lineage = data["_lineage"]
+    series = data["series"]
+    drawn: list[tuple[str, str]] = []
+    for index, month in enumerate(series["pm"]):
+        if series[column][index] is None:
+            continue
+        if series[f"{column}_null_semantics"][index] in NOT_MEASURED:
+            continue
+        handle = lineage.get(f"series.{column}.{index}") or lineage.get(f"series.{column}")
+        assert handle is not None, f"{column} {month} is drawn with no handle to compose"
+        drawn.append((month, handle if "&pm=" in handle else f"{handle}&pm={month}"))
+    return drawn
+
+
+@pytest.mark.contract
+def test_every_drawn_point_of_the_default_well_resolves(client: TestClient) -> None:
+    """R8's second rule on the well every gate photographs: a figure that cannot be explained
+    is not served as a figure. The exhibit is the fixture's own restatement — one month filed
+    twice under one promotion, which `api10&col&pm` identifies two rows of."""
+    data = client.get(f"/v1/wells/{EXAMPLE_API10}/production").json()["data"]
+
+    checked = 0
+    for column in ("oil_bbl", "gas_mcf", "water_bbl"):
+        for month, handle in _drawn_points(data, column):
+            answer = client.get("/v1/explain", params={"h": handle, "depth": "1"})
+            assert answer.status_code == 200, f"{column} {month}: {answer.text}"
+            checked += 1
+    assert checked > 0
+
+
+@pytest.mark.contract
+def test_a_month_filed_twice_names_the_vintage_it_was_read_at(client: TestClient) -> None:
+    """The selector's remaining key: `canonical.production_monthly` is keyed by report vintage
+    too, so a restated month is two rows under one derivation and `pm` alone under-specifies
+    it."""
+    data = client.get(f"/v1/wells/{EXAMPLE_API10}/production").json()["data"]
+    at = data["series"]["pm"].index(f"{RESTATED_MONTH:%Y-%m}")
+    handle = data["_lineage"][f"series.oil_bbl.{at}"]
+
+    assert f"rv={data['series']['oil_bbl_report_vintage'][at]}" in handle
+    assert client.get("/v1/explain", params={"h": handle, "depth": "1"}).status_code == 200

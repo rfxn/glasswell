@@ -1559,6 +1559,44 @@ describe("a reloaded brushed link", () => {
     expect(announced).toEqual([{ from: null, to: null }]);
   });
 
+  it("marks the three server-answered controls, and a brush as not one", async () => {
+    // Every one of them wrote the URL and fetched nothing: the card re-landed only on a
+    // reload, so `Per 1,000 ft` divided nothing and `Widen` widened nothing (visual M4). A
+    // brush is the opposite -- the months are already on hand and narrowing them is a view.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        stubFetch({
+          [`/v1/wells/${API10}/cumulatives`]: cumulativesEnvelope,
+          [`/v1/wells/${API10}/production`]: productionEnvelope,
+          [`/v1/wells/${API10}`]: wellEnvelope,
+        }),
+      ),
+    );
+    window.history.replaceState(null, "", `/?well=${API10}&from=2026-01&to=2026-03`);
+    const announced: { params: unknown; refetch?: boolean }[] = [];
+    document.addEventListener("gw-param-set", (event) => {
+      announced.push((event as CustomEvent<{ params: unknown; refetch?: boolean }>).detail);
+    });
+
+    await renderWellCard(host, API10, callbacks);
+    const call = renderChart.mock.calls[renderChart.mock.calls.length - 1];
+    const chartCallbacks = call?.[2] as {
+      onBrush?: (from: string | null, to: string | null) => void;
+      onVintage?: (asOf: string) => void;
+    };
+    const options = call?.[3] as {
+      onWiden?: () => void;
+      normalization?: { onChange: (on: boolean) => void };
+    };
+    options?.onWiden?.();
+    options?.normalization?.onChange(true);
+    chartCallbacks?.onVintage?.("2026-06-01");
+    chartCallbacks?.onBrush?.("2026-01", "2026-02");
+
+    expect(announced.map((each) => each.refetch)).toEqual([true, true, true, false]);
+  });
+
   it("hands the chart no served span where nothing narrowed the request", async () => {
     vi.stubGlobal(
       "fetch",

@@ -271,12 +271,6 @@ export function renderChart(
   draw();
 }
 
-/**
- * The series as the reader has it set: hidden streams dropped from the columns, the scales and
- * the drawn data together, so the plot, the band and the readout cannot disagree about which
- * streams are on. A stream is never dropped from the legend -- a toggle a reader cannot undo
- * is a delete.
- */
 /** The months a brush left, as a view over the window: no request, no aggregation. */
 function selected(chart: ChartSeries, from: string, to: string): ChartSeries {
   const first = chart.months.indexOf(from);
@@ -300,6 +294,12 @@ function selected(chart: ChartSeries, from: string, to: string): ChartSeries {
   return { ...chart, months: cut(chart.months), x, columns, data: [x, ...columns.map((c) => c.values)] };
 }
 
+/**
+ * The series as the reader has it set: hidden streams dropped from the columns, the scales and
+ * the drawn data together, so the plot, the band and the readout cannot disagree about which
+ * streams are on. A stream is never dropped from the legend -- a toggle a reader cannot undo
+ * is a delete.
+ */
 function shown(chart: ChartSeries, hidden: ReadonlySet<string>): ChartSeries {
   const columns = chart.columns.filter((column) => !hidden.has(column.stream));
   if (columns.length === chart.columns.length) return chart;
@@ -596,7 +596,6 @@ function normalizationControl(control: NormalizationControl): HTMLElement {
   return toggle;
 }
 
-/** What log costs, per stream, in the months on screen. */
 /** The served refusal as text, with the rule that decided it linked where one did. */
 function normalizationReason(control: NormalizationControl): HTMLElement | null {
   if (control.available) return null;
@@ -613,6 +612,7 @@ function normalizationReason(control: NormalizationControl): HTMLElement | null 
   return note;
 }
 
+/** What log costs, per stream, in the months on screen. */
 function logZeros(chart: ChartSeries): HTMLElement | null {
   const counted = chart.columns
     .map((column) => ({ label: column.label, zeros: zeroMonths(column) }))
@@ -654,16 +654,22 @@ function runningTotal(chart: ChartSeries): HTMLElement | null {
     row.appendChild(entry);
   }
 
-  // Its own scope on the same line, counted from the points it summed: three classes, and
-  // `withheld` is not one of them -- it is not a production null-semantics class at all.
-  const first = chart.columns[0] as SeriesColumn;
-  const count = (state: string): number =>
-    first.nullSemantics.filter((each) => each === state).length;
+  // Its own scope on the same line, counted per column from the points that column summed:
+  // a month withheld for gas and reported for oil is one array apart, so one stream's counts
+  // under three totals described two of them wrongly. Three classes, and `withheld` is not one
+  // of them -- it is not a production null-semantics class at all.
+  const counted = chart.columns.map((column) => {
+    const count = (state: string): number =>
+      column.nullSemantics.filter((each) => each === state).length;
+    return (
+      `${column.label} ${count("reported")} reported, ${count("reported_zero")} reported zero,` +
+      ` ${count("no_report")} no report`
+    );
+  });
   const scope = document.createElement("p");
   scope.className = "gw-note gw-running-scope";
   scope.textContent =
-    `Running total over the ${chart.months.length} months shown, ${count("reported")} reported,` +
-    ` ${count("reported_zero")} reported zero, ${count("no_report")} no report.` +
+    `Running total over the ${chart.months.length} months shown. ${counted.join("; ")}.` +
     ` It is computed on this page from the ${chart.months.length} points shown; each point's` +
     " ⌾ is beside it.";
   row.appendChild(scope);
@@ -796,10 +802,6 @@ function stateKey(chart: ChartSeries, callbacks: ChartCallbacks): HTMLElement {
 }
 
 /**
- * The four null-semantics states as one band per stream, aligned under the plot: a gap in the
- * line could be any of them, and the band says which without collapsing them into each other.
- */
-/**
  * The capture band: one row per stream whose drawn window holds a month read at an earlier
  * capture, a key that says what the two marks mean in words, and one control under the band
  * that re-reads the series at the earliest capture the window holds. None of it where the
@@ -875,6 +877,10 @@ function captureBand(
   return rows;
 }
 
+/**
+ * The four null-semantics states as one band per stream, aligned under the plot: a gap in the
+ * line could be any of them, and the band says which without collapsing them into each other.
+ */
 function stateBand(
   chart: ChartSeries,
   onVintage: ((asOf: string) => void) | undefined,

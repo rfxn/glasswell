@@ -43,6 +43,9 @@ export function monthLabels(splits: readonly number[]): string[] {
 // (v0.78 N10). Two points already give it a domain to scale from, so the pin is for one.
 const MONTH_SECONDS = 31 * 24 * 3600;
 
+/** Kept in step with `--gw-band-left`'s fallback in `style.css`, which is what a test gets. */
+const AXIS_SIZE = 68;
+
 function xScale(chart: ChartSeries): uPlot.Scale {
   const points = chart.data[0] ?? [];
   if (points.length !== 1) return { time: true };
@@ -72,16 +75,20 @@ export function chartOptions(chart: ChartSeries, width: number, log = false): uP
         ticks: grid,
         values: (_: unknown, splits: number[]) => monthLabels(splits),
       },
-      // uPlot's default axis size (50 px) clips a six-figure monthly volume.
+      // uPlot's default axis size (50 px) clips a six-figure monthly volume. The band's row
+      // names are laid out in the same gutter (`--gw-band-left`), and at 62 the widest of them
+      // needed 61 px in a 58 px column and read `Water · re…`.
       ...chart.scales.map((unit, position) => ({
         scale: unit,
         side: position === 0 ? (3 as const) : (1 as const),
-        size: 62,
+        size: AXIS_SIZE,
         stroke: axisStroke,
         grid,
         ticks: grid,
-        values: (_: unknown, splits: number[]) =>
-          splits.map((split) => formatValue(String(split))),
+        // uPlot's log distribution nulls the splits it draws a minor tick for and does not
+        // label; `String(null)` printed the word down both axes.
+        values: (_: unknown, splits: (number | null)[]) =>
+          splits.map((split) => (split === null ? "" : formatValue(String(split)))),
       })),
     ],
     series: [

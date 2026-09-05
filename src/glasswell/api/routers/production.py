@@ -467,6 +467,9 @@ def _state_code(connection, api10: str) -> str | None:
         " ND publishes one workbook a month, so a month is promoted by its own derivation:"
         " `_lineage` keys a handle per point (`series.oil_bbl.0`) whenever the points of a"
         " column disagree, and each handle explains to the file that carries that month."
+        " It keys per point for the same reason where one promotion filed a month more than"
+        " once: a restatement is a second row and never an edit, so that point's handle also"
+        " names the report vintage (`&rv=`) it was read at."
         " In North Dakota these are well-level regulator reports, so `granularity` is"
         " `well_observed` — nothing here is allocated. A series never silently mixes"
         " vintages: `as_of` selects the greatest report vintage at or before the date and"
@@ -711,6 +714,7 @@ def get_well_production(
     )
     columns: list[str] = []
     point_outputs: dict[str, dict[str, Any]] = {}
+    restated = _restated_points(connection, api10)
     for name in STREAM_COLUMNS:
         if name not in requested:
             continue
@@ -741,6 +745,13 @@ def get_well_production(
         held = {month: row for (month, stream), row in pending.items() if stream == name}
         warnings.extend(_pending_warning(held, column))
         first = next(iter(points.values()))
+        # A month one promotion filed twice is two rows under one derivation id, so `pm` alone
+        # under-specifies it and the point's ⌾ answered 422 on a served figure (visual M5).
+        refiled = {
+            month
+            for month, row in points.items()
+            if (row["derivation_id"], name, month) in restated
+        }
         spans = len(derivations) > 1
         drawn = [None if month in held else _volume(points.get(month)) for month in months]
         unit = first["unit"] if divisor is None else f"{first['unit']}/kft"
@@ -780,10 +791,26 @@ def get_well_production(
                 [
                     None
                     if month in held
-                    else _point_handle(api10, column, month, points.get(month))
+                    else _point_handle(
+                        api10, column, month, points.get(month), restated=month in refiled
+                    )
                     for month in months
                 ]
                 if spans and divisor is None
+                else None
+            ),
+            # One derivation covers the column, so its handle stands and only the refiled
+            # months need the longer selector. Overriding the whole column would hand the
+            # legend's own ⌾ one month's chain.
+            point_overrides=(
+                {
+                    index: str(
+                        _point_handle(api10, column, month, points[month], restated=True)
+                    )
+                    for index, month in enumerate(months)
+                    if month in refiled
+                }
+                if refiled and not spans and divisor is None
                 else None
             ),
         )
@@ -1702,11 +1729,43 @@ def _volume(row: dict[str, Any] | None) -> str | None:
     return None if row is None else str(row["volume"])
 
 
-def _point_handle(api10: str, column: str, month: date, row: dict[str, Any] | None) -> str | None:
-    """D3: the point's own promotion, addressed by the month it reports (SB-07 §9.3)."""
+def _point_handle(
+    api10: str,
+    column: str,
+    month: date,
+    row: dict[str, Any] | None,
+    *,
+    restated: bool = False,
+) -> str | None:
+    """D3: the point's own promotion, addressed by the month it reports (SB-07 §9.3).
+
+    `restated` adds the report vintage, which is the rest of the row's key where one promotion
+    filed the month more than once: without it the selector identifies two rows and refuses.
+    """
     if row is None:
         return None
-    return format_handle(row["derivation_id"], f"api10={api10}&col={column}&pm={month:%Y-%m}")
+    selector = f"api10={api10}&col={column}&pm={month:%Y-%m}"
+    if restated:
+        selector += f"&rv={row['report_vintage']:%Y-%m-%d}"
+    return format_handle(row["derivation_id"], selector)
+
+
+_RESTATED_POINTS = """
+select derivation_id, stream, production_month
+  from canonical.production_monthly
+ where entity_type = 'well' and api10 = %(api10)s and entity_key = %(api10)s
+ group by derivation_id, stream, production_month
+having count(*) > 1
+"""
+
+
+def _restated_points(
+    connection: psycopg.Connection, api10: str
+) -> set[tuple[str, str, date]]:
+    """Every (promotion, stream, month) a selector of `api10&col&pm` would answer twice."""
+    with connection.cursor() as cursor:
+        cursor.execute(_RESTATED_POINTS, {"api10": api10})
+        return {(row[0], row[1], row[2]) for row in cursor.fetchall()}
 
 
 def _freshness(connection: psycopg.Connection, source_ids: list[str]) -> dict[str, Any]:

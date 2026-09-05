@@ -787,6 +787,17 @@ describe("brushing a range, and the total that follows it", () => {
 
     expect(total).toContain("1 reported zero");
   });
+
+  it("counts each stream's own classes, under each stream's own total", () => {
+    // The sentence took `columns[0].nullSemantics` and sat under an Oil and a Gas total: the
+    // fixture's first month reads zero for oil and reported for gas, so one of the two totals
+    // was described by the other's arrays (H-28).
+    drag(0, 2);
+    const scope = host.querySelector(".gw-running-scope")?.textContent ?? "";
+
+    expect(scope).toContain("Oil 2 reported, 1 reported zero, 0 no report");
+    expect(scope).toContain("Gas 3 reported, 0 reported zero, 0 no report");
+  });
 });
 
 describe("the per-lateral-foot control", () => {
@@ -966,11 +977,33 @@ describe("the table alternative", () => {
 });
 
 describe("the selection label, in the stylesheet", () => {
+  const css = readFileSync("src/chart/chart.css", "utf8");
+  // Every block whose selector list names it, joined: a class styled by two rules is read as
+  // the cascade reads it, not as its first block alone.
+  const rule = (selector: string): string =>
+    [...css.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/([^{}]+)\{([^}]*)\}/g)]
+      .filter((match) => (match[1] ?? "").split(",").some((each) => each.trim() === selector))
+      .map((match) => match[2])
+      .join("");
+
   it("uses the text-safe cyan, so the light theme clears 4.5:1 the day it is reachable", () => {
-    const css = readFileSync("src/chart/chart.css", "utf8");
-    const selected = css.match(/\.gw-window-selected\s*\{[^}]*\}/)?.[0] ?? "";
+    const selected = rule(".gw-window-selected");
     expect(selected).toContain("var(--cyan-text)");
     expect(selected).not.toMatch(/var\(--cyan\)/);
+  });
+
+  it("paints the vintage control in the same text-safe cyan, for the same reason", () => {
+    // `--cyan` at 11.52 px measured 3.25:1 in the light theme on the one control the capture
+    // band offers (visual N9) -- the token N4 was about, on a control landed after it.
+    const read = rule(".gw-vintage-read");
+    expect(read).toContain("var(--cyan-text)");
+    expect(read).not.toMatch(/var\(--cyan\)[^-]/);
+  });
+
+  it("keeps the widening control off the end of the sentence it follows", () => {
+    // The control is a child of `.gw-window-note`, whose left edge measured 0.0 px from the
+    // end of the text: the bar read `6 moWiden to the whole record` (visual N11).
+    expect(rule(".gw-window-widen")).toMatch(/margin-left:\s*var\(--gw-space-2\)/);
   });
 });
 

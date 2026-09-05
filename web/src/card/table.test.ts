@@ -6,6 +6,8 @@ import { toChartSeries } from "../chart/series.ts";
 import type { ProductionData } from "../chart/series.ts";
 import { seriesTable } from "./table.ts";
 
+const CSS = readFileSync("src/card/table.css", "utf8");
+
 const production: ProductionData = {
   api10: "3305310451",
   source_id: "nd_dmr_mpr",
@@ -90,6 +92,25 @@ describe("the chart as a table", () => {
     );
   });
 
+  it("leaves the Lineage cell empty where the month has no output to explain", () => {
+    // Dec 2025 reads `no report` for oil and the column's own handle is October's, so the
+    // cell offered a ring that opened another month's chain (visual M5).
+    const last = host.querySelectorAll("tbody tr")[2];
+    const cells = [...(last?.querySelectorAll(".gw-table-handle") ?? [])];
+
+    expect(cells[0]?.querySelector(".gw-handle")).toBeNull();
+    expect(cells[1]?.querySelector(".gw-handle")).not.toBeNull();
+  });
+
+  it("names the month in the handle it offers, because the cell is a point", () => {
+    const gas = host.querySelectorAll("tbody tr")[0]?.querySelectorAll(".gw-table-handle")[1];
+    (gas?.querySelector(".gw-handle") as HTMLButtonElement).click();
+
+    expect(callbacks.onExplain).toHaveBeenCalledWith(
+      "drv_gas#api10=3305310451&col=gas_mcf&pm=2025-10",
+    );
+  });
+
   it("groups the columns by stream, three cells each", () => {
     const groups = [...host.querySelectorAll("thead tr:first-child th[scope='colgroup']")];
 
@@ -113,10 +134,32 @@ describe("what stays put when the streams scroll past", () => {
     // A rule on `thead th:first-child` matched the first cell of both header rows and pinned
     // the second row's Value header over the month column; a partially scrolled figure then
     // read as a whole one with its leading digits covered.
-    const css = readFileSync("src/chart/chart.css", "utf8");
-    expect(css).not.toMatch(/thead th:first-child/);
-    const sticky = css.match(/\.gw-series-table thead th\.gw-table-month[^{]*\{[^}]*\}/)?.[0] ?? "";
+    expect(CSS).not.toMatch(/thead th:first-child/);
+    const sticky = CSS.match(/\.gw-series-table thead th\.gw-table-month[^{]*\{[^}]*\}/)?.[0] ?? "";
     expect(sticky).toContain("position: sticky");
     expect(sticky).toContain("z-index");
+  });
+
+  it("marks the covered edge with something the collapsed border model paints", () => {
+    // Chromium paints no `box-shadow` on the cells of a `border-collapse: collapse` table, so
+    // the shadow that was supposed to say "covered" was measured at 0 differing pixels either
+    // side of the pinned edge, in both themes, and `10100.000 mcf` still read `000 mcf`
+    // (visual M1 residual). Either the border model changes or the marker does.
+    const pinned = CSS.match(/\.gw-series-table tbody th,[^{]*\{[^}]*\}/)?.[0] ?? "";
+    const table = CSS.match(/\.gw-series-table table[^{]*\{[^}]*\}/)?.[0] ?? "";
+    expect(pinned).toMatch(/border-right/);
+    expect(pinned).not.toMatch(/box-shadow/);
+    expect(table).toContain("border-collapse: collapse");
+  });
+});
+
+describe("where the table's own stylesheet lives", () => {
+  it("ships with the module that draws the table, not with the chart's", () => {
+    // On a pool-grain well the chart never loads, so `chart.css` never arrived and both New
+    // Mexico pool tables overflowed the card with `overflow-x: visible` and no way to reach
+    // the columns past its edge (visual M7). The table is drawn there by `pools.ts`.
+    expect(readFileSync("src/card/table.ts", "utf8")).toContain('import "./table.css"');
+    expect(readFileSync("src/chart/chart.css", "utf8")).not.toContain(".gw-series-table");
+    expect(CSS.match(/\.gw-series-table\s*\{[^}]*\}/)?.[0]).toContain("overflow-x: auto");
   });
 });

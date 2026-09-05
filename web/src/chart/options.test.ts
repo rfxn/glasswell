@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import { chartOptions, monthLabels } from "./options.ts";
@@ -129,5 +130,45 @@ describe("the month axis never shows one month as two", () => {
     );
 
     expect(monthLabels(months)).toEqual(["Sep 2025", "Oct 2025", "Nov 2025"]);
+  });
+});
+
+describe("the value axes under a log scale", () => {
+  // uPlot's log distribution hands `values` a splits array with a null at every position it
+  // draws a minor tick and does not label, and `String(null)` printed the word on the axis:
+  // eight `null` literals down both sides of a served chart (visual M6).
+  const label = (splits: (number | null)[]): string[] => {
+    const axis = chartOptions(chart, 640, true).axes?.[1] as {
+      values: (plot: unknown, splits: (number | null)[]) => string[];
+    };
+    return axis.values(null, splits);
+  };
+
+  it("labels no minor tick rather than printing the literal null", () => {
+    expect(label([100000, null, null, 70000])).toEqual(["100,000", "", "", "70,000"]);
+  });
+
+  it("still labels every split a linear axis hands it", () => {
+    expect(label([1000, 2000])).toEqual(["1,000", "2,000"]);
+  });
+});
+
+describe("the gutter the axis and the band share", () => {
+  // The band's row names are laid out in the axis's own gutter, so the axis size is what sizes
+  // them. At 62 the column was 58 px and `Water · read` measured 60.4: the row read
+  // `Water · re…` at every width (visual N1-r). A test cannot measure a glyph, so it holds the
+  // two numbers together and holds the floor the measurement set.
+  const size = (options.axes?.[1] as { size?: number }).size ?? 0;
+
+  it("sizes both value axes alike, so the band is inset by the plot's own left edge", () => {
+    expect(size).toBe((options.axes?.[2] as { size?: number }).size);
+    expect(size).toBeGreaterThanOrEqual(68);
+  });
+
+  it("declares the same number as the fallback a stylesheet with no layout uses", () => {
+    const css = readFileSync("src/style.css", "utf8");
+    for (const property of ["--gw-band-left", "--gw-band-right"]) {
+      expect(css, property).toContain(`var(${property}, ${size}px)`);
+    }
   });
 });

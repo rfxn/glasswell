@@ -761,7 +761,7 @@ export async function renderWellCard(
           onBrush: (from, to) => setParams({ from, to }),
           // The `as_of` arm of the request seam: the same parameter the route already
           // forwards, used by a control rather than only by a URL somebody typed.
-          onVintage: (asOf) => setParams({ as_of: asOf }),
+          onVintage: (asOf) => setParams({ as_of: asOf }, true),
         },
         {
           normalization: normalizationControl(detail, well, state),
@@ -769,7 +769,10 @@ export async function renderWellCard(
           // the months on hand are all of it. The bar says so and offers the record back by
           // dropping both parameters through the same seam a brush writes them through.
           ...(state.extra["from"]?.[0] || state.extra["to"]?.[0]
-            ? { span: "served" as const, onWiden: () => setParams({ from: null, to: null }) }
+            ? {
+                span: "served" as const,
+                onWiden: () => setParams({ from: null, to: null }, true),
+              }
             : {}),
         },
       );
@@ -823,13 +826,17 @@ function normalizationControl(
         " normalise by."
       : "No lateral length is served for this well, so there is nothing to divide by.",
     ...(withheld ? { rule: withheld } : {}),
-    onChange: (next) => setParams({ normalization: next ? PER_LATERAL_FT : null }),
+    onChange: (next) => setParams({ normalization: next ? PER_LATERAL_FT : null }, true),
   };
 }
 
-/** main.ts is the single writer of app state, so the card announces rather than writes. */
-function setParams(params: Record<string, string | null>): void {
-  document.dispatchEvent(new CustomEvent("gw-param-set", { detail: { params } }));
+/**
+ * main.ts is the single writer of app state, so the card announces rather than writes.
+ * `refetch` marks a parameter the *server* answers -- the normalisation basis, the vintage,
+ * the served window -- which the card cannot honour by redrawing what it holds.
+ */
+function setParams(params: Record<string, string | null>, refetch = false): void {
+  document.dispatchEvent(new CustomEvent("gw-param-set", { detail: { params, refetch } }));
 }
 
 /**

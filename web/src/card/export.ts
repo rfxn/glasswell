@@ -12,6 +12,8 @@
  * screen; putting it in a file beside a handle column would give it provenance it does not
  * have, which is the same ruling the chart applies by refusing it a ring.
  */
+import { handleAt } from "../chart/series.ts";
+
 import type { Envelope } from "../api/envelope.ts";
 import type { ChartSeries } from "../chart/series.ts";
 
@@ -64,7 +66,7 @@ export function toCsv(chart: ChartSeries, context: ExportContext): string {
           column.unit,
           column.nullSemantics[index] ?? "",
           column.vintages[index] ?? "",
-          column.handles[index] ?? column.handle ?? "",
+          handleAt(column, index, month) ?? "",
         ]
           .map((cell) => escape(String(cell)))
           .join(","),

@@ -700,6 +700,57 @@ describe("what the first paint asks for before it knows who is asking", () => {
   });
 });
 
+describe("a control the server answers re-lands the card, without a reload", () => {
+  // `Per 1,000 ft`, `Read at ...` and `Widen to the whole record` wrote the URL and asked for
+  // nothing: the divided figure, the earlier vintage and the whole record were reachable only
+  // by reloading the link the click had just written (visual M4).
+  it("renders the card again when the parameter is one the server answers", async () => {
+    await bootAt("/?well=3305310451");
+    const card = host("gw-card");
+    card.hidden = false;
+    card.replaceChildren(document.createElement("p"));
+    expect(renderWellCard.mock.calls.length).toBe(1);
+
+    document.dispatchEvent(
+      new CustomEvent("gw-param-set", {
+        detail: { params: { normalization: "per_lateral_ft" }, refetch: true },
+      }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(window.location.search).toContain("normalization=per_lateral_ft");
+    expect(renderWellCard.mock.calls.length).toBe(2);
+    expect(renderWellCard.mock.calls[1]?.[1]).toBe("3305310451");
+  });
+
+  it("leaves the card alone for a brush, which is a view over months it already holds", async () => {
+    await bootAt("/?well=3305310451");
+    const card = host("gw-card");
+    card.hidden = false;
+    card.replaceChildren(document.createElement("p"));
+    const mounted = card.firstElementChild;
+
+    document.dispatchEvent(
+      new CustomEvent("gw-param-set", { detail: { params: { from: "2025-11", to: "2026-01" } } }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(renderWellCard.mock.calls.length).toBe(1);
+    expect(card.firstElementChild).toBe(mounted);
+  });
+
+  it("asks for nothing when no well is open", async () => {
+    await bootAt("/?view=explore");
+
+    document.dispatchEvent(
+      new CustomEvent("gw-param-set", { detail: { params: { as_of: "2026-06-01" }, refetch: true } }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(renderWellCard.mock.calls.length).toBe(0);
+  });
+});
+
 describe("a brush reaches the URL, so the link carries the range", () => {
   it("writes from and to on a brush and drops them when it is cleared", async () => {
     // The chart narrows its own window; this is the half that makes a brushed card a link

@@ -9,6 +9,9 @@
  * chart's and stays there, because a total in a table with a handle column beside it would
  * read as a figure with provenance.
  */
+import "./table.css";
+
+import { handleAt } from "../chart/series.ts";
 import { explainHandle } from "../chrome/handle.ts";
 import { labelElement } from "../glossary/gw-term.ts";
 import { formatMonth, nullSemantics } from "./format.ts";
@@ -86,7 +89,7 @@ export function seriesTable(chart: ChartSeries, callbacks: TableCallbacks): HTML
       state.title = described.title;
       const lineage = document.createElement("td");
       lineage.className = "gw-table-handle";
-      const handle = column.handles[index] ?? column.handle;
+      const handle = handleAt(column, index, label);
       if (handle) {
         lineage.appendChild(
           explainHandle({

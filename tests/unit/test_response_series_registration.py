@@ -27,6 +27,13 @@ def test_a_series_with_point_handles_is_refused() -> None:
         _selector_outputs({"series": _series(point_handles=["a#b", None, None])})
 
 
+def test_a_series_with_point_overrides_is_refused_on_the_same_rule() -> None:
+    # The weaker per-point form has to be refused here too, or the registrar records a column
+    # of evidence a point handle then addresses past (the H-1 class).
+    with pytest.raises(ValueError, match="may not carry point handles"):
+        _selector_outputs({"series": _series(point_overrides={1: "drv_a#api10=1&col=oil_bbl"})})
+
+
 def test_a_series_and_a_figure_sharing_a_selector_and_disagreeing_is_refused() -> None:
     figure = Figure(
         value="1.50", unit="bbl", derivation="drv_placeholder", selector="col=monthly_p50"
