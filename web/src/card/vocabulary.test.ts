@@ -1,5 +1,6 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
@@ -164,6 +165,20 @@ describe("what the card is allowed to call things", () => {
     expect(values, "the quantile convention lost its served label").toContain(
       "/quantile_convention",
     );
+  });
+
+  it("resolves the glossary seed from the module, not from the process CWD", () => {
+    // The gate reads the seed to prove the served definition is still a negation. A
+    // CWD-relative path makes that pass only under `npm --prefix web run test`; run from the
+    // repository root, or by an editor, it is an ENOENT and the negation goes unchecked.
+    expect(isAbsolute(SEED_PATH), `${SEED_PATH} is resolved against the process CWD`).toBe(true);
+    const cwd = process.cwd();
+    try {
+      process.chdir(tmpdir());
+      expect(() => readFileSync(SEED_PATH, "utf8")).not.toThrow();
+    } finally {
+      process.chdir(cwd);
+    }
   });
 
   it("keeps the served definition a negation of the reserves convention", () => {
