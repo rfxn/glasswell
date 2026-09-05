@@ -372,6 +372,16 @@ select geom_type as geometry_provenance, count(distinct api10) as wells,
  group by 1
 """
 
+# Which of the pool-grain disclosure's three states this well is in, in one round trip: whether
+# the regulator filed anything below it, and whether the rollup mart serves a sum of those
+# filings. Both are facts about the well; the registration alone answers neither.
+_POOL_GRAIN_FACTS = """
+select exists(select 1 from canonical.production_monthly
+               where api10 = %(api10)s and entity_type = 'well_completion_pool'
+                 and (%(as_of)s::date is null or report_vintage <= %(as_of)s::date)) as filings,
+       exists(select 1 from marts.well_pool_rollup where api10 = %(api10)s) as summed
+"""
+
 _STORAGE_CRS = """
 select storage_epsg, effective_from
  from lineage.crs_registry
@@ -867,18 +877,26 @@ def pending_allocation(rule: LeaseReportingRule) -> dict[str, Any]:
     }
 
 
-def reported_at_pool_grain(rule: LeaseReportingRule) -> dict[str, Any]:
+def reported_at_pool_grain(
+    rule: LeaseReportingRule, *, filings: bool = True, summed: bool = False
+) -> dict[str, Any] | None:
     """DIR-3 one grain the other way from `pending_allocation`.
 
     A well whose regulator files per completion pool has no well-level filing to be absent
     from, so `producing` is `unknown`, and it filed, which is not one of the three causes the
-    field enumerated before this. Which of two sentences it gets is the
-    jurisdiction's own grain decision: a registration that registers a served rollup has one
-    performed, so saying none is would be false the day the mart lands, and the code changes
-    with the sentence because `card.ts:428` replaces the chart with a panel for the first of
-    them and draws the chart for the second.
+    field enumerated before this.
+
+    Which sentence it gets is a fact about THIS well and not only about its jurisdiction's
+    registration. `filings` is whether the well has pool rows at all: a registered jurisdiction
+    holds wells that filed nothing, and telling one of those that its filings were summed names
+    a surface the same response declines to link (gate-p68-shots MAJOR-1). `summed` is whether
+    the rollup mart actually serves this well: between a deploy and the first refresh, and for
+    every well whose filings the mart admits none of, there is no sum, and the code that says
+    so is what the card gates its Production-by-pool section on (BLOCKER-1).
     """
-    if rule["served_rollup"]:
+    if not filings:
+        return None
+    if summed:
         return {
             "code": "production_summed_over_pools",
             "detail": (
@@ -892,13 +910,19 @@ def reported_at_pool_grain(rule: LeaseReportingRule) -> dict[str, Any]:
             "pointer": "/producing",
             "rule_id": rule["rule_id"],
         }
+    rolls_up = (
+        " glasswell sums those filings into a well series, and none of this well's are"
+        f" admitted into that sum ({rule['rule_id']}), so no well-level series is served"
+        if rule["served_rollup"]
+        else f" glasswell performs no rollup to the well ({rule['rule_id']}), so no well-level"
+        " series has been observed"
+    )
     return {
         "code": "production_reported_at_pool_grain",
         "detail": (
             f"This well's regulator files production at the {rule['reporting_level']} and"
-            f" glasswell performs no rollup to the well ({rule['rule_id']}), so no well-level"
-            " series has been observed and `producing` is unknown for that reason rather than"
-            " because nothing was filed. The pool series is served separately."
+            f"{rolls_up} and `producing` is unknown for that reason rather than because"
+            " nothing was filed. The pool series is served separately."
         ),
         "pointer": "/producing",
         # On the warning rather than only inside the sentence: a client that had to parse the
@@ -2686,7 +2710,12 @@ def get_well(
         connection, row["state_code"], valid_at=as_of, knowledge_at=as_of
     )
     if pool_grain and row["producing"] == UNKNOWN:
-        warnings.append(reported_at_pool_grain(pool_grain))
+        facts = rows(connection, _POOL_GRAIN_FACTS, {"api10": api10, "as_of": as_of})[0]
+        disclosure = reported_at_pool_grain(
+            pool_grain, filings=facts["filings"], summed=facts["summed"]
+        )
+        if disclosure:
+            warnings.append(disclosure)
     geometry = rows(
         connection,
         # No method, no metres: `length_m` is what the withheld figure would have been summed

@@ -305,6 +305,82 @@ def test_every_point_of_the_summed_series_resolves_to_the_refresh_that_produced_
         assert handles[index].endswith(f"api10={NM_API10}&col=oil_bbl&pm={month}")
 
 
+def test_a_registered_well_whose_filings_the_mart_admits_none_of_keeps_the_panel(
+    with_new_mexico: TestClient,
+) -> None:
+    """BLOCKER-1, on a served response from a registered jurisdiction rather than on a branch.
+
+    New Mexico registers a served rollup, so before the mart is refreshed -- and for every well
+    whose filings the sum admits none of, which on the deployed spine is every well that filed
+    only withheld months -- there is no sum. The card gates its Production-by-pool section on
+    this code, so serving the summed code here removed that section from a well whose whole
+    production record is in it, and the reader was shown `No production reported.` instead.
+    """
+    envelope = body(with_new_mexico, f"/v1/wells/{NM_API10}")
+    warnings = {item["code"]: item for item in envelope["meta"].get("warnings", [])}
+
+    assert "production_summed_over_pools" not in warnings
+    disclosure = warnings["production_reported_at_pool_grain"]
+    assert disclosure["rule_id"] == "cr_nm_wcproduction_pool_rollup_2"
+    assert "none of this well's are admitted into that sum" in disclosure["detail"]
+    assert disclosure["pointer"] == "/producing"
+
+
+def test_the_two_envelopes_agree_on_which_pool_grain_state_a_well_is_in(
+    with_new_mexico: TestClient,
+) -> None:
+    """The card reads the well's warnings for its sections and the series' for its chart, so
+    the two disagreeing is two answers to one question on one screen. They did: the well said
+    a sum was served for a well the mart holds no row for, while /production said the panel."""
+    well = body(with_new_mexico, f"/v1/wells/{NM_API10}")
+    series = body(with_new_mexico, f"/v1/wells/{NM_API10}/production")
+    codes = {"production_reported_at_pool_grain", "production_summed_over_pools"}
+
+    assert {
+        item["code"] for item in well["meta"].get("warnings", [])
+    } & codes == {
+        item["code"] for item in series["meta"].get("warnings", [])
+    } & codes
+
+
+def test_a_registered_well_that_filed_nothing_below_it_is_told_of_no_sum(
+    with_the_rollup: TestClient, seeded: psycopg.Connection
+) -> None:
+    """MAJOR-1. The disclosure fired on the registration, so a New Mexico well with no pool
+    filing at all was told the served series is glasswell's sum of those filings and that the
+    filings are served separately -- naming a surface the same response declines to link,
+    about filings that do not exist."""
+    quiet = "3001599002"
+    with seeded.cursor() as cursor:
+        cursor.execute(
+            "select source_manifest_id, derivation_id from canonical.production_monthly limit 1"
+        )
+        manifest_id, derivation_id = cursor.fetchone()
+    seed_well(
+        seeded,
+        api10=quiet,
+        state_code="30",
+        county_code_at_permit="015",
+        ndic_file_no=None,
+        basin="permian",
+        land_unit_label=None,
+        status_canonical=None,
+        status_reported="A",
+        well_name="CHAVES NO POOLS 1",
+        manifest_id=manifest_id,
+        derivation_id=derivation_id,
+    )
+    seeded.commit()
+
+    envelope = body(with_the_rollup, f"/v1/wells/{quiet}")
+    codes = {item["code"] for item in envelope["meta"].get("warnings", [])}
+
+    assert envelope["data"]["producing"] == "unknown"
+    assert "production_summed_over_pools" not in codes
+    assert "production_reported_at_pool_grain" not in codes
+    assert "pools" not in envelope["links"]
+
+
 def test_the_panel_is_still_what_a_pool_grain_jurisdiction_with_no_rollup_is_served(
 ) -> None:
     """The other arm, asserted where it is decided rather than through a planted registration:
@@ -320,7 +396,9 @@ def test_the_panel_is_still_what_a_pool_grain_jurisdiction_with_no_rollup_is_ser
             "effective_from": date(2026, 1, 1),
             "published_vintage": date(2026, 1, 1),
             "served_rollup": None,
-        }
+        },
+        filings=True,
+        summed=False,
     )
     rolled = reported_at_pool_grain(
         {
@@ -330,7 +408,9 @@ def test_the_panel_is_still_what_a_pool_grain_jurisdiction_with_no_rollup_is_ser
             "effective_from": date(2026, 9, 3),
             "published_vintage": date(2026, 9, 3),
             "served_rollup": "sum_over_pools",
-        }
+        },
+        filings=True,
+        summed=True,
     )
 
     assert unrolled["code"] == "production_reported_at_pool_grain"
@@ -340,7 +420,7 @@ def test_the_panel_is_still_what_a_pool_grain_jurisdiction_with_no_rollup_is_ser
 
 
 def test_a_new_mexico_well_is_producing_unknown_and_the_reason_is_disclosed(
-    with_new_mexico: TestClient,
+    with_the_rollup: TestClient,
 ) -> None:
     """`unknown` is the safe value and the wrong story without the reason.
 
@@ -348,8 +428,12 @@ def test_a_new_mexico_well_is_producing_unknown_and_the_reason_is_disclosed(
     that filed 17.6M pool rows would otherwise be reported under a field whose description
     offers only "filed nothing", "withheld" and "reports at the lease" — none of which is true
     of it.
+
+    On the rollup fixture, because the summed sentence is what a well the mart serves is owed
+    and this case is about the well that has one; the two the mart does not serve are asserted
+    above.
     """
-    envelope = body(with_new_mexico, f"/v1/wells/{NM_API10}")
+    envelope = body(with_the_rollup, f"/v1/wells/{NM_API10}")
     warnings = {item["code"]: item for item in envelope["meta"].get("warnings", [])}
 
     assert envelope["data"]["producing"] == "unknown"
