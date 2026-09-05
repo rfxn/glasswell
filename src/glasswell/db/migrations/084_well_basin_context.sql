@@ -31,8 +31,8 @@
 
 insert into lineage.conformance_rule_publications
     (rule_id, published_vintage, evidence_tag, evidence_commit)
-select rule_id, date '2026-09-03', 'UNRELEASED',
-       '0000000000000000000000000000000000000000'
+select rule_id, date '2026-09-05', 'v0.82',
+       'bcf5b43284f53f0c59cd5f57fe2742e50b3be612'
   from unnest(array[
        'cr_nm_wellhistory_status_history_1',
        'cr_co_wells_status_history_1',
