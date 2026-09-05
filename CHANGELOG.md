@@ -7,6 +7,57 @@ its own version in its header, and its history is summarised in §3.1.
 
 ## Unreleased
 
+<a id="v0.81"></a>
+## v0.81 — 2026-09-05
+
+- [New] The weekly restore drill refuses before it creates a scratch database it has no room
+      for: the scratch cluster's filesystem must hold `pg_database_size(glasswell)` plus
+      10 GiB, the scratch database is still removed on the way out, and the receipt the status
+      page reads distinguishes a measured shortfall from a probe that could not measure
+- [Change] The storage check that gates a deploy follows PGDATA rather than `/`, is named
+           `PostgreSQL storage` for what it now measures, and refuses below an absolute floor
+           as well as below the 10 % ratio, both configured on the status unit: a tenth of this
+           filesystem is less than the room the next state load needs, so the check stayed
+           green on a disk already too small
+- [Change] `wal_compression = lz4` joins the PostgreSQL tuning drop-in, against 43 million
+           full-page images written in fifteen days; it reloads rather than restarting, and
+           `infra/README.md` now says how a changed drop-in reaches the host, because a deploy
+           neither applies one nor reverts one
+- [New] The PDQ member layout is a conformance row: cr_tx_pdq_format_2 restates
+      cr_tx_pdq_format_1 with the measured header of every member the Texas load
+      reads and the subset each parse consumes, published by 081_tx_pdq_format.sql
+- [Fix] The completion member is read at its measured 16 columns; the 13 the
+      parser carried were transcribed from the manual and never measured, and the
+      stage refused on the width
+- [Change] A member's header is judged by name and position against the rule and
+         refuses naming the columns and the rule id, so a renamed or reordered
+         column is as loud as an added one; all five members read are judged,
+         where three were read against no layout at all
+- [Fix] A completed fetch is recorded when its bytes are placed rather than at the
+      end of the run, so a refused parse leaves a manifest and the re-run reuses
+      the slot instead of placing a second copy of the archive
+- [Fix] An undeclared raw zone refuses with RawRootUnset; the default was the
+      relative data/raw, which resolved against the caller's working directory
+- [Fix] The two-clock gate for the Texas card reads the grain rule's own published
+      vintage instead of a date the v0.80 repoint had already moved
+- [Fix] The Colorado GIS staging reads the member ECMC actually ships:
+      Directional_Bottomhole_Locations and Directional_Lines were selected by a
+      suffix that ignored their separators, so --layer all refused after staging
+      the wells layer; member selection now compares case and separators on
+      neither side, and the three member names are conformance rows
+- [Fix] A source whose artifact was fetched and never parsed is served as stale
+      rather than current: a refused stage records the refusal against its
+      manifest and leaves staging_load_ref unset, so a fetch that landed and a
+      parse that refused are two answers and not one
+- [Fix] Any way a Texas stage can end short of loading the archive is recorded
+      against the manifest, not only a refused header: a memory kill, a database
+      error or the per-year headroom refusal now leave the same staging.load_failed
+      event and the same stale source the header refusal does
+- [Change] The scheduler reads staging refusals through lineage.staging_load_failures
+         rather than lineage.audit_events, so the least-privileged role gains one
+         column of one event type instead of the account and session trail the same
+         table carries
+
 <a id="v0.80"></a>
 ## v0.80 — 2026-09-04
 
