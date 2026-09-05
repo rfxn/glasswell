@@ -539,6 +539,7 @@ export async function renderWellCard(
     (warning) => warning.code === POOL_GRAIN || warning.code === SUMMED_OVER_POOLS,
   );
   const poolGrain = well.meta.warnings.find((warning) => warning.code === POOL_GRAIN);
+  const poolsSummed = well.meta.warnings.some((warning) => warning.code === SUMMED_OVER_POOLS);
   // The warning says why the well-level chart is absent; the link says where the record is.
   // The section is gated on the link, like every other section, and fetches the path served.
   const poolsPath = well.links?.["pools"];
@@ -619,7 +620,9 @@ export async function renderWellCard(
           poolsBody,
           poolsPath ?? "",
           query,
-          poolsRule ? { reporting_rule: poolsRule } : {},
+          // Which of the two pool-grain states this well is in, so the section's own sentence
+          // can say it: the rule id is the same either way.
+          poolsRule ? { [poolsSummed ? "aggregation_rule" : "reporting_rule"]: poolsRule } : {},
           {
             onExplain: callbacks.onExplain,
             labelTermFor: (pointer: string) => labelFor(well, pointer),

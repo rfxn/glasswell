@@ -1704,6 +1704,51 @@ describe("the third production state, and the sections it opens", () => {
     }
   });
 
+  it("tells the section no sum is served, because on this well none is", async () => {
+    // MAJOR-5's other half: the same rule id, the opposite state, and the sentence the reader
+    // is owed here is the one the summed card must not carry.
+    const poolFilings = {
+      data: {
+        api10: API10,
+        granularity: "well_completion_pool",
+        reporting_level: "well_completion_pool",
+        pools: [
+          {
+            well_completion_pool: "77213",
+            entity_key: `${API10}:77213`,
+            streams: ["oil"],
+            series: {
+              pm: ["2026-01"],
+              oil_bbl: ["800.000"],
+              oil_bbl_report_vintage: ["2026-08-01"],
+              oil_bbl_null_semantics: ["reported"],
+            },
+          },
+        ],
+        _units: { "pools.0.series.oil_bbl": "bbl" },
+        _lineage: { "pools.0.series.oil_bbl.0": `drv_p#entity_key=${API10}:77213&col=oil_bbl` },
+      },
+      meta: { as_of: {}, warnings: [], labels: {} },
+      links: {},
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        stubFetch({
+          [`/v1/wells/${API10}/production/pools`]: poolFilings,
+          [`/v1/wells/${API10}`]: poolGrain,
+        }),
+      ),
+    );
+
+    await renderWellCard(host, API10, callbacks);
+    await sectionsSettled();
+
+    const pools = host.querySelector("#gw-section-pools");
+    expect(pools?.textContent).toContain("no sum of them is served");
+    expect(pools?.textContent).toContain("rolls nothing up to the well");
+  });
+
   it("offers no Pools section on a well whose regulator files at the well", async () => {
     await renderWellCard(host, API10, callbacks);
 
@@ -1737,6 +1782,57 @@ describe("the fourth production state: filed by pool, and summed to the well", (
       ],
     },
   };
+
+  // One pool's filings, so the section's own body renders rather than erroring: the routes are
+  // matched by prefix and the pools path is a prefix extension of the series path.
+  const poolFilings = {
+    data: {
+      api10: API10,
+      granularity: "well_completion_pool",
+      reporting_level: "well_completion_pool",
+      pools: [
+        {
+          well_completion_pool: "96269",
+          entity_key: `${API10}:96269`,
+          streams: ["oil"],
+          series: {
+            pm: ["2026-01"],
+            oil_bbl: ["1200.000"],
+            oil_bbl_report_vintage: ["2026-08-01"],
+            oil_bbl_null_semantics: ["reported"],
+          },
+        },
+      ],
+      _units: { "pools.0.series.oil_bbl": "bbl" },
+      _lineage: { "pools.0.series.oil_bbl.0": `drv_p#entity_key=${API10}:96269&col=oil_bbl` },
+    },
+    meta: { as_of: {}, warnings: [], labels: {} },
+    links: {},
+  };
+
+  it("tells the section a sum is served above it, so it does not deny the chart", async () => {
+    // MAJOR-5, on the rendered section. `pools_rule` is served in both pool-grain states, so
+    // a section handed only the rule wrote "no sum of them is served" under the chart of the
+    // sum, citing the rule that authorises the sum. Which state the well is in is on the
+    // envelope, in the warning code, and the sentence has to follow it.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        stubFetch({
+          [`/v1/wells/${API10}/production/pools`]: poolFilings,
+          [`/v1/wells/${API10}/production`]: productionEnvelope,
+          [`/v1/wells/${API10}`]: summed,
+        }),
+      ),
+    );
+
+    await renderWellCard(host, API10, callbacks);
+    await sectionsSettled();
+
+    const pools = host.querySelector("#gw-section-pools");
+    expect(pools?.textContent).toContain("the series above is glasswell's sum of them");
+    expect(pools?.textContent).not.toContain("no sum of them is served");
+  });
 
   it("draws the summed chart rather than replacing it with the pool-grain panel", async () => {
     vi.stubGlobal(

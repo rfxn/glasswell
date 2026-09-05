@@ -54,6 +54,9 @@
       the sum admitting none of them — a word New Mexico's pools never file
 - [Fix] `?normalization=per_lateral_ft` is refused on the summed series for the reason the
       allocated arm gives, where it was accepted and silently ignored
+- [Fix] Production by pool says the series above it is glasswell's sum of the filings on a well
+      the rollup serves, where it told every pool-grain well that nothing rolls up and no sum is
+      served — the opposite of the chart drawn above it, under the same rule id
 - [Fix] The well card opens Production by pool on whether the regulator filed below the well,
       not on whether a sum is missing, so a well the rollup mart serves keeps both its summed
       chart and the section holding the filings that chart is a sum of
