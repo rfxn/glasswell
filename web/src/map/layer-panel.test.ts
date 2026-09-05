@@ -10,6 +10,14 @@ import { JURISDICTIONS } from "./jurisdictions.generated.ts";
 import { createLayerPanel } from "./layer-panel.ts";
 import { createPillStrip } from "./pills.ts";
 import { LAYERS, defaultLayerSet, familyMembers, groupEntries } from "./registry.ts";
+import { SEEDED_STATUS_CLASSES } from "./status-classes.generated.ts";
+import {
+  resetStatusVocabulary,
+  setStatusVocabulary,
+  statusClass,
+  statusVocabulary,
+  statusVocabularyResolved,
+} from "./status.ts";
 
 const panel = (on: string[] = defaultLayerSet()) => {
   const events: { id: string; on: boolean }[] = [];
@@ -204,6 +212,35 @@ describe("the layer panel", () => {
         id,
       ).toBe(true);
     }
+  });
+
+  it("repaints a status-keyed swatch when the served vocabulary lands after the panel is built", async () => {
+    // v0.83 M1 on the visual gate: `lateral-bores` and `mt-paths` read the served domain
+    // through `swatch.colours`, and the panel drew the SVG synchronously after `loadCensus()`
+    // had only been started, so both rows painted the unresolved store's `transparent` and
+    // nothing repainted them. The map's own layers repainted; the panel's legend for them did not.
+    resetStatusVocabulary();
+    resetCensus(censusOf([]));
+    const { handle } = panel();
+    expect(statusVocabularyResolved(), "the panel is built before the domain arrives").toBe(false);
+
+    // What `loadCensus()` itself does: seed the store, then resolve, so every awaiting surface
+    // finds a resolved domain rather than a race.
+    setStatusVocabulary(SEEDED_STATUS_CLASSES);
+    await loadCensus();
+
+    const mapped = statusVocabulary().filter((status) => !status.isAbsence);
+    const served = [mapped[0]!.colour, mapped[mapped.length - 1]!.colour];
+    for (const id of ["lateral-bores", "mt-paths"]) {
+      const strokes = [
+        ...rowFor(handle.element, id)!.querySelectorAll(".gw-layer-swatch line"),
+      ].map((line) => line.getAttribute("stroke"));
+      expect(strokes, id).toEqual(served);
+    }
+    // The class the v0.82 baseline shows on both rows: the domain's leading mapped class.
+    expect(served[0]).toBe(statusClass("active").colour);
+
+    resetCensus();
   });
 
   it("names both regulators under the one row that draws both of their files", () => {
