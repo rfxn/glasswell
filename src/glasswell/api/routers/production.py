@@ -4,6 +4,7 @@ per point, and the three null semantics kept apart."""
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Annotated, Any, Literal
@@ -45,6 +46,7 @@ from glasswell.lineage.jurisdictions import JurisdictionRegistry
 from glasswell.lineage.selector_registry import identity_selector_term
 from glasswell.lineage.vintages import select_production
 from glasswell.marts.cumulatives import CUMULATIVES_SCOPE
+from glasswell.marts.well_pool_rollup import ADMITTED_NULL_SEMANTICS, POOL_GRAIN_ENTITY
 from glasswell.status.source_health import source_health_data
 from glasswell.units import metres_to_feet
 
@@ -727,6 +729,16 @@ def get_well_production(
     if summed_rule is not None and not all_well_rows:
         summed = _rollup_rows(connection, api10)
         if summed:
+            if divisor is not None:
+                # The allocated arm's refusal, one grain the other way and for the same reason.
+                # Not live while New Mexico holds surface points only, and live the day a
+                # pool-grain jurisdiction with laterals registers a rollup -- which this design
+                # advertises as a spec key rather than a module.
+                raise _refuse_normalisation(
+                    "this jurisdiction serves a series summed over its pool filings"
+                    f" ({summed_rule}), and a sum over pool filings divided by this well's"
+                    " lateral is not a per-foot rate anybody measured"
+                )
             return _summed_response(
                 request,
                 connection,
@@ -1226,9 +1238,79 @@ select coalesce(array_agg(distinct source_id), '{}') as source_ids,
  where api10 = %(api10)s and entity_type = 'well_completion_pool'
 """
 
+# The same filings per month and stream, for the two facts that are per point and were served
+# as one scalar each: whether every filing under a summed month was an explicit zero, and the
+# vintage that month was read at. The ranking window is the mart's own, so a restated month is
+# described by the restatement the mart summed rather than beside it.
+_ROLLUP_FILING_MONTHS = """
+with ranked as (
+    select p.production_month, p.stream, p.null_semantics, p.source_id, p.report_vintage,
+           row_number() over (
+               partition by p.entity_type, p.entity_key, p.production_month, p.stream,
+                            p.source_id
+               order by p.report_vintage desc) as vintage_rank
+      from canonical.production_monthly p
+     where p.api10 = %(api10)s and p.entity_type = %(entity_type)s
+)
+select production_month, stream,
+       count(*) filter (where admitted) as admitted,
+       bool_and(null_semantics = 'reported_zero') filter (where admitted) as all_zero,
+       max(report_vintage) filter (where admitted) as report_vintage
+  from (select production_month, stream, null_semantics, report_vintage,
+               null_semantics = any(%(admitted)s) as admitted
+          from ranked where vintage_rank = 1) rank_one
+ group by production_month, stream
+"""
+
 
 def _rollup_rows(connection: psycopg.Connection, api10: str) -> list[dict[str, Any]]:
     return rows(connection, _ROLLUP_SERIES, {"api10": api10})
+
+
+@dataclass(frozen=True)
+class _FilingMonth:
+    """What the pool filings under one summed month and stream say about it."""
+
+    admitted: int
+    all_zero: bool
+    vintage: date | None
+
+
+def _rollup_filing_months(
+    connection: psycopg.Connection, api10: str
+) -> dict[tuple[date, str], _FilingMonth]:
+    read = rows(
+        connection,
+        _ROLLUP_FILING_MONTHS,
+        {
+            "api10": api10,
+            "entity_type": POOL_GRAIN_ENTITY,
+            "admitted": list(ADMITTED_NULL_SEMANTICS),
+        },
+    )
+    return {
+        (row["production_month"], row["stream"]): _FilingMonth(
+            admitted=row["admitted"],
+            all_zero=bool(row["all_zero"]),
+            vintage=row["report_vintage"],
+        )
+        for row in read
+        if row["stream"] in ROLLUP_STREAM_OF
+    }
+
+
+def _summed_semantics(filed: _FilingMonth | None, *, summed: bool) -> str:
+    """The four states the card's legend advertises, on the summed arm too.
+
+    A month with no mart row is not a hole in the axis: either its filings were all withheld,
+    which is why the sum admits none of them, or the stream filed nothing that month. Serving
+    null for both painted the band in the gas red with nothing in the key to read it by.
+    """
+    if not summed:
+        if filed is None:
+            return "no_report"
+        return "withheld" if filed.admitted == 0 else "no_report"
+    return "reported_zero" if filed is not None and filed.all_zero else "reported"
 
 
 def summed_over_pools(api10: str, rule_id: str) -> dict[str, Any]:
@@ -1292,6 +1374,7 @@ def _summed_response(
         and (window[1] is None or row["production_month"] <= window[1])
     ]
     filings = rows(connection, _ROLLUP_FILINGS, {"api10": api10})[0]
+    per_month = _rollup_filing_months(connection, api10)
     months = sorted({row["production_month"] for row in points})
     payload: dict[str, Any] = {"pm": [month_label(month) for month in months]}
     warnings: list[dict[str, Any]] = [summed_over_pools(api10, rule_id)]
@@ -1330,12 +1413,12 @@ def _summed_response(
             ],
         )
         payload[f"{column}_report_vintage"] = [
-            iso(filings["report_vintage"]) if month in by_month else None for month in months
+            iso(per_month[(month, stream)].vintage) if month in by_month else None
+            for month in months
         ]
-        # The sum admits reported and reported_zero filings and nothing else, so a month with a
-        # row is a month that was reported; a month with none is absent from the axis entirely.
         payload[f"{column}_null_semantics"] = [
-            "reported" if month in by_month else None for month in months
+            _summed_semantics(per_month.get((month, stream)), summed=month in by_month)
+            for month in months
         ]
         payload[f"{column}_aggregation"] = [
             SUM_OVER_POOLS if month in by_month else None for month in months

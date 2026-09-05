@@ -39,6 +39,9 @@ NM_POOL = "96269"
 NM_SURFACE = "POINT(-103.9000 32.1000)"
 NM_MONTHS = (date(2026, 5, 1), date(2026, 6, 1))
 NM_VINTAGE = date(2026, 8, 20)
+ZERO_MONTH = date(2026, 7, 1)
+# Later than the other two, so a per-point vintage cannot be the well's maximum by coincidence.
+ZERO_VINTAGE = date(2026, 8, 25)
 
 
 @pytest.fixture
@@ -128,6 +131,41 @@ def with_the_rollup(
     the state an instance is in between `make deploy` and the refresh, and that state has its
     own answer: the panel, which the case below still asserts.
     """
+    with lineage_session(recorder=PostgresRecorder(seeded), environment=lineage_env):
+        refresh_well_pool_rollup(seeded)
+    seeded.commit()
+    return with_new_mexico
+
+
+@pytest.fixture
+def with_a_zero_month(
+    with_new_mexico: TestClient, seeded: psycopg.Connection, lineage_env
+) -> TestClient:
+    """A third month whose only filing is an explicit zero, and only for oil.
+
+    The fixture above files `reported` in every month and every stream, so the served token is
+    right by construction whatever the arm does. Two of the four states the card's legend
+    advertises are only reachable through a month like this one: an explicit zero the regulator
+    filed, and a stream that filed nothing in a month the well has.
+    """
+    with seeded.cursor() as cursor:
+        cursor.execute(
+            "select source_manifest_id, derivation_id from canonical.production_monthly limit 1"
+        )
+        manifest_id, derivation_id = cursor.fetchone()
+        cursor.execute(
+            "insert into canonical.production_monthly (api10, entity_type, entity_key,"
+            " reporting_level, well_completion_pool, production_month, stream, source_id,"
+            " report_vintage, volume, unit, granularity, value_hash, null_semantics,"
+            " source_manifest_id, derivation_id)"
+            " values (%s, 'well_completion_pool', %s, 'well_completion_pool', %s, %s, 'oil',"
+            " 'nm_ocd_wcproduction', %s, 0, 'bbl', 'well_observed', %s, 'reported_zero', %s, %s)",
+            (
+                NM_API10, f"{NM_API10}:{NM_POOL}", NM_POOL, ZERO_MONTH,
+                ZERO_VINTAGE, "f" * 64, manifest_id, derivation_id,
+            ),
+        )
+    seeded.commit()
     with lineage_session(recorder=PostgresRecorder(seeded), environment=lineage_env):
         refresh_well_pool_rollup(seeded)
     seeded.commit()
@@ -277,6 +315,52 @@ def test_a_new_mexico_well_is_served_the_sum_of_its_pool_filings_and_says_it_is_
     assert envelope["data"]["series"]["oil_bbl_aggregation"] == ["sum_over_pools"] * 2
 
 
+def test_a_summed_month_whose_filings_were_all_zero_is_served_as_a_filed_zero(
+    with_a_zero_month: TestClient,
+) -> None:
+    """H-3, measured on the deployed spine at 901,568 served points over 43,921 wells.
+
+    The arm wrote the constant `reported` for every month that had a mart row, so an explicit
+    zero the regulator filed rendered "The operator reported a volume for this month" -- and
+    `format.ts:47` states the client's own invariant that the four states are never collapsed
+    into one another. The mart sums `reported` and `reported_zero` alike, so the distinction is
+    not in the mart and has to be re-read from the filings the sum was taken over.
+    """
+    series = body(with_a_zero_month, f"/v1/wells/{NM_API10}/production")["data"]["series"]
+    months = series["pm"]
+    zero = months.index("2026-07")
+
+    assert months == ["2026-05", "2026-06", "2026-07"]
+    assert series["oil_bbl"][zero] == "0.000"
+    assert series["oil_bbl_null_semantics"] == ["reported", "reported", "reported_zero"]
+
+
+def test_a_stream_with_no_filing_in_a_served_month_says_no_report_not_null(
+    with_a_zero_month: TestClient,
+) -> None:
+    """NIT-3. A null token falls through `format.ts` to gw-state-unknown, which style.css
+    paints in the gas red, and `keyStates()` skips a null so the key never gains a row for it:
+    a mark on the band with nothing in the key to read it by."""
+    series = body(with_a_zero_month, f"/v1/wells/{NM_API10}/production")["data"]["series"]
+
+    assert series["gas_mcf"][2] is None
+    assert series["gas_mcf_null_semantics"] == ["reported", "reported", "no_report"]
+    assert series["water_bbl_null_semantics"] == ["reported", "reported", "no_report"]
+    assert None not in series["gas_mcf_null_semantics"]
+
+
+def test_every_point_of_a_summed_series_carries_its_own_months_vintage(
+    with_a_zero_month: TestClient,
+) -> None:
+    """H-7. One scalar for the well was written onto every point of a field documented per
+    point, so the first OCD restatement would date every month at the restated month's vintage.
+    Both the observed arm and the allocated arm serve the month's own."""
+    series = body(with_a_zero_month, f"/v1/wells/{NM_API10}/production")["data"]["series"]
+
+    assert series["oil_bbl_report_vintage"] == ["2026-08-20", "2026-08-20", "2026-08-25"]
+    assert series["gas_mcf_report_vintage"] == ["2026-08-20", "2026-08-20", None]
+
+
 def test_every_point_of_the_summed_series_resolves_to_the_refresh_that_produced_it(
     with_the_rollup: TestClient, seeded: psycopg.Connection
 ) -> None:
@@ -303,6 +387,67 @@ def test_every_point_of_the_summed_series_resolves_to_the_refresh_that_produced_
     assert {handle.split("#")[0] for handle in handles} == refreshes
     for index, month in enumerate(("2026-05", "2026-06")):
         assert handles[index].endswith(f"api10={NM_API10}&col=oil_bbl&pm={month}")
+
+
+def test_as_of_is_refused_on_the_summed_series_with_a_stated_reason(
+    with_the_rollup: TestClient,
+) -> None:
+    """HB-34 / H-5. The refusal was a 200 becoming a 4xx on a public surface with no test
+    behind it, in no phase exit and in no changelog line. It is the right answer -- the mart
+    holds one snapshot per key and the pool filings underneath it are bitemporal and answer
+    as_of -- and it is asserted here in the shape the allocated arm's refusal already uses.
+
+    It is also conditional on mart freshness by construction: this arm is only entered when the
+    mart holds rows, so between a deploy and the first refresh the same request answers 200.
+    The case below is the other side of that, on the same well before the refresh.
+    """
+    response = with_the_rollup.get(
+        f"/v1/wells/{NM_API10}/production", params={"as_of": "2026-08-25"}
+    )
+
+    assert response.status_code == 422, response.text
+    problem = response.json()
+    assert problem["type"].endswith("as_of_not_supported")
+    assert "one snapshot per key" in problem["detail"]
+    assert "cr_nm_wcproduction_pool_rollup_2" in problem["detail"]
+    assert f"/v1/wells/{NM_API10}/production/pools" in problem["detail"]
+
+
+def test_the_same_request_is_answered_before_the_mart_is_refreshed(
+    with_new_mexico: TestClient,
+) -> None:
+    """The freshness condition, stated as a served fact rather than left to be discovered: on
+    an instance whose rollup mart is empty the well still answers as_of, because there is no
+    sum to date wrongly. Two answers to one request, decided by a mart's build state."""
+    response = with_new_mexico.get(
+        f"/v1/wells/{NM_API10}/production", params={"as_of": "2026-08-25"}
+    )
+
+    assert response.status_code == 200, response.text
+
+
+def test_a_per_foot_rate_is_refused_on_the_summed_arm_rather_than_ignored(
+    with_the_rollup: TestClient, seeded: psycopg.Connection
+) -> None:
+    """H-6. The summed arm returned before `divisor` was consulted, so a caller asking for a
+    per-foot rate was answered with the undivided sum under the plain unit. The allocated arm
+    forty lines above refuses by name for the same reason and this one said nothing.
+
+    A lateral is seeded because New Mexico registers no length_scope rule and holds surface
+    points only, so the divisor refuses first today; the arm is live the moment a pool-grain
+    jurisdiction with laterals registers a rollup, which this design advertises as a spec key.
+    """
+    seed_well_spatial(seeded, api10=NM_API10, geom_type="lateral")
+    seeded.commit()
+
+    answer = with_the_rollup.get(
+        f"/v1/wells/{NM_API10}/production", params={"normalization": "per_lateral_ft"}
+    )
+
+    assert answer.status_code == 422, answer.text
+    detail = answer.json()["detail"]
+    assert "cr_nm_wcproduction_pool_rollup_2" in detail
+    assert "not a per-foot rate anybody measured" in detail
 
 
 def test_a_registered_well_whose_filings_the_mart_admits_none_of_keeps_the_panel(

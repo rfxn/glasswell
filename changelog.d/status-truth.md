@@ -17,6 +17,10 @@
       `marts.well_pool_rollup` under `cr_nm_wcproduction_pool_rollup_2`, with every point
       resolving to the refresh that produced it, a warning that says it is a sum, and a link
       down to the filings it was summed from
+- [Change] `?as_of=` is refused rather than answered on New Mexico's summed well series, with
+           the rule, the reason and the pool surface that does answer it named in the problem
+           detail: the rollup mart holds one snapshot per key, so an older date would be
+           answered with today's sum wearing the caller's date
 - [Change] The read-time status resolver attaches its own refresh trigger to every registered
            map through `lineage.attach_status_map_refresh()`, so a fifth read-time jurisdiction
            is three registry rows and no migration; Colorado, which registered read-time
@@ -38,3 +42,12 @@
       do not clear it on the light theme are published on the domain's own rule
 - [Fix] A narrow month window no longer tells a well with a well-level series that its regulator
       files per completion pool and glasswell performs no rollup
+- [Fix] The pool-grain disclosure is chosen from the well rather than from its jurisdiction's
+      registration: a well the sum admits no filing of keeps the panel and the link down to its
+      filings, and a well that filed nothing below it is told of no sum at all
+- [Fix] A summed month whose pool filings were all explicit zeros is served as `reported_zero`
+      and a stream with no filing in a served month as `no_report`, where both read as
+      `reported` and as a null; each point carries its own month's report vintage rather than
+      the whole well's maximum
+- [Fix] `?normalization=per_lateral_ft` is refused on the summed series for the reason the
+      allocated arm gives, where it was accepted and silently ignored
