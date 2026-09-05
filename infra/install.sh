@@ -68,8 +68,10 @@ id "$RUN_USER" >/dev/null || { printf 'user %s does not exist\n' "$RUN_USER" >&2
 install -d -o root -g root -m 0700 "$ETC_DIR"
 install -d -o "$RUN_USER" -g "$RUN_USER" -m 0750 "$STATE_DIR"
 # A long load and a deploy publish their progress here, so both exist before any job runs:
-# a runner that cannot write its status leaves a job that can only be guessed at.
-install -d -o "$RUN_USER" -g "$RUN_USER" -m 0750 "$RUNS_DIR"
+# a runner that cannot write its status leaves a job that can only be guessed at. Root's, not
+# $RUN_USER's: every step runs as $RUN_USER, and `result: complete` is the one fact deploy.sh
+# and `--after-job` trust, so the account being judged does not get to rewrite the verdict.
+install -d -o root -g "$RUN_USER" -m 0750 "$RUNS_DIR"
 install -d -o "$RUN_USER" -g "$RUN_USER" -m 0755 "$RUN_LOG_DIR"
 install -d -o "$RUN_USER" -g "$RUN_USER" -m 0755 "$WEB_ROOT"
 install -d -o "$RUN_USER" -g "$RUN_USER" -m 0755 "$BASEMAP_ROOT"

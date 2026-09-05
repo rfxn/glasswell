@@ -398,7 +398,7 @@ assert_true "the host runner is installed" "missing at $SBIN_DIR/host-runner.sh"
     test -x "$SBIN_DIR/host-runner.sh"
 assert_true "the host runner equals the tree" "drifted from $INFRA_DIR/bin/host-runner.sh" \
     cmp -s "$INFRA_DIR/bin/host-runner.sh" "$SBIN_DIR/host-runner.sh"
-assert "the run status directory" "750 glasswell:glasswell" "$(directory_state "$RUNS_DIR")"
+assert "the run status directory" "750 root:glasswell" "$(directory_state "$RUNS_DIR")"
 assert "the run log directory" "755 glasswell:glasswell" "$(directory_state "$RUN_LOG_DIR")"
 
 # The roster is the tree's, not a list here: a glasswell-* unit added to infra/systemd but not

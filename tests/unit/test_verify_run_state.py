@@ -92,8 +92,15 @@ class TestVerifyAssertsThem:
 
         assert f"RUNS_DIR={RUNS_DIR}" in text
         assert f"RUN_LOG_DIR={RUN_LOG_DIR}" in text
-        assert '"750 glasswell:glasswell" "$(directory_state "$RUNS_DIR")"' in text
+        assert '"750 root:glasswell" "$(directory_state "$RUNS_DIR")"' in text
         assert '"755 glasswell:glasswell" "$(directory_state "$RUN_LOG_DIR")"' in text
+
+    def test_the_verdict_directory_is_not_writable_by_the_account_it_judges(self) -> None:
+        # Every step runs as glasswell, and `result: complete` is the one fact deploy.sh and
+        # `--after-job` trust. Owned by glasswell, a step could turn its own `stopped` into it.
+        text = VERIFY.read_text(encoding="utf-8")
+
+        assert '"750 glasswell:glasswell" "$(directory_state "$RUNS_DIR")"' not in text
 
 
 class TestInstallPlacesThem:
@@ -110,7 +117,7 @@ class TestInstallPlacesThem:
 
         assert 'RUNS_DIR="$STATE_DIR/runs"' in text
         assert f"RUN_LOG_DIR={RUN_LOG_DIR}" in text
-        assert 'install -d -o "$RUN_USER" -g "$RUN_USER" -m 0750 "$RUNS_DIR"' in text
+        assert 'install -d -o root -g "$RUN_USER" -m 0750 "$RUNS_DIR"' in text
         assert 'install -d -o "$RUN_USER" -g "$RUN_USER" -m 0755 "$RUN_LOG_DIR"' in text
 
     def test_the_tree_copy_is_executable_so_the_deploy_can_run_it_before_install(self) -> None:
