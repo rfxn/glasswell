@@ -5,6 +5,8 @@ set -euo pipefail
 INFRA_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ETC_DIR=/etc/glasswell
 STATE_DIR=/var/lib/glasswell
+RUNS_DIR="$STATE_DIR/runs"
+RUN_LOG_DIR=/var/log/glasswell
 UNIT_DIR=/etc/systemd/system
 SBIN_DIR=/usr/local/sbin
 WEB_ROOT=/opt/glasswell/web
@@ -65,6 +67,10 @@ id "$RUN_USER" >/dev/null || { printf 'user %s does not exist\n' "$RUN_USER" >&2
 
 install -d -o root -g root -m 0700 "$ETC_DIR"
 install -d -o "$RUN_USER" -g "$RUN_USER" -m 0750 "$STATE_DIR"
+# A long load and a deploy publish their progress here, so both exist before any job runs:
+# a runner that cannot write its status leaves a job that can only be guessed at.
+install -d -o "$RUN_USER" -g "$RUN_USER" -m 0750 "$RUNS_DIR"
+install -d -o "$RUN_USER" -g "$RUN_USER" -m 0755 "$RUN_LOG_DIR"
 install -d -o "$RUN_USER" -g "$RUN_USER" -m 0755 "$WEB_ROOT"
 install -d -o "$RUN_USER" -g "$RUN_USER" -m 0755 "$BASEMAP_ROOT"
 
@@ -148,6 +154,10 @@ for script in glasswell-backup.sh glasswell-restore-drill.sh glasswell-recovery-
               glasswell-durable-write.py; do
     install -o root -g root -m 0755 "$INFRA_DIR/backup/$script" "$SBIN_DIR/$script"
 done
+
+# Every runbook's long step and every remote deploy step goes through this one, and verify.sh
+# holds the installed copy equal to the tree.
+install -o root -g root -m 0755 "$INFRA_DIR/bin/host-runner.sh" "$SBIN_DIR/host-runner.sh"
 
 # The units this release retired, disabled and removed rather than left behind. verify.sh
 # fails a deploy on a host unit that has no counterpart in the tree, which is how a retired
