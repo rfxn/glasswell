@@ -14,3 +14,7 @@
       served parameters it must leave readable, and against everything the API's own
       access-log filter redacts; a field declared twice in one `fields` block is refused,
       because Caddy keeps the last one silently
+- [Fix] Four sessions migrating four databases on one cluster no longer collide on its
+      roles: a migration that loses a cluster-global race is retried inside the runner,
+      which is one transaction, so the second attempt takes the branch the winner
+      committed. The first sharded CI run errored 843 tests on `pg_authid_rolname_index`
