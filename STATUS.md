@@ -13,17 +13,18 @@ so on the line. [`ROADMAP.md`](ROADMAP.md) owns phase scope and exit criteria;
 - **Release line:** 63 tagged releases, v0.20 through v0.82, cut 2026-08-21 through
   2026-09-05.
 
-Measured on the deployed database (VM 111) and host, read-only, 2026-09-02.
+Measured on the deployed database (VM 111) and host, read-only, 2026-09-05 after the v0.82 deploy
+(Texas Step 3 in flight: production is promoted through 2011).
 
 | Item | Value | Source of the measurement |
 |---|---|---|
-| Code version | `v0.75+2189262` | `/etc/glasswell/code-version.env` |
-| Schema head | `072` | `select max(version) from schema_migrations` |
-| `canonical.wells` | 809,191 rows over 585,864 distinct API-10 | `select count(*), count(distinct api10) from canonical.wells` |
-| `canonical.production_monthly` | 47,178,269 rows | `select count(*) from canonical.production_monthly` |
-| `canonical.well_spatial` | 1,041,407 rows | `select count(*) from canonical.well_spatial` |
+| Code version | `v0.82+26f938c` | `/etc/glasswell/code-version.env` |
+| Schema head | `084` | `select max(version) from schema_migrations` |
+| `canonical.wells` | 1,083,458 rows over 710,310 distinct API-10 | `select count(*), count(distinct api10) from canonical.wells` |
+| `canonical.production_monthly` | 67,405,690 rows | `select count(*) from canonical.production_monthly` |
+| `canonical.well_spatial` | 1,165,902 rows | `select count(*) from canonical.well_spatial` |
 | `marts.basin_boundaries_tile` | 48 rows | `select count(*) from marts.basin_boundaries_tile` |
-| `main` | `2189262`, level with `origin/main`; 56 version tags | `git rev-parse main origin/main`; `git tag \| grep -c '^v'` |
+| `main` | `26f938c`, level with `origin/main`; 63 version tags | `git rev-parse main origin/main`; `git tag \| grep -c '^v'` |
 
 ## Shipped baseline per state
 
@@ -39,12 +40,13 @@ than a phase; ROADMAP's N3 owns its exit criteria.
 | **MT** 25 | 40,626 / 40,626 | 17,547,951 well grain + 4,808,814 PRU lease grain · `mt_bogc_*` | surface 42,026 · lateral 2,835 | 40,626 of 40,626 · `cr_mt_gis_status_vocab_1` | lateral length · `cr_mt_paths_length_scope_1`. No basin tag · `cr_mt_basin_scope_1` |
 | **CO** 05 | 124,392 / 124,392 | 1,261,665 · `co_ecmc_production` rolling file, 244,491 pool + 1,017,174 well grain, 98,226 disclosed `sum_over_pools` | surface 124,392 · bottomhole 39,048 · lateral 39,048 (staged 124,410 / 39,048 / 39,048; 18 `duplicate_row` quarantined) | 124,392 of 124,392 via the resolver (G-3) · `cr_co_wells_status_vocab_1` | 1,172 wells carry a blank `well_type_reported` — F-3, `fix/co-blank-well-type` in flight (the status summary refuses their bbox until it lands) |
 
-### Basin context, measured before it ships
+### Basin context, measured on the deployed database
 
-`marts.well_basin_context` is built by this release line and is not on the deployed host yet;
-these are its answers, taken read-only on the spine 2026-09-03 with the mart's own query — one
-containing basin polygon per well, driven off `canonical.wells_latest` and left-joined to the
-surface point in `canonical.well_spatial`.
+`marts.well_basin_context` shipped in v0.82 (migration 084); these are its answers on the
+deployed database, taken read-only 2026-09-05 after the deploy's refresh — one containing basin
+polygon per well, driven off `canonical.wells_latest` and left-joined to the surface point in
+`canonical.well_spatial`. The spine measurement of 2026-09-03 differed only in North Dakota's
+well count (43,817 then; 54 wells arrived since, all inside a basin).
 
 **One denominator, and it is the well count.** Every share below is over the jurisdiction's own
 wells in `canonical.wells_latest`, which is the population the mart is driven off and therefore
@@ -53,13 +55,14 @@ denominator and answered `no_geometry`.
 
 | State | Wells | Inside a published basin | `outside_published_boundaries` | No geometry | Rule |
 |---|---:|---|---|---:|---|
-| **ND** 33 | 43,817 | 43,424 (99.1 %) | 393 (0.9 %) | 0 | `cr_nd_basin_context_1` |
+| **ND** 33 | 43,871 | 43,478 (99.1 %) | 393 (0.9 %) | 0 | `cr_nd_basin_context_1` |
 | **TX** 42 | 359,421 | 344,611 (95.9 %) | 10,852 (3.0 %) | 3,958 | `cr_tx_basin_context_1` |
 | **NM** 30 | 142,000 | 137,505 (96.8 %) | 4,273 (3.0 %) | 222 | `cr_nm_basin_context_1` |
 | **MT** 25 | 40,626 | 13,062 (32.2 %) | **27,564 (67.8 %)** | 0 | `cr_mt_basin_context_1` |
+| **CO** 05 | 124,392 | 120,045 (96.5 %) | 4,347 (3.5 %) | 0 | `cr_co_basin_context_1` |
 
 Asked of the geometry table instead — distinct surface api10s in `canonical.well_spatial`, which
-is the base the spec's §6.2 quotes — the four shares read ND 43,424/43,817 (99.1 %), TX
+is the base the spec's §6.2 quotes — the four shares measured on the spine 2026-09-03 read ND 43,424/43,817 (99.1 %), TX
 344,611/355,463 (96.9 %), NM 137,505/141,778 (97.0 %) and MT 13,623/42,026 (32.4 %). Only
 Montana moves materially, and by exactly the 1,400 surface points that have no well behind them,
 561 of which are inside a basin. **The served figure is the well-base one**, because that is what
@@ -120,9 +123,13 @@ Rollback is three levels: delete the proxied CNAME, `systemctl stop cloudflared`
 ## Verification state
 
 - **Hosted CI runs on every push** — six jobs: `python`, `web`, `e2e-guards`, `shell`,
-  `collateral`, `map-chrome`. The last run is **green at `2189262`** (PR #47, 2026-09-02).
-- **`infra/verify.sh` and `scripts/smoke.sh`** last read **197 passed / 0 failed** and **31 passed /
-  0 failed** at the **v0.75** deploy, 2026-09-02 (`/tmp/ship-v075.log`); smoke moved 26 checks to 31.
+  `collateral`, `map-chrome`. The last run is **green at `26f938c`** (Release v0.82, 2026-09-05).
+- **`infra/verify.sh` and `scripts/smoke.sh`** last read **236 passed / 1 failed** and **35 passed /
+  1 failed** at the **v0.82** deploy, 2026-09-05, and again from the host's `post-deploy-v082` unit
+  (`/var/log/glasswell/verify-v082.log`, `smoke-v082.log`). Both reds are the stated ones: verify's
+  status-health line names the three Texas allocation checks that stay unavailable or degraded until
+  runbook Steps 4–5 (`allocation_conservation`, `crosswalk_agreement`, `allocation_error_bounds`), and
+  smoke's check 22 is the Colorado blank well type (F-3), whose fix rides v0.83.
 - **Deployed code version, schema head and every row count above** were measured today. No
   local suite count is stated here: a test count that is not re-measured is not evidence.
 
