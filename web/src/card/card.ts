@@ -1311,21 +1311,21 @@ function completionContextBody(
 
 /** cr_ff_design_promote_1's vocabulary, for the disclosed volume. */
 const VOLUME_REASONS: Record<string, string> = {
-  no_report: "unavailable \u2014 no disclosed volume",
-  withheld: "unavailable \u2014 withheld by the regulator",
+  no_report: "unavailable: no disclosed volume",
+  withheld: "unavailable: withheld by the regulator",
 };
 
 /** cr_ff_fluid_intensity_1's vocabulary, for the quotient. A different set of facts. */
 const INTENSITY_REASONS: Record<string, string> = {
-  no_report: "unavailable \u2014 no disclosed volume",
-  withheld: "unavailable \u2014 withheld by the regulator",
+  no_report: "unavailable: no disclosed volume",
+  withheld: "unavailable: withheld by the regulator",
   // Not "no lateral geometry": a Montana well has geometry and a withheld length, and an
   // unregistered basin has geometry and no rule to measure it under. What is missing in all
   // three cases is the divisor, so that is what the row says.
-  lateral_length_unavailable: "unavailable \u2014 no lateral length to divide by",
-  lateral_length_implausible: "unavailable \u2014 lateral too short to divide by",
-  intensity_out_of_range: "unavailable \u2014 result outside the rule's range",
-  intensity_rule_unregistered: "unavailable \u2014 the intensity rule is not registered",
+  lateral_length_unavailable: "unavailable: no lateral length to divide by",
+  lateral_length_implausible: "unavailable: lateral too short to divide by",
+  intensity_out_of_range: "unavailable: result outside the rule's range",
+  intensity_rule_unregistered: "unavailable: the intensity rule is not registered",
 };
 
 function completionDesignItems(context: CompletionContext): HTMLElement[] {
@@ -1341,7 +1341,7 @@ function completionDesignItems(context: CompletionContext): HTMLElement[] {
     design.base_water_volume,
     VOLUME_REASONS[design.base_water_null_semantics] ?? "unavailable",
   );
-  appendFigureFact(facts, "Lateral", design.lateral_length_ft, "unavailable \u2014 no geometry");
+  appendFigureFact(facts, "Lateral", design.lateral_length_ft, "unavailable: no geometry");
   appendFigureFact(
     facts,
     "Fluid intensity",

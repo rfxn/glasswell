@@ -1153,7 +1153,7 @@ describe("completion and formation context", () => {
     const groups = frame.querySelectorAll<HTMLElement>(".gw-context-group");
     const designFacts = factsOf(groups[2] as HTMLElement);
     expect(designFacts["Fluid intensity"]).toBe(
-      "unavailable \u2014 lateral too short to divide by",
+      "unavailable: lateral too short to divide by",
     );
     expect(designFacts["Fluid intensity"]).not.toMatch(/\b0\b/);
   });
@@ -1188,8 +1188,8 @@ describe("completion and formation context", () => {
 
     const frame = host.querySelector(".gw-completion-context") as HTMLElement;
     const designFacts = factsOf(frame.querySelectorAll<HTMLElement>(".gw-context-group")[2] as HTMLElement);
-    expect(designFacts["Base fluid"]).toBe("unavailable \u2014 withheld by the regulator");
-    expect(designFacts["Fluid intensity"]).toBe("unavailable \u2014 withheld by the regulator");
+    expect(designFacts["Base fluid"]).toBe("unavailable: withheld by the regulator");
+    expect(designFacts["Fluid intensity"]).toBe("unavailable: withheld by the regulator");
     expect(designFacts["Fluid intensity"]).not.toContain("no disclosed volume");
   });
 
@@ -1228,7 +1228,7 @@ describe("completion and formation context", () => {
     // One class, one string. Two wordings for one fact is drift waiting to become confusion,
     // and the volume is named so the sentence reads on the row that is it and the row that is
     // divided by it.
-    expect(designFacts["Base fluid"]).toBe("unavailable \u2014 no disclosed volume");
+    expect(designFacts["Base fluid"]).toBe("unavailable: no disclosed volume");
     expect(designFacts["Fluid intensity"]).toBe(designFacts["Base fluid"]);
   });
 
