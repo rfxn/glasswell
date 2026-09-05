@@ -25,10 +25,14 @@
 - [New] install.sh places the runner at `/usr/local/sbin/host-runner.sh` and creates
       `/var/lib/glasswell/runs` (0750) and `/var/log/glasswell`; verify.sh asserts both
       directories and holds the installed runner byte-identical to the tree
-- [Change] the nineteen `systemd-run` sites across the seven runbooks are jobs on the
-         runner, each launched detached and followed by the command that polls its status
-         file; Colorado's Steps 1-5 are one six-unit chain, and no fenced block in any
-         runbook starts a unit any more
+- [Change] of the nineteen `systemd-run` sites in the tree, the thirteen that were
+         invocations are jobs on the runner — twelve across six runbooks, each launched
+         detached and followed by the command that polls its status file, and `deploy.sh`'s
+         documented mart refresh; Colorado's Steps 1-5 are one six-unit chain. The other six
+         were prose about systemd, three of which still are. No fenced block in any runbook,
+         or in `infra/README.md`, starts a unit any more: step 4's tile-function reinstall
+         was the last `--pipe --wait`, and an operator reading output inline is an operator
+         whose job dies with the session
 - [Change] Texas Step 3 sizes its promotion batches by expected rows rather than by a count
          of years: the 2011-2016 batch was OOM-killed at `MemoryMax=6G` on 2026-09-05 after
          batches of 5.23 M, 5.72 M and 6.72 M rows had landed under the same ceiling, so the

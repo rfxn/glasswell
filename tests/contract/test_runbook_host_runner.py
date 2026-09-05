@@ -27,6 +27,7 @@ DOCS = ROOT / "docs"
 RUNNER_PATH = "/usr/local/sbin/host-runner.sh"
 RUNNER = ROOT / "infra" / "bin" / "host-runner.sh"
 INSTALL = ROOT / "infra" / "install.sh"
+DEPLOY_README = ROOT / "infra" / "README.md"
 
 RUNBOOKS = sorted(path.name for path in DOCS.glob("runbook-*.md"))
 LONG_STEP_RUNBOOKS = [
@@ -111,11 +112,11 @@ def retire_adhoc_runs(root: Path) -> str:
     return completed.stdout
 
 
-def fenced(name: str) -> str:
-    """Only the fenced blocks of a runbook: prose may still discuss systemd, and does."""
+def fenced_text(text: str) -> str:
+    """Only the fenced blocks: prose may still discuss systemd, and does."""
     inside = False
     kept: list[str] = []
-    for line in (DOCS / name).read_text(encoding="utf-8").splitlines():
+    for line in text.splitlines():
         # A fence indented under a list item is still a fence, and the runner form for a
         # resume is written inside one.
         if line.lstrip().startswith("```"):
@@ -124,6 +125,23 @@ def fenced(name: str) -> str:
         if inside:
             kept.append(line)
     return "\n".join(kept)
+
+
+def fenced(name: str) -> str:
+    return fenced_text((DOCS / name).read_text(encoding="utf-8"))
+
+
+def test_the_deploy_readme_starts_no_unit_in_the_operators_session() -> None:
+    # infra/README.md is the deploy runbook written as prose, and its step 4 was the last
+    # `systemd-run --pipe --wait` in the tree: a create-or-replace whose output the operator
+    # read inline, and therefore a job that died with the ssh session that started it.
+    offenders = [
+        line
+        for line in fenced_text(DEPLOY_README.read_text(encoding="utf-8")).splitlines()
+        if "systemd-run" in line
+    ]
+
+    assert offenders == [], f"infra/README.md runs a job in the operator's session: {offenders}"
 
 
 def test_the_long_step_runbooks_are_all_of_them_but_the_meta_one() -> None:
@@ -218,13 +236,27 @@ class TestTheDocumentedInvocationsParse:
     """
 
     @staticmethod
-    def invocations(name: str) -> list[list[str]]:
-        joined = re.sub(r"\\\n\s*", " ", fenced(name))
+    def invocations_in(blocks: str) -> list[list[str]]:
+        joined = re.sub(r"\\\n\s*", " ", blocks)
+        lines = joined.splitlines()
         found: list[list[str]] = []
-        for line in joined.splitlines():
+        position = 0
+        while position < len(lines):
+            line = lines[position]
+            position += 1
             if "host-runner.sh" not in line or "--job" not in line:
                 continue
-            tokens = shlex.split(line.strip(), comments=True)
+            # A quoted argument may run over several lines — a `python -c` script does — so
+            # the command is however many lines it takes for the quoting to close.
+            candidate = line.strip()
+            while True:
+                try:
+                    tokens = shlex.split(candidate, comments=True)
+                    break
+                except ValueError:
+                    assert position < len(lines), f"unbalanced quoting: {candidate}"
+                    candidate = f"{candidate}\n{lines[position]}"
+                    position += 1
             while tokens and "host-runner.sh" not in tokens[0]:
                 tokens.pop(0)
             if tokens and " " in tokens[0]:  # the ssh form arrives as one quoted token
@@ -232,9 +264,11 @@ class TestTheDocumentedInvocationsParse:
             found.append([token for token in tokens[1:] if token != "--detach"])
         return found
 
-    @pytest.mark.parametrize("name", LONG_STEP_RUNBOOKS)
-    def test_every_fenced_invocation_parses_into_steps(self, name: str, tmp_path: Path) -> None:
-        invocations = self.invocations(name)
+    @staticmethod
+    def invocations(name: str) -> list[list[str]]:
+        return TestTheDocumentedInvocationsParse.invocations_in(fenced(name))
+
+    def parses(self, name: str, invocations: list[list[str]], tmp_path: Path) -> None:
         assert invocations, f"{name} has no runner invocation to parse"
 
         for position, arguments in enumerate(invocations):
@@ -259,6 +293,16 @@ class TestTheDocumentedInvocationsParse:
             status = json.loads((runs / f"{job}.json").read_text(encoding="utf-8"))
             assert status["steps_total"] >= 1
             assert status["job"] == job
+
+    @pytest.mark.parametrize("name", LONG_STEP_RUNBOOKS)
+    def test_every_fenced_invocation_parses_into_steps(self, name: str, tmp_path: Path) -> None:
+        self.parses(name, self.invocations(name), tmp_path)
+
+    def test_the_deploy_readmes_own_invocation_parses_into_steps(self, tmp_path: Path) -> None:
+        # Step 4's tile-function reinstall, whose command is a multi-line `python -c` script.
+        blocks = fenced_text(DEPLOY_README.read_text(encoding="utf-8"))
+
+        self.parses("infra/README.md", self.invocations_in(blocks), tmp_path)
 
 
 class TestTheColoradoRunbookRunsOnTheHostAsItStands:
