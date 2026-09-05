@@ -1841,6 +1841,26 @@ describe("a re-land keeps the card the reader has", () => {
     expect(readFileSync("src/card/card.css", "utf8")).toContain('.gw-card[aria-busy="true"]');
   });
 
+  it("states a refused vintage in the section that asked and keeps the rest of the card", async () => {
+    // `Read at …` re-lands with `as_of` in the URL, and where no such vintage resolves the well
+    // request 404s. The banner replaced the whole card — every section, every disclosure and the
+    // window bar gone — over a refusal one control the chart drew had asked for.
+    await renderWellCard(host, API10, callbacks);
+    const sections = host.querySelectorAll(".gw-section").length;
+    expect(sections, "the fixture card carries no sections to lose").toBeGreaterThan(0);
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(problem(404, "not_found"))));
+
+    window.history.replaceState(null, "", "/?as_of=2026-06-01");
+    await renderWellCard(host, API10, callbacks);
+
+    expect(host.querySelector(".gw-card"), "the refusal took the whole card").not.toBeNull();
+    expect(host.querySelectorAll(".gw-section").length).toBe(sections);
+    expect(host.querySelector(".gw-production-chart .gw-error h3")?.textContent).toContain(
+      "Not found",
+    );
+    expect(host.querySelector(".gw-card")?.getAttribute("aria-busy")).toBeNull();
+  });
+
   it("moves the reader's focus nowhere, because they are already reading this card", async () => {
     // `land`'s `if (kept) return` — the one H-30 property with no red behind it (H-35).
     // Without it `focusPanel(container)` runs on every press of a server-answered control and

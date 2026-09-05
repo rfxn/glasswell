@@ -200,6 +200,16 @@ export async function renderWellCard(
   try {
     well = await getEnvelope<WellDetail>(`/v1/wells/${api10}`, query);
   } catch (error) {
+    // A refusal of a re-land is the answer to one control the reader pressed, so it costs them
+    // that control's own surface and not the card: `Read at …` at a vintage nothing resolves at
+    // took every section, every disclosure and the window bar with it.
+    const standingCard = kept ? container.querySelector<HTMLElement>(".gw-card") : null;
+    const chart = standingCard?.querySelector<HTMLElement>(".gw-production-chart .gw-frame-body");
+    if (standingCard && chart) {
+      chart.replaceChildren(errorPanel(error, callbacks));
+      standingCard.removeAttribute("aria-busy");
+      return;
+    }
     container.replaceChildren(errorPanel(error, callbacks));
     return;
   }
