@@ -7,6 +7,9 @@ import { LIQUIDS_BASIS_COPY, MEMBERSHIP_COPY, MEMBERSHIP_RULE } from "./thematic
 
 const NUMBER = new Intl.NumberFormat("en-US");
 
+/** The absent-value mark, ASCII: an em dash is punctuation and this is a data mark. */
+const ABSENT_MARK = "--";
+
 export const CURSOR_OFFSET = 14;
 
 export interface Rect {
@@ -84,7 +87,7 @@ function isMetricsCell(properties: Record<string, unknown>): boolean {
 
 function volume(value: unknown): string {
   const parsed = Number(value);
-  return Number.isFinite(parsed) ? NUMBER.format(Math.round(parsed)) : "—";
+  return Number.isFinite(parsed) ? NUMBER.format(Math.round(parsed)) : ABSENT_MARK;
 }
 
 export interface HoverCardHandle {

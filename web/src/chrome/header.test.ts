@@ -226,8 +226,8 @@ describe("the build stamp (owner observation 1)", () => {
     setVintage("2026-08-20");
     setVintage(null);
 
-    expect(element("gw-asof").textContent).toBe("as_of —");
-    expect(element("gw-help-asof").textContent).toBe("as_of —");
+    expect(element("gw-asof").textContent).toBe("as_of --");
+    expect(element("gw-help-asof").textContent).toBe("as_of --");
   });
 });
 

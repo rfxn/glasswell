@@ -18,6 +18,9 @@ interface StatusHosts {
   session: HTMLElement;
 }
 
+/** The absent-value mark, ASCII: an em dash is punctuation and this is a data mark. */
+const ABSENT_MARK = "--";
+
 const TOAST_MS = 6000;
 const SESSION_COPY: Record<SessionState, string> = {
   ok: "signed in",
@@ -97,7 +100,7 @@ function renderVintage(host: HTMLElement, resolved: string | null): void {
   label.textContent = "as_of";
   host.append(label, document.createTextNode(" "));
   if (!resolved) {
-    host.appendChild(document.createTextNode("—"));
+    host.appendChild(document.createTextNode(ABSENT_MARK));
     return;
   }
   const time = document.createElement("time");

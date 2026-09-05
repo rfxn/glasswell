@@ -441,7 +441,7 @@ describe("a record with geometry crosses to the map", () => {
     const detail = await mount("wells", { row: "3305310451" }, WELL_ROW);
 
     expect(linkIn(detail)).toBeNull();
-    expect(detail.valueOf("surface_point")?.textContent).toContain("—");
+    expect(detail.valueOf("surface_point")?.textContent).toContain("--");
   });
 
   it("leaves the geometry value unprinted either way — a coordinate is never a cell (§3.2)", async () => {
