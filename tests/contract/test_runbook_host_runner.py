@@ -242,6 +242,24 @@ def test_every_launched_job_is_one_the_runbook_polls(name: str) -> None:
     assert launched <= polled, f"{name} launches a job it never polls: {launched - polled}"
 
 
+def test_every_documented_launch_hands_the_chain_to_a_unit_and_returns() -> None:
+    # The reason for moving a step onto the runner is that a dropped session must not take the
+    # job with it. Without `--detach` the chain runs in the operator's ssh session: the step's
+    # own transient unit survives the drop, but the driver that writes the verdict does not, so
+    # the status file reads `running` for ever and the lines after it never run.
+    sources = [(name, fenced(name)) for name in RUNBOOKS]
+    sources.append(("infra/README.md", fenced_text(DEPLOY_README.read_text(encoding="utf-8"))))
+
+    attached = [
+        f"{name}: {line.strip()}"
+        for name, blocks in sources
+        for line in blocks.splitlines()
+        if "host-runner.sh" in line and "--job" in line and "--detach" not in line
+    ]
+
+    assert attached == [], f"a launch that dies with the session that started it: {attached}"
+
+
 def test_the_texas_resume_is_documented_against_the_job_it_resumes() -> None:
     blocks = fenced("runbook-tx-load.md")
     resumed = set(RESUME_JOB.findall(blocks))

@@ -537,9 +537,10 @@ sudo -u postgres /opt/glasswell/venv/bin/glasswell-migrate \
 #    derivation for what may be a code-only change). martin publishes these functions, so a
 #    stale body is a stale tile source. On the runner like every other host step, seconds-long
 #    or not: read the output from /var/log/glasswell/tile-functions.log and the layer names
-#    from the status file's summary. --force because the job name is the same every deploy and
-#    the record that matters is the ship's own, deploy-<tag>+<commit>.json.
-/usr/local/sbin/host-runner.sh --job tile-functions --force --timeout 600 -- \
+#    from the status file's summary. --detach because a dropped session must not take the
+#    driver that writes the verdict with it; --force because the job name is the same every
+#    deploy and the record that matters is the ship's own, deploy-<tag>+<commit>.json.
+/usr/local/sbin/host-runner.sh --job tile-functions --detach --force --timeout 600 -- \
     install /opt/glasswell/venv/bin/python \
     -c 'import json, psycopg, glasswell.marts.tiles as t
 c = psycopg.connect("postgresql:///glasswell?host=/var/run/postgresql")
