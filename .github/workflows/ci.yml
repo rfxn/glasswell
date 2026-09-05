@@ -72,18 +72,22 @@ jobs:
           EVENT: ${{ github.event_name }}
         run: |
           set -euo pipefail
-          printf 'covered=false\n' >> "$GITHUB_OUTPUT"
-          [ "$EVENT" = push ] || exit 0
-          tree=$(git rev-parse 'HEAD^{tree}')
-          for parent in $(git rev-list --parents -n 1 HEAD | cut -d' ' -f2-); do
-            [ "$(git rev-parse "${parent}^{tree}")" = "$tree" ] || continue
-            green=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${parent}&status=success" --jq '.total_count' 2>/dev/null || echo 0)  # any API failure runs the gate
-            if [ "${green:-0}" -gt 0 ]; then
-              printf 'covered=true\n' >> "$GITHUB_OUTPUT"
-              printf '::notice::tree %s already green at %s\n' "${tree:0:12}" "${parent:0:12}"
-              exit 0
-            fi
-          done
+          # One write, one value: a step that decides whether the gate runs at all must not
+          # depend on which of two lines naming the same output the runner keeps.
+          covered=false
+          if [ "$EVENT" = push ]; then
+            tree=$(git rev-parse 'HEAD^{tree}')
+            for parent in $(git rev-list --parents -n 1 HEAD | cut -d' ' -f2-); do
+              [ "$(git rev-parse "${parent}^{tree}")" = "$tree" ] || continue
+              green=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${parent}&status=success" --jq '.total_count' 2>/dev/null || echo 0)  # any API failure runs the gate
+              if [ "${green:-0}" -gt 0 ]; then
+                covered=true
+                printf '::notice::tree %s already green at %s\n' "${tree:0:12}" "${parent:0:12}"
+                break
+              fi
+            done
+          fi
+          printf 'covered=%s\n' "$covered" >> "$GITHUB_OUTPUT"
 
   python-lint:
     name: Python — ruff, the tile allowlist and the unit tier
