@@ -182,7 +182,7 @@ _REPORTED = ", ".join(
     f"{absent_if_blank(name)} as {name}" for name in SOURCE_REPORTED_TEXT_COLUMNS
 )
 _COLUMNS = (
-    "api10, api14, state_code, ndic_file_no,"
+    "api10, api14, state_code,"
     f" {_REPORTED},"
     f" {_resolved_class('ranked')} as status_canonical,"
     " spud_date,"

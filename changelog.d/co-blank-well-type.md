@@ -26,3 +26,6 @@
 - [New] a standing post-promotion sweep: every non-key attribute is planted blank in staging
       and no text column of canonical.wells may hold an empty string afterwards, so the
       class claim holds at the write path and not only at the selector (gate-cofix L-4)
+- [Change] ndic_file_no joins the source-reported text columns the rule is applied to, and
+           the columns no source reports are named beside them, so both sets are held to
+           canonical.wells rather than described in prose (gate-cofix L-1)

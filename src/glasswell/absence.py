@@ -19,15 +19,31 @@ there is a control-feature category of its own rather than the absence it is.
 from __future__ import annotations
 
 # What the promotion writes from a source-reported text column, and therefore what a read has
-# to apply the rule to. Not basin or land_unit_label: those are glasswell's own assignments and
-# no source files them blank.
+# to apply the rule to.
 SOURCE_REPORTED_TEXT_COLUMNS: tuple[str, ...] = (
     "county_code_at_permit",
+    "ndic_file_no",
     "operator_name_reported",
     "operator_id",
     "well_name",
     "status_reported",
     "well_type_reported",
+)
+
+# The rest of canonical.wells' text columns. api10, api14 and state_code are built under the
+# identity rules, basin and land_unit_label are glasswell's own assignments, status_canonical is
+# its class and the two ids are lineage's -- no source files any of them, blank or otherwise.
+# Named rather than described so both sets can be held to the table: a seventh source-reported
+# column cannot land on the spine without joining one of them.
+NOT_SOURCE_REPORTED: tuple[str, ...] = (
+    "api10",
+    "api14",
+    "state_code",
+    "basin",
+    "land_unit_label",
+    "status_canonical",
+    "source_manifest_id",
+    "derivation_id",
 )
 
 
