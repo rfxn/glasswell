@@ -235,11 +235,27 @@ offsite_receipt_expected() {
     (( last_run > installed_at ))
 }
 
+# One fetch for the two assertions below, so a change to the request cannot reach only one.
+status_api_snapshot() {
+    api_curl -sf --max-time 20 -H "X-Glasswell-Key: $owner_key" "$API/v1/status"
+}
+
+# Freshness only (REG-V1). This also failed on any degraded or unavailable check until v0.82,
+# and reported that as "marked the freshly collected snapshot stale" -- false on every train
+# that ships an empty-mart disclosure as a check, which is what it said on 2026-09-04.
 status_api_serves_current_snapshot() {
-    api_curl -sf --max-time 20 -H "X-Glasswell-Key: $owner_key" "$API/v1/status" \
-        | "$VENV_PY" -c \
-            'import json, sys; data = json.load(sys.stdin)["data"]; checks = data["checks"]; jobs = data["jobs"]; failed = any(item["state"] in {"degraded", "unavailable"} for item in checks) or any(item["state"] == "degraded" for item in jobs); raise SystemExit(0 if data["snapshot_state"] == "current" and data["observed_at"] and data["datasets"] and not failed else 1)' \
+    status_api_snapshot | "$VENV_PY" -c \
+        'import json, sys; data = json.load(sys.stdin)["data"]; raise SystemExit(0 if data["snapshot_state"] == "current" and data["observed_at"] and data["datasets"] else 1)' \
         >/dev/null 2>&1
+}
+
+# Prints `id (state)` per unhealthy check and job so the failure text names them. Silence is a
+# clean bill only at exit 0: an unreadable snapshot prints nothing too. Jobs are read for
+# `degraded` alone -- a scheduler on `observe` refuses by design, and `refused` is a job saying
+# why it did not run rather than a fault.
+status_api_unhealthy_entries() {
+    status_api_snapshot | "$VENV_PY" -c \
+        'import json, sys; data = json.load(sys.stdin)["data"]; entries = ["%s (%s)" % (item["id"], item["state"]) for item in data["checks"] if item["state"] in {"degraded", "unavailable"}] + ["job:%s (%s)" % (item["id"], item["state"]) for item in data["jobs"] if item["state"] == "degraded"]; print(", ".join(entries))'
 }
 
 printf 'services\n'
@@ -488,8 +504,19 @@ else
         "$(api_curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
             -H "X-Glasswell-Key: $owner_key" "$API/v1/status")"
     assert_true "GET /v1/status serves a current non-empty snapshot" \
-        "API rejected, omitted, or marked the freshly collected snapshot stale" \
+        "API rejected or omitted the snapshot, or marked the freshly collected one stale" \
         status_api_serves_current_snapshot
+    # Split from the freshness claim above (REG-V1). A current snapshot can carry an
+    # unavailable check by design; naming the ids is what lets an operator tell a deliberate
+    # red from a real one, and docs/runbook-tx-load.md says which ones are expected when.
+    unhealthy_label="no /v1/status check or job is degraded or unavailable"
+    if ! unhealthy_entries="$(status_api_unhealthy_entries)"; then
+        bad "$unhealthy_label" "the snapshot could not be read"
+    elif [[ -n $unhealthy_entries ]]; then
+        bad "$unhealthy_label" "$unhealthy_entries"
+    else
+        ok "$unhealthy_label"
+    fi
     # B-1: a query string reaches the access log verbatim, so a key is refused there.
     assert "a key in the query string is refused" 422 \
         "$(api_curl -s -o /dev/null -w '%{http_code}' --max-time 10 \

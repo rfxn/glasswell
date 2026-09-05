@@ -161,6 +161,7 @@ def test_verify_checks_schedule_snapshot_safety_and_keyed_route_without_dumping_
         "valid_status_snapshot",
         "status_snapshot_omits_private_environment",
         "status_api_serves_current_snapshot",
+        "status_api_unhealthy_entries",
         '"$API/v1/status"',
     ):
         assert fragment in text
@@ -177,8 +178,13 @@ def test_verify_checks_schedule_snapshot_safety_and_keyed_route_without_dumping_
     )[0]
     assert 'data["snapshot_state"] == "current"' in freshness_check
     assert 'data["datasets"]' in freshness_check
-    assert 'item["state"] in {"degraded", "unavailable"}' in freshness_check
-    assert 'item["state"] == "degraded"' in freshness_check
+    # The check and job states left this helper at v0.82 (REG-V1): a current snapshot carrying
+    # an unavailable check is not a stale one, and the joined assertion said it was. Both halves
+    # are executed against real payloads by tests/unit/test_verify_status_assertions.py.
+    assert 'item["state"]' not in freshness_check
+    health_check = text.split("status_api_unhealthy_entries() {", 1)[1].split("\n}", 1)[0]
+    assert 'item["state"] in {"degraded", "unavailable"}' in health_check
+    assert 'item["state"] == "degraded"' in health_check
 
 
 def test_verify_compares_private_environment_bytes_without_printing_them():

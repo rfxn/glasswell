@@ -25,12 +25,25 @@ cumulative refresh publishes no Texas row, and a Texas well's production surface
 pending-allocation disclosure naming the rule that closes it. The deploy exits 0 on that basis;
 the Texas block turns from skipped to asserted at Step 5.
 
+**One `verify.sh` assertion is expected red in that window, and this is which one.**
+Requiring `infra/verify.sh` green before the load is circular: the checks it reads are the
+empty-mart disclosures the load exists to clear. The line
+`no /v1/status check or job is degraded or unavailable` is **expected red from `make deploy`
+until Step 4 completes**, and its failure text names exactly three ids:
+`allocation_conservation (unavailable)`, `crosswalk_agreement (unavailable)` and
+`allocation_error_bounds (degraded)` (measured on VM 111, 2026-09-04 19:31Z). A fourth id in
+that list, or a red on `GET /v1/status serves a current non-empty snapshot`, is a real failure
+and stops the load — which is why the freshness of the snapshot is a separate assertion
+(REG-V1). Step 4 rebuilds `marts.tx_allocation` and the method study behind
+`allocation_backtest`, and that is what turns the three green; no wait and no re-collection
+does.
+
 **What runs before any of this.** The deploy's own sequence, not this file's: DR-B6 step 5,
 one synchronous `systemctl start glasswell-scheduler.service`, whose plan is computed and
 recorded and which launches nothing because every seeded row registers `launch_mode: observe`;
-and then `infra/verify.sh` green. The load below starts after both. The Texas job rows this
-train registers are on that same posture, so nothing here is started by a tick: every step is
-run by hand, in this order.
+and then `infra/verify.sh` with the one stated red above and no other. The load below starts
+after both. The Texas job rows this train registers are on that same posture, so nothing here
+is started by a tick: every step is run by hand, in this order.
 
 ---
 
@@ -357,7 +370,10 @@ Three blocks, always. `conservation` is `measured` and its `share_unallocated` i
 question. `crosswalk` reports and does not gate. `independent_truth` returns
 `no_independent_truth` with three reasons, which is the honest answer and not a failure.
 
-`infra/verify.sh` and `scripts/smoke.sh` both exit 0 before this is called done.
+`infra/verify.sh`'s `no /v1/status check or job is degraded or unavailable` line is green
+here: the three ids stated red for the pre-load window resolve off the marts Step 4 built, and
+if one is still named it says which mart did not rebuild. `scripts/smoke.sh` is read with the
+same discipline — a red is either a stated one or a failure, never "known".
 
 ---
 
