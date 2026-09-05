@@ -393,7 +393,7 @@ def stage_table(
     source_id = source_id_for(table)
     rules = load_rules(connection, source_id=source_id, stage="parse", as_of=run.as_of)
     directive = _rule(rules, table, PARSE_FAMILY)
-    frame_rules = [rule for rule in rules if not _is_acquisition(rule, table)]
+    frame_rules = _executable([rule for rule in rules if not _is_acquisition(rule, table)])
 
     spec = directive.spec
     member = str(spec["member"])
@@ -697,6 +697,18 @@ def _require_member(bundle: zipfile.ZipFile, member: str, payload: Path) -> None
 
 def _is_acquisition(rule: ConformanceRule, table: str) -> bool:
     return rule.rule_family in {f"cr_nm_{table}_{family}" for family in ACQUISITION_FAMILIES}
+
+
+def _executable(rules: Sequence[ConformanceRule]) -> list[ConformanceRule]:
+    """Drop the policy declarations this module cites rather than executes.
+
+    `code_ref` has no executor, so handing one to `apply_rules` raises rather than being
+    ignored: those rows state decisions (the pool rollup the mart performs, the header
+    precedence) carried out in code and cited on the derivations it writes. Montana's ingest
+    filters the same way; New Mexico did not, and `cr_nm_wcproduction_pool_rollup_2` reached
+    the conform pass and took the whole promotion down with it.
+    """
+    return [rule for rule in rules if rule.rule_kind != "code_ref"]
 
 
 def _reason_vocabulary(connection: psycopg.Connection) -> frozenset[str]:
@@ -1276,9 +1288,16 @@ def promote_all(
     source_id = source_id_for(SPINE_TABLE)
     head = manifest or head_manifest(connection, source_id)
     parse_rules = load_rules(connection, source_id=source_id, stage="parse", as_of=run.as_of)
-    conform_rules = load_rules(connection, source_id=source_id, stage="conform", as_of=run.as_of)
-    validate_rules = load_rules(connection, source_id=source_id, stage="validate", as_of=run.as_of)
-    policy = PromotionPolicy.from_rules([*parse_rules, *conform_rules])
+    conform_loaded = load_rules(
+        connection, source_id=source_id, stage="conform", as_of=run.as_of
+    )
+    # Filtered on the way to `apply_rules` and not before the policy: the pass raises on a
+    # declaration, while the policy reads specs and executes none of them.
+    conform_rules = _executable(conform_loaded)
+    validate_rules = _executable(
+        load_rules(connection, source_id=source_id, stage="validate", as_of=run.as_of)
+    )
+    policy = PromotionPolicy.from_rules([*parse_rules, *conform_loaded])
     window = window_start or policy.window_start
     vocabulary = _reason_vocabulary(connection)
 

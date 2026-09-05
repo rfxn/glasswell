@@ -68,8 +68,10 @@ POLICY_RULES = tuple(sorted((
     # landed and the registry never recorded, so the serving path had nothing to name.
     "cr_mt_bogc_pool_rollup_1",
     # New Mexico's, one train later and one grain the other way: the successor that admits a
-    # sum glasswell performs in the mart layer. Its executor is the refresh its spec names,
-    # and there is no stage for it to run at because no frame is transformed.
+    # sum glasswell performs in the mart layer, executed by the refresh its spec names. It IS
+    # seeded at the conform stage, so the NM promotion filters it out of the pass the way
+    # Montana's does; this tuple is the registry's own census of code_ref and is asserted as
+    # an equality, so omitting the id only breaks the census (gate-p68 H-1).
     "cr_nm_wcproduction_pool_rollup_2",
     "cr_status_class_domain_1",
     "cr_status_absence_basis_1",
