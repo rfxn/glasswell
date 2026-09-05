@@ -164,6 +164,7 @@ def test_every_entry_point_reads_the_environment_when_the_flag_is_absent(
 
 
 DOCS = ROOT / "docs"
+RUNNER = ROOT / "infra" / "bin" / "host-runner.sh"
 # Any language tag, not just bash: an unmatched opener desynchronises the pairing and
 # every later block reads as prose.
 FENCE = re.compile(r"^```[a-z]*\n(.*?)^```", re.MULTILINE | re.DOTALL)
@@ -247,13 +248,30 @@ def test_a_code_identity_file_is_not_accepted_as_a_database(tmp_path) -> None:
     )
 
 
-def test_the_systemd_run_walk_reaches_the_blocks_it_is_meant_to_judge() -> None:
-    """A walker that matched nothing would satisfy the assertion above by vacuity."""
+def test_the_runner_names_the_dsn_every_job_step_inherits() -> None:
+    """Proof 4 moved one layer down rather than away.
+
+    A documented step no longer carries the property itself: it is a step of
+    `infra/bin/host-runner.sh`, which puts the socket DSN, the raw root and the code-identity
+    file into every unit it starts. That makes this the one place the claim above is true of,
+    and a runner that stopped setting it would leave every documented step with no database.
+    """
+    runner = RUNNER.read_text(encoding="utf-8")
+
+    assert NAMES_A_DSN.search(runner)
+    assert "--property=Environment=GLASSWELL_RAW_ROOT=" in runner
+    assert "--property=EnvironmentFile=-$CODE_ENV_FILE" in runner
+    assert not PASSWORD_FILE.search(runner)
+
+
+def test_the_walk_reaches_the_blocks_it_is_meant_to_judge() -> None:
+    """A walker that matched nothing would satisfy the assertions above by vacuity."""
     found = [
         command
         for path in sorted(DOCS.glob("*.md"))
         for command in fenced_commands(path.read_text(encoding="utf-8"))
-        if "systemd-run" in command and RUNS_GLASSWELL.search(command)
+        if ("systemd-run" in command or "host-runner.sh" in command)
+        and RUNS_GLASSWELL.search(command)
     ]
 
     assert len(found) >= 8, found

@@ -1369,11 +1369,18 @@ def _run_deploy_against_a_stub_host(
     log = tmp_path / "ssh-calls.log"
     log.write_text("")
     fake = bin_dir / "ssh"
+    # The host records every step through the runner the tree ships, and deploy.sh reads its
+    # own verdict back out of that file — so the stub runs the real runner against a state
+    # directory under tmp_path rather than answering 0 to it.
+    runner_dir = Path(__file__).resolve().parents[2] / "infra" / "bin"
     fake.write_text(
         "#!/bin/sh\n"
         f'printf \'%s\\n\' "$2" >> "{log}"\n'
         "cat >/dev/null\n"
         'case "$2" in\n'
+        '  *host-runner.sh*)\n'
+        f"    eval \"$(printf '%s' \"$2\" | sed 's|/opt/glasswell/src/infra/bin|{runner_dir}|')\"\n"
+        '    exit $? ;;\n'
         '  *sha256sum*) printf \'%s\\n\' "$GW_STUB_LOCK_HASH" ;;\n'
         '  *schema_migrations*) printf \'%s\\n\' "$GW_STUB_DB_HEAD" ;;\n'
         'esac\n'
@@ -1392,6 +1399,9 @@ def _run_deploy_against_a_stub_host(
             "GW_DEPLOY_HOST": "root@stub.invalid",
             "GW_STUB_DB_HEAD": db_head,
             "GW_STUB_LOCK_HASH": lock_hash,
+            # Never the workstation's own /var/lib/glasswell — see `make check-workstation`.
+            "GLASSWELL_RUNS_DIR": str(tmp_path / "runs"),
+            "GLASSWELL_LOG_DIR": str(tmp_path / "run-logs"),
         },
     )
     return result, log.read_text()
