@@ -194,7 +194,10 @@ Four inserts, one job per entry point:
    tick (`plan.py:363`, `runner.py:306`), so the posture is the launch-flip track's own act and
    never a registration choice; `tests/unit/test_schedule_posture.py` reddens on a row that
    resolves `launch` anywhere in the seed. Your state's first load is its runbook's, not the
-   scheduler's.
+   scheduler's — and that runbook's long steps are jobs on `/usr/local/sbin/host-runner.sh`,
+   polled through their status file, as every other state's are.
+   `tests/contract/test_runbook_host_runner.py` reddens on a new `docs/runbook-*.md` until it
+   is.
 4. An optional DSN flag in your own mains, resolved through `glasswell.db.dsn` so they read
    `GLASSWELL_DSN` then `DATABASE_URL` like every other entry point.
 
