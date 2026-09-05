@@ -1,4 +1,4 @@
-"""The Colorado parsers, at the level that needs no database.
+"""The Colorado parsers and the pool rollup, at the level that needs no database.
 
 Two decisions carry this file: a production file resolves its columns from its own header and
 never by ordinal, and the archives disagree about three spellings, a column's position, a date
@@ -10,11 +10,13 @@ from __future__ import annotations
 
 import csv
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
 
 from glasswell.ingest import co_ecmc_production as production
+from glasswell.ingest import co_production
 
 pytestmark = pytest.mark.unit
 
@@ -192,3 +194,21 @@ def test_the_member_names_are_registered_rules_with_their_own_publication() -> N
         "cr_co_directional_lines_member_1",
         "cr_co_wells_shp_member_1",
     ]
+
+
+def test_the_sum_is_over_the_filings_that_reported_and_not_over_their_absences() -> None:
+    """The unit half of the pool rollup, where the promotion fixture cannot reach: a month in
+    which every completion filed nothing is `no_report` on the well row, not a zero."""
+    filings = [
+        {"volume": Decimal("10.5"), "days": 30},
+        {"volume": Decimal("4.5"), "days": 28},
+    ]
+    total, days = co_production.sum_over_pools(filings)
+    assert total == Decimal("15.0")
+    assert days == 30
+
+    absent = [{"volume": None, "days": None}, {"volume": None, "days": None}]
+    assert co_production.sum_over_pools(absent) == (None, None)
+
+    mixed = [{"volume": None, "days": 5}, {"volume": Decimal("3"), "days": 31}]
+    assert co_production.sum_over_pools(mixed) == (Decimal("3"), 31)

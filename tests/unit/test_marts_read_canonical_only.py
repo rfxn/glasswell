@@ -16,15 +16,22 @@ import pytest
 
 from tests.support.layers import schema_reads_in
 
-MARTS = Path(__file__).resolve().parents[2] / "src" / "glasswell" / "marts"
+SOURCE = Path(__file__).resolve().parents[2] / "src" / "glasswell"
+MARTS = SOURCE / "marts"
+# It lives a directory up from the marts but is read by them, so the glob cannot see it and it
+# has to be named. It is the only such module, and it is the one the mart tiers resolve status
+# through.
+STATUS_RESOLUTION = SOURCE / "status_resolution.py"
 MODULES = sorted(path for path in MARTS.glob("*.py") if path.name != "__init__.py")
+MODULES.append(STATUS_RESOLUTION)
 
 
 def test_the_walk_finds_the_marts_it_is_meant_to_guard() -> None:
     """A gate that collected nothing would pass over anything."""
     assert len(MODULES) >= 10
     names = {path.name for path in MODULES}
-    assert {"cumulatives.py", "producing.py", "wells.py"} <= names
+    assert {"cumulatives.py", "producing.py", "wells.py", "status_resolution.py"} <= names
+    assert STATUS_RESOLUTION.is_file(), "the named module moved; the walk now guards nothing"
 
 
 @pytest.mark.parametrize("module", MODULES, ids=[path.stem for path in MODULES])

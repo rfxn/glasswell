@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import contextlib
 import os
+import re
 import subprocess
 import time
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -17,7 +19,7 @@ from glasswell.api import create_app
 from glasswell.api.csrf import CSRF_KEY_ENV
 from glasswell.api.deps import ALLOW_ANON_ENV, OWNER_KEY_ENV, get_connection
 from glasswell.api.examples import KEY_HEADER
-from glasswell.db.migrate import migrate
+from glasswell.db.migrate import discover_migrations, migrate
 from glasswell.lineage.fetch import RAW_ROOT_ENV
 from glasswell.lineage.models import DeriveEnvironment
 
@@ -25,6 +27,9 @@ POSTGIS_IMAGE = "postgis/postgis:16-3.4"
 TEMPLATE_DATABASE = "glasswell_template"
 READY_TIMEOUT_SECONDS = 90
 REQUIRE_DOCKER_ENV = "GLASSWELL_REQUIRE_DOCKER"
+# A server the workflow owns, shared by the shards' xdist workers, instead of one container per
+# worker. Set, the harness starts nothing and cleans up nothing but its own databases.
+SERVER_DSN_ENV = "GLASSWELL_TEST_SERVER_DSN"
 # DR-25/N-10: `make prune-test-volumes` sweeps on this label, so it must be on everything the
 # harness creates and on nothing else. An anonymous volume is indistinguishable from a real one.
 TEST_LABEL = "glasswell.test=1"
@@ -225,9 +230,82 @@ def _wait_until_ready(dsn: str) -> None:
     raise RuntimeError(f"PostGIS container never accepted connections: {last_error}")
 
 
+ROLE_DECLARATION = re.compile(r"create role (\w+)((?: (?:no)?login)?)\s*;")
+# Advisory locks share one space per database and every caller here connects to `postgres`.
+CLUSTER_ROLE_LOCK = 0x6757524F
+# 42710 is "the role already exists"; 23505 is losing the insert race on pg_authid_rolname_index.
+CLUSTER_ROLE_RACE = (psycopg.errors.DuplicateObject, psycopg.errors.UniqueViolation)
+
+
+def declared_cluster_roles() -> dict[str, str]:
+    """Every role the migrations create, with its login attribute, read out of their SQL."""
+    declared: dict[str, str] = {}
+    for migration in discover_migrations():
+        for name, attributes in ROLE_DECLARATION.findall(migration.sql):
+            declared[name] = attributes.strip()
+    return declared
+
+
+def create_cluster_roles(dsn_template: str, declared: Mapping[str, str]) -> None:
+    """Create the named roles, serialised against every other session doing the same.
+
+    A role is cluster-global, not per-database, so the migrations' `if not exists` is a check and
+    not a lock; the advisory lock is what makes check-then-create atomic between sessions.
+    """
+    with psycopg.connect(dsn_template.format(database="postgres"), autocommit=True) as admin:
+        admin.execute("select pg_advisory_lock(%s)", (CLUSTER_ROLE_LOCK,))
+        try:
+            for name, attributes in declared.items():
+                with contextlib.suppress(*CLUSTER_ROLE_RACE):
+                    admin.execute(f"create role {name} {attributes}".strip())
+        finally:
+            admin.execute("select pg_advisory_unlock(%s)", (CLUSTER_ROLE_LOCK,))
+
+
+def ensure_cluster_roles(dsn_template: str) -> None:
+    """Create every role the migrations declare, so no migration ever takes its CREATE branch."""
+    create_cluster_roles(dsn_template, declared_cluster_roles())
+
+
+def provided_server_identity(dsn_template: str) -> tuple[str, str]:
+    """The password and the host:port a sibling container uses, read out of a provided DSN.
+
+    On the `GLASSWELL_TEST_SERVER_DSN` path there is no container to inspect, and these are what
+    every test that hands a DSN to a subprocess or to a sibling container builds one from.
+    """
+    parts = urlsplit(dsn_template.format(database="postgres"))
+    if not parts.password or not parts.hostname:
+        raise RuntimeError(
+            f"{SERVER_DSN_ENV} must carry a password and a host that a sibling container can"
+            " reach; anything a test hands to a subprocess is built from them"
+        )
+    return parts.password, f"{parts.hostname}:{parts.port or 5432}"
+
+
+def worker_scoped(name: str) -> str:
+    """A fixed database name, made unique per xdist worker.
+
+    Session fixtures run once per worker, so `glasswell_template` is created four times over
+    on one server -- a collision, not a race the workers survive. A worker that owns its own
+    container is unaffected either way.
+    """
+    worker = os.environ.get("PYTEST_XDIST_WORKER")
+    return f"{name}_{worker}" if worker else name
+
+
 @pytest.fixture(scope="session")
 def postgres_server() -> Iterator[str]:
     """Session-scoped PostGIS container. Yields a DSN template with a {database} slot."""
+    global _session_container, _session_volume, _session_container_address, _session_password
+    provided = os.environ.get(SERVER_DSN_ENV)
+    if provided:
+        # The workflow starts and removes the server the shards share, because a worker's
+        # teardown is not guaranteed and a leaked container outlives the job that made it.
+        _wait_until_ready(provided.format(database="postgres"))
+        _session_password, _session_container_address = provided_server_identity(provided)
+        ensure_cluster_roles(provided)
+        yield provided
+        return
     environment = docker_environment()
     if environment is None:
         # CI sets this: a green run that skipped 414 of 677 tests is worse than a red one.
@@ -236,7 +314,6 @@ def postgres_server() -> Iterator[str]:
                         f" ({_docker_probe_error})", pytrace=False)
         pytest.skip(f"docker unavailable, integration tier skipped ({_docker_probe_error})")
 
-    global _session_container, _session_volume, _session_container_address, _session_password
     _ensure_image(environment)
     name = f"glasswell-test-{uuid4().hex[:8]}"
     volume = f"{name}-data"
@@ -266,6 +343,7 @@ def postgres_server() -> Iterator[str]:
             f"postgresql://glasswell:{password}@{address}/{{database}}?{CONNECTION_PARAMETERS}"
         )
         _wait_until_ready(dsn_template.format(database="postgres"))
+        ensure_cluster_roles(dsn_template)
         yield dsn_template
     finally:
         subprocess.run(
@@ -297,6 +375,11 @@ def _remove_volume(environment: dict[str, str], volume: str) -> None:
 @pytest.fixture(scope="session")
 def session_resources(postgres_server: str) -> tuple[str, str]:
     """The container and volume this session owns, so a test can audit what it leaves behind."""
+    if os.environ.get(SERVER_DSN_ENV):
+        pytest.skip(
+            f"{SERVER_DSN_ENV} names the server, so this session owns no container;"
+            " the self-managed path runs as its own CI job"
+        )
     return _session_container, _session_volume
 
 
@@ -304,6 +387,7 @@ def session_resources(postgres_server: str) -> tuple[str, str]:
 def postgres_password(postgres_server: str) -> str:
     """`ConnectionInfo.dsn` never carries the password, so anything that reconnects from one
     needs it out of band."""
+    assert _session_password, "the session has no password recorded; nothing can reconnect"
     return _session_password
 
 
@@ -311,6 +395,7 @@ def postgres_password(postgres_server: str) -> str:
 def database_address_for_containers(postgres_server: str) -> str:
     """What a container started by a test puts in its DSN. Not the same host:port the test
     process uses once the daemon is remote."""
+    assert _session_container_address, "the session has no container-reachable address recorded"
     return _session_container_address
 
 
@@ -329,15 +414,17 @@ def drop_database(dsn_template: str, name: str) -> None:
 
 
 @pytest.fixture(scope="session")
-def migrated_template(postgres_server: str) -> str:
+def migrated_template(postgres_server: str) -> Iterator[str]:
     """Migrations and shared fixture rows run once; every test database is cloned from here."""
-    dsn = create_database(postgres_server, TEMPLATE_DATABASE)
+    name = worker_scoped(TEMPLATE_DATABASE)
+    dsn = create_database(postgres_server, name)
     with psycopg.connect(dsn) as connection:
         migrate(connection)
         connection.commit()
         _seed_fixture_rows(connection)
         connection.commit()
-    return postgres_server
+    yield postgres_server
+    drop_database(postgres_server, name)
 
 
 def _seed_fixture_rows(connection: psycopg.Connection) -> None:
@@ -356,11 +443,116 @@ def _seed_fixture_rows(connection: psycopg.Connection) -> None:
         )
 
 
+SCOPE_SAVEPOINT = "gw_test_scope"
+
+
+def scoped_transaction(connection: psycopg.Connection) -> Iterator[psycopg.Connection]:
+    """Yield a shared connection whose whole test is one transaction, rolled back at the end.
+
+    `commit` and `rollback` are rebound to a savepoint pair for the duration, so code under
+    test keeps the per-request atomicity it was written against while nothing it writes
+    outlives the test. A test whose writes must be visible to a second connection -- anything
+    that reconnects, forks a client, or asserts on another session -- needs `db` instead.
+    """
+    committed, rolled_back = connection.commit, connection.rollback
+    connection.execute(f"savepoint {SCOPE_SAVEPOINT}")
+    connection.commit = lambda: _restart_scope(connection, release=True)
+    connection.rollback = lambda: _restart_scope(connection, release=False)
+    try:
+        yield connection
+    finally:
+        connection.commit, connection.rollback = committed, rolled_back
+        connection.rollback()
+
+
+def _restart_scope(connection: psycopg.Connection, *, release: bool) -> None:
+    verb = "release" if release else "rollback to"
+    connection.execute(f"{verb} savepoint {SCOPE_SAVEPOINT}")
+    connection.execute(f"savepoint {SCOPE_SAVEPOINT}")
+
+
+def build_template(dsn_template: str, name: str, seed: Callable[[psycopg.Connection], None]) -> str:
+    """A database seeded once and left closed, for other databases to be cloned from.
+
+    Postgres refuses to clone a template anything is connected to, so the connection is closed
+    before the name is returned.
+    """
+    drop_database(dsn_template, name)
+    dsn = create_database(dsn_template, name, template=worker_scoped(TEMPLATE_DATABASE))
+    with psycopg.connect(dsn) as connection:
+        seed(connection)
+        connection.commit()
+    return name
+
+
+@pytest.fixture(scope="module")
+def module_template(
+    migrated_template: str,
+) -> Iterator[Callable[[str, Callable[[psycopg.Connection], None]], str]]:
+    """Build a module's shared data once, into a template its tests clone per test.
+
+    A fixture that inserts the same rows into an empty clone for every test in a file pays the
+    whole build per test: A-timing measured 2.7-7.4 s of it on each Texas load, against the
+    145 ms the clone itself costs.
+    """
+    built: list[str] = []
+
+    def build(label: str, seed: Callable[[psycopg.Connection], None]) -> str:
+        name = build_template(migrated_template, worker_scoped(f"gw_tpl_{label}"), seed)
+        built.append(name)
+        return name
+
+    yield build
+    for name in built:
+        drop_database(migrated_template, name)
+
+
+@pytest.fixture
+def clone(migrated_template: str) -> Iterator[Callable[[str], psycopg.Connection]]:
+    """A database of this test's own, cloned from a named template and dropped after it."""
+    opened: list[tuple[str, psycopg.Connection]] = []
+
+    def make(template: str) -> psycopg.Connection:
+        name = f"gw_test_{uuid4().hex[:12]}"
+        connection = psycopg.connect(create_database(migrated_template, name, template=template))
+        opened.append((name, connection))
+        return connection
+
+    yield make
+    for name, connection in opened:
+        connection.close()
+        drop_database(migrated_template, name)
+
+
+@pytest.fixture(scope="session")
+def shared_database(migrated_template: str) -> Iterator[psycopg.Connection]:
+    """One migrated database, and one connection to it, for the whole worker."""
+    name = worker_scoped("gw_shared")
+    connection = psycopg.connect(
+        create_database(migrated_template, name, template=worker_scoped(TEMPLATE_DATABASE))
+    )
+    try:
+        yield connection
+    finally:
+        connection.close()
+        drop_database(migrated_template, name)
+
+
+@pytest.fixture
+def db_ro(shared_database: psycopg.Connection) -> Iterator[psycopg.Connection]:
+    """The worker's shared database, inside a transaction this test cannot commit.
+
+    1.1 ms against the 145 ms a clone costs (A-timing.md 2). For read-only tests: the writes a
+    test makes to set itself up are visible to it and to nothing else, ever.
+    """
+    yield from scoped_transaction(shared_database)
+
+
 @pytest.fixture
 def db(migrated_template: str) -> Iterator[psycopg.Connection]:
     """A migrated database of its own, per test."""
     name = f"gw_test_{uuid4().hex[:12]}"
-    dsn = create_database(migrated_template, name, template=TEMPLATE_DATABASE)
+    dsn = create_database(migrated_template, name, template=worker_scoped(TEMPLATE_DATABASE))
     connection = psycopg.connect(dsn)
     try:
         yield connection
@@ -396,10 +588,26 @@ def raw_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return root
 
 
+@pytest.fixture(scope="module")
+def module_raw_root(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """One raw zone for a whole module, for the files whose load runs once into a template.
+
+    A second load a test makes then addresses the same content-addressed store the first one
+    wrote to, which is where it wrote when both ran inside a single test.
+    """
+    return tmp_path_factory.mktemp("raw")
+
+
 @pytest.fixture
-def lineage_env(db: psycopg.Connection) -> DeriveEnvironment:
-    """A pinned environment row, so derive()'s NOT NULL env_id FK is satisfiable."""
-    with db.cursor() as cursor:
+def shared_raw_root(module_raw_root: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """`module_raw_root`, with the env var pointed at it for the length of the test."""
+    monkeypatch.setenv(RAW_ROOT_ENV, str(module_raw_root))
+    return module_raw_root
+
+
+def install_lineage_env(connection: psycopg.Connection) -> DeriveEnvironment:
+    """The pinned environment row derive()'s NOT NULL env_id FK needs, and its handle."""
+    with connection.cursor() as cursor:
         cursor.execute(
             "insert into lineage.environments (env_id, python_version, threads, lockfile_sha256)"
             " values (%s, '3.12.10', 1, %s) on conflict (env_id) do nothing",
@@ -408,6 +616,12 @@ def lineage_env(db: psycopg.Connection) -> DeriveEnvironment:
     return DeriveEnvironment(
         code_version="git:0000test", code_dirty=False, env_id=LINEAGE_FIXTURE_ENV_ID
     )
+
+
+@pytest.fixture
+def lineage_env(db: psycopg.Connection) -> DeriveEnvironment:
+    """A pinned environment row, so derive()'s NOT NULL env_id FK is satisfiable."""
+    return install_lineage_env(db)
 
 
 @pytest.fixture

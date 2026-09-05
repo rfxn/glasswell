@@ -62,3 +62,26 @@ def test_subject_types_are_enforced():
         validate_subject_type(subject_type)
     with pytest.raises(UnknownAuditEvent):
         validate_subject_type("spreadsheet")
+
+
+# The account half of the taxonomy, moved out of the integration tier: it reads two tuples
+# and a database was being cloned for it.
+EXPECTED_EVENTS = (
+    "user.created",
+    "user.updated",
+    "user.disabled",
+    "password.changed",
+    "session.started",
+    "session.ended",
+    "login.failed",
+)
+
+
+@pytest.mark.parametrize("event_type", EXPECTED_EVENTS)
+def test_the_taxonomy_carries_every_account_event(event_type: str) -> None:
+    assert event_type in AUDIT_EVENT_TYPES
+
+
+@pytest.mark.parametrize("subject", ["user", "session"])
+def test_the_taxonomy_carries_the_new_subjects(subject: str) -> None:
+    assert subject in SUBJECT_TYPES

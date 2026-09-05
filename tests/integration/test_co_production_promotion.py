@@ -7,8 +7,6 @@ the series is non-empty, the sums are exact, and the days are a maximum rather t
 
 from __future__ import annotations
 
-from decimal import Decimal
-
 import pytest
 
 from glasswell.ingest import co_production
@@ -167,24 +165,6 @@ def test_a_second_run_appends_nothing(promoted, seeded, lineage_env) -> None:
     with seeded.cursor() as cursor:
         cursor.execute("select count(*) from canonical.production_monthly")
         assert cursor.fetchone()[0] == before
-
-
-def test_the_sum_is_over_the_filings_that_reported_and_not_over_their_absences() -> None:
-    """The unit half of the rollup, where the fixture cannot reach: a month in which every
-    completion filed nothing is `no_report` on the well row, not a zero."""
-    filings = [
-        {"volume": Decimal("10.5"), "days": 30},
-        {"volume": Decimal("4.5"), "days": 28},
-    ]
-    total, days = co_production.sum_over_pools(filings)
-    assert total == Decimal("15.0")
-    assert days == 30
-
-    absent = [{"volume": None, "days": None}, {"volume": None, "days": None}]
-    assert co_production.sum_over_pools(absent) == (None, None)
-
-    mixed = [{"volume": None, "days": 5}, {"volume": Decimal("3"), "days": 31}]
-    assert co_production.sum_over_pools(mixed) == (Decimal("3"), 31)
 
 
 def _plant(connection, manifest_id: str, ordinal: int, **columns: str | None) -> None:

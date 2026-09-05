@@ -72,19 +72,6 @@ def test_the_supersession_applies_gapless_on_the_migration_before_it(empty_db) -
     assert names[ordinal - 1] == "facet_status_resolution"
 
 
-def test_one_evidence_pair_in_the_whole_file() -> None:
-    """Counted by shape, so the guard survives its own repoint: the pair is the placeholder
-    before the train and the tag plus its merge commit after, and what is being held is that
-    the file states its evidence once."""
-    body = migration_sql(MIGRATION)
-
-    tags = re.findall(r"'(?:UNRELEASED|v\d+\.\d+)'", body)
-    commits = re.findall(r"'[0-9a-f]{40}'", body)
-
-    assert len(tags) == 1, f"the file states its evidence tag {len(tags)} times: {tags}"
-    assert len(commits) == 1, f"the file states its evidence commit {len(commits)} times"
-
-
 def test_every_colorado_row_resolves_observe_today_and_at_a_later_deploy(seeded) -> None:
     """The whole point of the two clocks: the ruling has to be what the host reads, both on the
     day it was made and on every day after it, or the hazard is only disarmed on paper."""

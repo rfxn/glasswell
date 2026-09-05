@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from typing import Any
 from urllib.parse import parse_qsl
 
@@ -28,6 +29,7 @@ from glasswell.api.examples import (
     EXAMPLE_API10,
     EXAMPLE_BBOX,
     EXAMPLE_DERIVATION_ID,
+    EXAMPLE_MANIFEST_ID,
     EXAMPLE_PUBLICATION_ID,
     EXAMPLE_VINTAGE_ID,
 )
@@ -35,7 +37,44 @@ from glasswell.lineage.envelope import InlinedExplain, attach_lineage, figure
 from glasswell.lineage.explain import DEFAULT_DEPTH, MAX_DEPTH
 from glasswell.lineage.vintages import open_vintage
 from tests.contract.test_naked_numbers import naked_numbers
-from tests.support.seed import seed_derivation
+from tests.support.seed import seed_derivation, seed_production
+
+# OTHER_API10S[2]: seeded as a well by the base fixture, with no production rows of its own.
+POOL_WELL = "3305300003"
+POOLS = ("BIRDBEAR", "DUPEROW")
+MONTHS = (date(2026, 6, 1), date(2026, 7, 1))
+
+
+def _seed_pools(connection: psycopg.Connection) -> None:
+    """A well that filed two pools across two months.
+
+    Also the ND per-point form: the point handles differ by month, so the column carries a
+    handle per point rather than one per series.
+    """
+    for ordinal, pool in enumerate(POOLS):
+        for month in MONTHS:
+            seed_production(
+                connection,
+                api10=POOL_WELL,
+                production_month=month,
+                report_vintage=date(2026, 8, 1),
+                volume=Decimal(1000 * (ordinal + 1) + month.month),
+                manifest_id=EXAMPLE_MANIFEST_ID,
+                derivation_id=EXAMPLE_DERIVATION_ID,
+                stream="oil",
+                entity_type="well_completion_pool",
+                entity_key=f"{POOL_WELL}:{pool}",
+                reporting_level="well_completion_pool",
+                well_completion_pool=pool,
+            )
+
+
+def _prepare(name: str, connection: psycopg.Connection) -> None:
+    """The rows a surface needs before it carries a handle at all."""
+    seed = SEEDS.get(name)
+    if seed is not None:
+        seed(connection)
+
 
 # Every handle-carrying GET: the three §9.2 reached first (a header, a series, an aggregate),
 # then the spine surfaces the convergence brought in — a sidecar page, a sidecar record and a
@@ -62,8 +101,16 @@ SURFACES: tuple[tuple[str, dict[str, Any]], ...] = (
         "get_modeling_publication",
         {"url": f"/v1/modeling/publications/{EXAMPLE_PUBLICATION_ID}", "params": {}},
     ),
+    (
+        "get_well_production_pools",
+        {"url": f"/v1/wells/{POOL_WELL}/production/pools", "params": {}},
+    ),
 )
 SURFACE_IDS = [name for name, _ in SURFACES]
+# A surface whose handle-bearing arm is unreachable on the base fixture states what it needs
+# here. Pools is the only one: the fixture's wells filed in one pool each, so the collection
+# is empty for them and every property below would pass on data it does not represent.
+SEEDS = {"get_well_production_pools": _seed_pools}
 
 # The frozen paths the two parameters are declared on — every SURFACES row plus pools, whose
 # fixture arm lives in its own module.
@@ -106,10 +153,11 @@ def _without_explain(response: Response) -> bytes:
 
 @pytest.mark.parametrize(("name", "call"), SURFACES, ids=SURFACE_IDS)
 def test_the_flag_absent_and_the_flag_false_are_the_same_bytes(
-    client: TestClient, name: str, call: dict[str, Any]
+    client: TestClient, seeded: psycopg.Connection, name: str, call: dict[str, Any]
 ) -> None:
     """The additive guarantee, at byte level: a client that never sends the parameter cannot
     tell it was added."""
+    _prepare(name, seeded)
     absent = _call(client, call)
     explicitly_off = _call(client, call, explain="false")
 
@@ -120,10 +168,11 @@ def test_the_flag_absent_and_the_flag_false_are_the_same_bytes(
 
 @pytest.mark.parametrize(("name", "call"), SURFACES, ids=SURFACE_IDS)
 def test_explain_true_adds_the_block_and_moves_nothing_else(
-    client: TestClient, name: str, call: dict[str, Any]
+    client: TestClient, seeded: psycopg.Connection, name: str, call: dict[str, Any]
 ) -> None:
     """§9.2: *never changes the values in a response — only adds `_explain`*. Strip the block
     back off and the bytes are the bytes of the request that never asked for it."""
+    _prepare(name, seeded)
     plain = _call(client, call)
     explained = _call(client, call, explain="true")
 
@@ -133,10 +182,11 @@ def test_explain_true_adds_the_block_and_moves_nothing_else(
 
 @pytest.mark.parametrize(("name", "call"), SURFACES, ids=SURFACE_IDS)
 def test_the_inlined_chain_is_what_explain_returns_for_that_handle(
-    client: TestClient, name: str, call: dict[str, Any]
+    client: TestClient, seeded: psycopg.Connection, name: str, call: dict[str, Any]
 ) -> None:
     """Equality, not shape. One resolver, reached two ways — a second traversal that merely
     looked similar is the failure this asserts against."""
+    _prepare(name, seeded)
     inlined = _call(client, call, explain="true").json()["_explain"]
 
     assert inlined
@@ -150,10 +200,11 @@ def test_the_inlined_chain_is_what_explain_returns_for_that_handle(
 
 @pytest.mark.parametrize(("name", "call"), SURFACES, ids=SURFACE_IDS)
 def test_the_inlined_set_is_the_set_links_explain_names(
-    client: TestClient, name: str, call: dict[str, Any]
+    client: TestClient, seeded: psycopg.Connection, name: str, call: dict[str, Any]
 ) -> None:
     """One answer to "which handles will you resolve for me", not two that can disagree
     (§3.6.2). `_explain` is `links.explain` already called."""
+    _prepare(name, seeded)
     body = _call(client, call, explain="true").json()
     linked = [
         value for key, value in parse_qsl(body["links"]["explain"].split("?", 1)[1]) if key == "h"
@@ -164,8 +215,9 @@ def test_the_inlined_set_is_the_set_links_explain_names(
 
 @pytest.mark.parametrize(("name", "call"), SURFACES, ids=SURFACE_IDS)
 def test_the_depth_the_caller_asked_for_is_the_depth_it_resolved_at(
-    client: TestClient, name: str, call: dict[str, Any]
+    client: TestClient, seeded: psycopg.Connection, name: str, call: dict[str, Any]
 ) -> None:
+    _prepare(name, seeded)
     inlined = _call(client, call, explain="true", explain_depth=1).json()["_explain"]
 
     assert inlined
@@ -202,6 +254,30 @@ def test_a_depth_outside_the_declared_range_is_refused_not_clamped(
     assert any(item["pointer"].endswith("/explain_depth") for item in response.json()["errors"])
 
 
+def test_the_pools_surface_carries_a_handle_per_point(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """The ND per-point form: a handle per pool per month, not one per series."""
+    _seed_pools(seeded)
+    inlined = _call(client, dict(SURFACES[-1][1]), explain="true").json()["_explain"]
+
+    assert len(inlined) == len(POOLS) * len(MONTHS)
+
+
+def test_a_well_with_no_breakdown_gains_an_empty_block_and_not_a_missing_one(
+    client: TestClient,
+) -> None:
+    """The base fixture's example well filed in one pool, so this operation's list is empty
+    for it — and `{}` states the flag ran, where absent would be indistinguishable from a
+    surface that never honoured it."""
+    body = client.get(
+        f"/v1/wells/{EXAMPLE_API10}/production/pools", params={"explain": "true"}
+    ).json()
+
+    assert body["data"]["pools"] == []
+    assert body["_explain"] == {}
+
+
 def test_a_response_carrying_no_handle_gains_an_empty_block_and_not_a_missing_one(
     client: TestClient,
 ) -> None:
@@ -216,10 +292,11 @@ def test_a_response_carrying_no_handle_gains_an_empty_block_and_not_a_missing_on
 
 @pytest.mark.parametrize(("name", "call"), SURFACES, ids=SURFACE_IDS)
 def test_nothing_is_truncated_quietly_at_this_scale(
-    client: TestClient, name: str, call: dict[str, Any]
+    client: TestClient, seeded: psycopg.Connection, name: str, call: dict[str, Any]
 ) -> None:
     """The fixture is inside the cap, so no bound is claimed. The over-cap arm is the
     integration tier's, where a population big enough to cross it can be seeded."""
+    _prepare(name, seeded)
     body = _call(client, call, explain="true").json()
     codes = {item["code"] for item in body["meta"]["warnings"]}
 
@@ -269,7 +346,7 @@ def test_every_new_parameter_carries_its_semantics(client: TestClient) -> None:
 
 @pytest.mark.parametrize(("name", "call"), SURFACES, ids=SURFACE_IDS)
 def test_the_block_stays_outside_the_population_the_r6_walker_reads(
-    client: TestClient, name: str, call: dict[str, Any]
+    client: TestClient, seeded: psycopg.Connection, name: str, call: dict[str, Any]
 ) -> None:
     """The placement is load-bearing, not convenient.
 
@@ -280,6 +357,7 @@ def test_the_block_stays_outside_the_population_the_r6_walker_reads(
     rule). The second assertion is what stops this from being a claim: it shows the walker does
     call those numbers naked, so `data` staying clean is a consequence of where the block sits.
     """
+    _prepare(name, seeded)
     body = _call(client, call, explain="true").json()
     data = body["data"] if isinstance(body["data"], dict) else {"rows": body["data"]}
 

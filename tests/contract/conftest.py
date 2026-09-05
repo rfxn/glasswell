@@ -55,7 +55,13 @@ from glasswell.marts.neighbors import refresh_neighbors, resident_content_identi
 from glasswell.modeling import served
 from glasswell.modeling.model_dataset import MODEL_ROOT_ENV
 from glasswell.seed import seed_all
-from tests.conftest import TEMPLATE_DATABASE, create_database, drop_database
+from tests.conftest import (
+    TEMPLATE_DATABASE,
+    create_database,
+    drop_database,
+    scoped_transaction,
+    worker_scoped,
+)
 from tests.support.fakes import FixedClock
 from tests.support.seed import (
     FIXTURE_ENV,
@@ -745,7 +751,7 @@ def pinned_control(
 @pytest.fixture(scope="session")
 def contract_template(
     migrated_template: str, control_artifact: tuple[Path, ControlArtifact]
-) -> str:
+) -> Iterator[str]:
     """The whole contract fixture, seeded once, as the database every test clones.
 
     Seeding costs two orders of magnitude more than cloning and lands the same rows every
@@ -754,18 +760,49 @@ def contract_template(
     """
     _, artifact = control_artifact
     dsn = create_database(
-        migrated_template, CONTRACT_TEMPLATE_DATABASE, template=TEMPLATE_DATABASE
+        migrated_template,
+        worker_scoped(CONTRACT_TEMPLATE_DATABASE),
+        template=worker_scoped(TEMPLATE_DATABASE),
     )
     with psycopg.connect(dsn) as connection:
         _seed_contract_fixture(connection, artifact)
-    return migrated_template
+    yield migrated_template
+    drop_database(migrated_template, worker_scoped(CONTRACT_TEMPLATE_DATABASE))
+
+
+@pytest.fixture(scope="session")
+def shared_contract_database(contract_template: str) -> Iterator[psycopg.Connection]:
+    """One seeded contract database, and one connection to it, for the whole worker."""
+    name = worker_scoped("gw_contract_shared")
+    dsn = create_database(
+        contract_template, name, template=worker_scoped(CONTRACT_TEMPLATE_DATABASE)
+    )
+    connection = psycopg.connect(dsn)
+    try:
+        yield connection
+    finally:
+        connection.close()
+        drop_database(contract_template, name)
 
 
 @pytest.fixture
-def db(contract_template: str) -> Iterator[psycopg.Connection]:
-    """Overrides the tier-wide fixture: a contract database arrives seeded."""
+def db(
+    request: pytest.FixtureRequest, contract_template: str
+) -> Iterator[psycopg.Connection]:
+    """Overrides the tier-wide fixture: a contract database arrives seeded.
+
+    A test marked `readonly` is handed the worker's shared database inside a transaction that
+    is rolled back after it, rather than a clone of its own: 1.1 ms against 145 ms
+    (A-timing.md 2). The marker is the test's statement that nothing it writes has to outlive
+    it -- anything that reconnects, or asserts from a second session, must not carry it.
+    """
+    if request.node.get_closest_marker("readonly"):
+        yield from scoped_transaction(request.getfixturevalue("shared_contract_database"))
+        return
     name = f"gw_contract_{uuid4().hex[:12]}"
-    dsn = create_database(contract_template, name, template=CONTRACT_TEMPLATE_DATABASE)
+    dsn = create_database(
+        contract_template, name, template=worker_scoped(CONTRACT_TEMPLATE_DATABASE)
+    )
     connection = psycopg.connect(dsn)
     try:
         yield connection

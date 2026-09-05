@@ -69,6 +69,11 @@ TypeScript web application, infrastructure units, tests, blueprints and collater
 and the web scripts under `web/package.json`; run the narrowest relevant gate first and
 `make test-anvil` plus the other CI-equivalent surfaces before review.
 
+For the Python tiers the narrowest gate is `make test`, which selects by the diff and prints
+what it excluded; `make test-full` is the whole suite. The pull request runs the whole suite as
+four shards regardless — selection is a local loop, never a merge decision. `docs/ci-gate.md`
+is the gate's own runbook.
+
 For the web tier the narrowest gate is `npm --prefix web run test:changed` (only the files
 your branch touched, against `origin/main`) or `test:watch` while you work; `test` is the
 whole suite and is what CI runs.
