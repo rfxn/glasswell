@@ -1,9 +1,17 @@
 from __future__ import annotations
 
+import multiprocessing
+import re
+import shutil
+import tempfile
+from pathlib import Path
+from uuid import uuid4
+
 import psycopg
 import pytest
 
 from glasswell.db.migrate import MigrationError, discover_migrations, migrate
+from tests.conftest import create_database, drop_database
 
 SPINE_TABLES = [
     ("lineage", "derivations"),
@@ -247,3 +255,113 @@ def test_a_failing_migration_leaves_no_partial_version_row(empty_db, tmp_path):
     with empty_db.cursor() as cursor:
         cursor.execute("select version from public.schema_migrations order by version")
         assert [row[0] for row in cursor.fetchall()] == [1]
+
+
+# Four sessions, the shard count, each migrating its own database against one cluster. Roles
+# are cluster-global, so `if not exists (select 1 from pg_roles ...)` is a check and not a
+# lock: all four pass it in the same instant and all four issue the CREATE. The first sharded
+# CI run errored 843 tests on `pg_authid_rolname_index`.
+RACE_SESSIONS = 4
+RACE_ROUNDS = 6
+ROLE_DECLARATION = re.compile(r"create role (\w+)")
+DO_BLOCK = re.compile(r"do \$\$.*?\$\$;", re.DOTALL)
+
+
+def role_creating_blocks() -> str:
+    """The DO blocks 001, 026 and 076 ship, read out of the migrations rather than restated."""
+    blocks = [
+        block
+        for migration in discover_migrations()
+        for block in DO_BLOCK.findall(migration.sql)
+        if "create role" in block
+    ]
+    assert blocks, "no migration creates a role; this test has lost its subject"
+    return "\n".join(blocks)
+
+
+def race_migration(marker: str) -> tuple[str, list[str]]:
+    """The shipped blocks with role names this test owns, so the race is open every round."""
+    sql = role_creating_blocks()
+    names = []
+    for index, declared in enumerate(dict.fromkeys(ROLE_DECLARATION.findall(sql))):
+        name = f"gw_race_{marker}_{index}"
+        sql = sql.replace(declared, name)
+        names.append(name)
+    return sql, names
+
+
+def _migrate_in_a_race(dsn_template: str, sql: str, barrier, results, index: int) -> None:
+    database = f"gw_race_db_{index}_{uuid4().hex[:8]}"
+    directory = Path(tempfile.mkdtemp(prefix="gw-race-"))
+    (directory / "001_race_probe.sql").write_text(sql, encoding="utf-8")
+    dsn = create_database(dsn_template, database)
+    barrier.wait()
+    try:
+        with psycopg.connect(dsn) as connection:
+            migrate(connection, directory)
+            connection.commit()
+        results[index] = "ok"
+    except Exception as error:  # the point of the case is which class arrives here
+        results[index] = f"{type(error).__name__}({getattr(error, 'sqlstate', None)}): {error}"
+    finally:
+        shutil.rmtree(directory, ignore_errors=True)
+        drop_database(dsn_template, database)
+
+
+def test_four_sessions_migrating_one_cluster_do_not_collide_on_its_roles(
+    postgres_server: str,
+) -> None:
+    """A migration that checks a cluster-global catalogue and then writes to it is racing
+    every other session migrating a different database on the same cluster. The race is
+    forced rather than waited for: every session starts on one barrier."""
+    context = multiprocessing.get_context("fork")
+    for _ in range(RACE_ROUNDS):
+        sql, names = race_migration(uuid4().hex[:10])
+        barrier = context.Barrier(RACE_SESSIONS)
+        with context.Manager() as manager:
+            outcomes = manager.list([""] * RACE_SESSIONS)
+            workers = [
+                context.Process(
+                    target=_migrate_in_a_race,
+                    args=(postgres_server, sql, barrier, outcomes, index),
+                )
+                for index in range(RACE_SESSIONS)
+            ]
+            for worker in workers:
+                worker.start()
+            for worker in workers:
+                worker.join(180)
+            failures = [outcome for outcome in outcomes if outcome != "ok"]
+
+        with psycopg.connect(
+            postgres_server.format(database="postgres"), autocommit=True
+        ) as admin:
+            created = {
+                row[0]
+                for row in admin.execute(
+                    "select rolname from pg_roles where rolname = any(%s)", (names,)
+                ).fetchall()
+            }
+            for name in names:
+                admin.execute(f'drop role if exists "{name}"')
+
+        assert not failures, failures
+        assert created == set(names), sorted(set(names) - created)
+
+
+def test_a_migration_that_always_loses_the_unique_index_still_fails(empty_db, tmp_path) -> None:
+    """The retry is for a race another session already won. A migration whose own rows collide
+    loses every attempt, and swallowing that would apply a version whose SQL never ran."""
+    (tmp_path / "001_unique.sql").write_text(
+        "create table public.one (id int primary key);\n"
+        "insert into public.one values (1);\n"
+        "insert into public.one values (1);\n"
+    )
+
+    with pytest.raises(psycopg.errors.UniqueViolation):
+        migrate(empty_db, tmp_path)
+    empty_db.rollback()
+
+    with empty_db.cursor() as cursor:
+        cursor.execute("select count(*) from public.schema_migrations")
+        assert cursor.fetchone()[0] == 0
