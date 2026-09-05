@@ -80,6 +80,12 @@ sudo -u postgres psql -d glasswell -Atc \
 
 `co-tile-rows.before.txt` reads `0`. The wells file carries no `05` line.
 
+The ad-hoc runner of 2026-09-05 wrote a `co-load` verdict under this same job name, and a job
+that already finished is refused. `install.sh` archives it — with the four other ad-hoc runners
+and their status files — into `/var/lib/glasswell/runs/archive/` as the deploy places the
+tracked runner, so the launch below runs as written. If it refuses instead, the deploy that
+retires them has not reached this host yet; read `runs/archive/`, do not pass `--force`.
+
 ## Steps 1–5 — the load, as one job
 
 Six units, one after another, stopping at the first that does not succeed. The five sections

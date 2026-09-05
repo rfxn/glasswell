@@ -159,6 +159,35 @@ done
 # holds the installed copy equal to the tree.
 install -o root -g root -m 0755 "$INFRA_DIR/bin/host-runner.sh" "$SBIN_DIR/host-runner.sh"
 
+# The five ad-hoc runners of 2026-09-05, retired by the one that replaces them — scripts and
+# status files together, because `co-load` is the Colorado runbook's job name and the ad-hoc
+# verdict sitting under it refuses the first tracked run. Archived rather than deleted: a load's
+# own record is the evidence that it happened. A status file carrying `"log":` was written by
+# the tracked runner and is a live job, never a leftover, so a deploy that lands mid-load
+# archives nothing.
+retire_adhoc_runs() {
+    local archive="$RUNS_DIR/archive" script status sidecar
+    # No -o/-g: install.sh is root-only (line 65), so the archive is root's, and the
+    # account whose verdicts it holds cannot rewrite them there either.
+    command install -d -m 0750 "$archive"
+    for script in co-load-runner.sh tx-step3-runner.sh tx-step3-resume-runner.sh \
+                  tx-step3-resume2-runner.sh tx-step45-runner.sh; do
+        [[ -f "$SBIN_DIR/$script" ]] || continue
+        command mv "$SBIN_DIR/$script" "$archive/$script"
+        printf 'retired %s: archived at %s\n' "$script" "$archive/$script"
+    done
+    for status in "$RUNS_DIR"/*.json; do
+        [[ -f $status ]] || continue
+        if grep -q '"log":' "$status"; then continue; fi
+        for sidecar in "${status%.json}".*; do
+            [[ -f $sidecar ]] || continue
+            command mv "$sidecar" "$archive/${sidecar##*/}"
+        done
+        printf 'retired the ad-hoc run %s: archived under %s\n' "${status##*/}" "$archive"
+    done
+}
+retire_adhoc_runs
+
 # The units this release retired, disabled and removed rather than left behind. verify.sh
 # fails a deploy on a host unit that has no counterpart in the tree, which is how a retired
 # unit that was only stopped takes the next deploy down. Shipping the mechanism empty is the

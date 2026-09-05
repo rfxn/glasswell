@@ -26,6 +26,7 @@ ROOT = Path(__file__).resolve().parents[2]
 DOCS = ROOT / "docs"
 RUNNER_PATH = "/usr/local/sbin/host-runner.sh"
 RUNNER = ROOT / "infra" / "bin" / "host-runner.sh"
+INSTALL = ROOT / "infra" / "install.sh"
 
 RUNBOOKS = sorted(path.name for path in DOCS.glob("runbook-*.md"))
 LONG_STEP_RUNBOOKS = [
@@ -67,6 +68,47 @@ def stub_environment(binaries: Path, runs: Path) -> dict[str, str]:
         "STUB_JOURNAL_DIR": str(journal),
         "STUB_SYSTEMCTL_LOG": str(journal / "systemctl.log"),
     }
+
+
+ADHOC_RUNNERS = (
+    "co-load-runner.sh",
+    "tx-step3-runner.sh",
+    "tx-step3-resume-runner.sh",
+    "tx-step3-resume2-runner.sh",
+    "tx-step45-runner.sh",
+)
+
+
+def retire_adhoc_runs(root: Path) -> str:
+    """install.sh's own retirement function, lifted and executed against a tree under `root`.
+
+    `tests/unit/test_verify_run_state.py` runs verify.sh's helpers the same way: a text
+    assertion would catch a deleted line and miss a mover that archives the wrong file.
+    """
+    text = INSTALL.read_text(encoding="utf-8")
+    opening = "retire_adhoc_runs() {"
+    assert opening in text, "install.sh does not retire the ad-hoc runners"
+    body = opening + text.split(opening, 1)[1].split("\n}\n", 1)[0] + "\n}\n"
+
+    harness = root / "retire.sh"
+    harness.write_text(
+        "\n".join(
+            [
+                "#!/bin/bash",
+                "set -uo pipefail",
+                f'RUNS_DIR="{root / "runs"}"',
+                f'SBIN_DIR="{root / "sbin"}"',
+                body,
+                "retire_adhoc_runs",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    completed = subprocess.run(
+        ["/bin/bash", str(harness)], capture_output=True, text=True, check=False
+    )
+    assert completed.returncode == 0, completed.stderr
+    return completed.stdout
 
 
 def fenced(name: str) -> str:
@@ -206,3 +248,106 @@ class TestTheDocumentedInvocationsParse:
             status = json.loads((runs / f"{job}.json").read_text(encoding="utf-8"))
             assert status["steps_total"] >= 1
             assert status["job"] == job
+
+
+class TestTheColoradoRunbookRunsOnTheHostAsItStands:
+    """`--job co-load` is the first tracked run, and the host already has that name spoken for.
+
+    The ad-hoc `co-load-runner.sh` wrote `/var/lib/glasswell/runs/co-load.json` (complete,
+    18:28:30Z) before this track existed, and the tracked runner refuses a job whose status file
+    says it already finished. The job name is the runbook's, so what moves is the ad-hoc
+    verdict: install.sh archives it, unread by the refusal and still on disk as the evidence of
+    the load it records.
+    """
+
+    # The host's own file, 2026-09-05, shortened at `stamps`. It carries neither `log` nor
+    # `steps`, which is what tells an ad-hoc verdict from a tracked one.
+    ADHOC_CO_LOAD = (
+        '{"job":"co-load","started":"2026-09-05T18:21:35Z","step":"complete","step_index":5,'
+        '"steps_total":5,"unit":"c5-co-marts-counts","exit":0,"result":"complete",'
+        '"finished":"2026-09-05T18:28:30Z","stamps":["2026-09-05T18:28:30Z step5 end rc=0"]}'
+    )
+
+    @staticmethod
+    def seed_adhoc(runs: Path, body: str) -> None:
+        runs.mkdir(parents=True, exist_ok=True)
+        (runs / "co-load.json").write_text(body, encoding="utf-8")
+        (runs / "co-load.stamps").write_text("2026-09-05T18:28:30Z step5 end rc=0\n", "utf-8")
+
+    @staticmethod
+    def colorado_launch() -> list[str]:
+        invocations = TestTheDocumentedInvocationsParse.invocations("runbook-co-tier2.md")
+        launches = [line for line in invocations if "--status" not in line]
+        assert len(launches) == 1, f"the Colorado runbook launches {len(launches)} jobs"
+        return launches[0]
+
+    def test_the_first_tracked_run_is_refused_by_the_ad_hoc_verdict_under_its_name(
+        self, tmp_path: Path
+    ) -> None:
+        # The finding itself, kept as the reason the archiving below exists.
+        runs = tmp_path / "runs"
+        self.seed_adhoc(runs, self.ADHOC_CO_LOAD)
+        environment = stub_environment(tmp_path / "stubs", runs)
+
+        completed = subprocess.run(
+            [str(RUNNER), *self.colorado_launch()], env=environment, capture_output=True, text=True
+        )
+
+        assert completed.returncode == 3
+        assert "already finished" in completed.stderr
+
+    def test_install_archives_the_ad_hoc_verdict_and_the_runbook_line_then_runs(
+        self, tmp_path: Path
+    ) -> None:
+        runs = tmp_path / "runs"
+        self.seed_adhoc(runs, self.ADHOC_CO_LOAD)
+
+        retire_adhoc_runs(tmp_path)
+
+        assert not (runs / "co-load.json").exists()
+        archived = runs / "archive" / "co-load.json"
+        assert json.loads(archived.read_text(encoding="utf-8"))["finished"] == (
+            "2026-09-05T18:28:30Z"
+        ), "the ad-hoc load's own record is evidence and is kept whole"
+        assert (runs / "archive" / "co-load.stamps").exists()
+
+        environment = stub_environment(tmp_path / "stubs", runs)
+        completed = subprocess.run(
+            [str(RUNNER), *self.colorado_launch()], env=environment, capture_output=True, text=True
+        )
+
+        assert completed.returncode != 3, f"still refused: {completed.stderr}"
+        assert json.loads((runs / "co-load.json").read_text(encoding="utf-8"))["job"] == "co-load"
+
+    def test_a_tracked_run_of_the_same_job_is_never_archived_by_a_later_install(
+        self, tmp_path: Path
+    ) -> None:
+        # install.sh runs on every deploy, and a deploy lands while a load is resident. Only a
+        # document without the tracked grammar's `log` and `steps` is an ad-hoc leftover.
+        runs = tmp_path / "runs"
+        environment = stub_environment(tmp_path / "stubs", runs)
+        subprocess.run(
+            [str(RUNNER), "--job", "co-load", "--", "stage", "/bin/echo", '{"staged": 1}'],
+            env=environment, check=True, capture_output=True,
+        )
+
+        retire_adhoc_runs(tmp_path)
+
+        assert (runs / "co-load.json").exists()
+        assert not (runs / "archive" / "co-load.json").exists()
+
+    def test_the_five_ad_hoc_runners_are_retired_into_the_archive_not_deleted(
+        self, tmp_path: Path
+    ) -> None:
+        sbin = tmp_path / "sbin"
+        sbin.mkdir()
+        for name in ADHOC_RUNNERS:
+            (sbin / name).write_text("#!/bin/bash\n", encoding="utf-8")
+        (sbin / "host-runner.sh").write_text("#!/bin/bash\n", encoding="utf-8")
+        (runs := tmp_path / "runs").mkdir()
+
+        retire_adhoc_runs(tmp_path)
+
+        assert [name for name in ADHOC_RUNNERS if (sbin / name).exists()] == []
+        assert sorted(path.name for path in (runs / "archive").iterdir()) == sorted(ADHOC_RUNNERS)
+        assert (sbin / "host-runner.sh").exists(), "the tracked runner is not an ad-hoc one"
