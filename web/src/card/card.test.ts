@@ -1,4 +1,6 @@
 // @vitest-environment happy-dom
+import { readFileSync } from "node:fs";
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ChartSeries } from "../chart/series.ts";
@@ -1708,5 +1710,85 @@ describe("the third production state, and the sections it opens", () => {
     await renderWellCard(host, API10, callbacks);
 
     expect(host.querySelector("#gw-section-pools")).toBeNull();
+  });
+});
+
+describe("a re-land keeps the card the reader has", () => {
+  // A press of `Per 1,000 ft`, `Read at …` or `Widen to the whole record` re-asks the server
+  // for the figures. What it must not do is charge the reader their place for it: the guard
+  // in main.ts's `showWell` names the cost -- every disclosure, every opened section and the
+  // scroll -- and refuses to pay it on a replay. A control the reader pressed is no different.
+  async function reland(): Promise<void> {
+    window.history.replaceState(null, "", "/?normalization=per_lateral_ft");
+    const landing = renderWellCard(host, API10, callbacks);
+    expect(host.querySelector(".gw-card"), "the card was torn down mid-request").not.toBeNull();
+    expect(host.textContent).not.toContain("Loading well");
+    await landing;
+  }
+
+  it("leaves the card standing rather than flashing back to a placeholder", async () => {
+    await renderWellCard(host, API10, callbacks);
+    const first = host.querySelector(".gw-card");
+
+    await reland();
+
+    expect(first).not.toBeNull();
+    expect(host.querySelector(".gw-card")).not.toBe(first);
+  });
+
+  it("keeps a section the reader opened open, and asks it again for the new figures", async () => {
+    await renderWellCard(host, API10, callbacks);
+    await expand("completions");
+
+    await reland();
+    await sectionsSettled();
+
+    expect(
+      host
+        .querySelector("#gw-section-completions .gw-section-toggle")
+        ?.getAttribute("aria-expanded"),
+    ).toBe("true");
+  });
+
+  it("re-opens the disclosure the reader had open", async () => {
+    await renderWellCard(host, API10, callbacks);
+    const note = host.querySelector<HTMLDetailsElement>(".gw-card-notes details");
+    expect(note, "the fixture serves no card-level disclosure to open").not.toBeNull();
+    note!.open = true;
+
+    await reland();
+    await sectionsSettled();
+
+    expect(host.querySelector<HTMLDetailsElement>(".gw-card-notes details")?.open).toBe(true);
+  });
+
+  it("puts the reader back where they were in the scroll", async () => {
+    await renderWellCard(host, API10, callbacks);
+    const body = host.querySelector<HTMLElement>(".gw-panel-body");
+    body!.scrollTop = 240;
+
+    await reland();
+    await sectionsSettled();
+
+    expect(host.querySelector<HTMLElement>(".gw-panel-body")?.scrollTop).toBe(240);
+  });
+
+  it("marks the standing card busy, and the sheet dims it, while the figures are re-asked", async () => {
+    await renderWellCard(host, API10, callbacks);
+
+    const landing = renderWellCard(host, API10, callbacks);
+    expect(host.querySelector(".gw-card")?.getAttribute("aria-busy")).toBe("true");
+    await landing;
+
+    expect(host.querySelector(".gw-card")?.getAttribute("aria-busy")).toBeNull();
+    expect(readFileSync("src/card/card.css", "utf8")).toContain('.gw-card[aria-busy="true"]');
+  });
+
+  it("still starts from a placeholder for a well the container is not already showing", async () => {
+    await renderWellCard(host, API10, callbacks);
+
+    const landing = renderWellCard(host, "3305399999", callbacks);
+    expect(host.textContent).toContain("Loading well 3305399999");
+    await landing.catch(() => undefined);
   });
 });

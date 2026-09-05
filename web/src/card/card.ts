@@ -184,7 +184,11 @@ export async function renderWellCard(
   api10: string,
   callbacks: CardCallbacks,
 ): Promise<void> {
-  container.replaceChildren(placeholder(`Loading well ${api10}…`));
+  // A re-land is a control the reader pressed, not a card they opened. Tearing it down to a
+  // placeholder would take the disclosures they opened and their place in the scroll — the
+  // cost `showWell`'s own guard refuses to pay on a replay.
+  const kept = standing(container, api10);
+  if (!kept) container.replaceChildren(placeholder(`Loading well ${api10}…`));
   container.hidden = false;
   const state = readState();
   // Every request this card makes carries the same bag, built in one place. It used to pick
@@ -203,6 +207,8 @@ export async function renderWellCard(
   const detail = unwrap(well);
   const card = document.createElement("article");
   card.className = "gw-card";
+  // What `standing` reads to know the container is showing this well already.
+  card.dataset["api10"] = api10;
   card.addEventListener(EXPLAIN_EVENT, (event) => {
     event.stopPropagation();
     callbacks.onExplain((event as CustomEvent<{ handle: string }>).detail.handle);
@@ -695,8 +701,8 @@ export async function renderWellCard(
     // decision and the model rule, and the card is still mounted by `land` so the reader's
     // deep-linked section is the one that opens.
     chartFrame.replaceWith(pendingProductionPanel(pending, ruleLinks(well.links)));
-    land(container, card, state.section);
-    await Promise.all([statusRequest, sectionsSettled()]);
+    land(container, card, state.section, kept);
+    await settled([statusRequest, sectionsSettled()], card, kept);
     return;
   }
 
@@ -705,12 +711,12 @@ export async function renderWellCard(
   // rather than a generic note under an empty chart frame.
   if (poolGrain) {
     chartFrame.replaceWith(poolGrainPanel(poolGrain));
-    land(container, card, state.section);
-    await Promise.all([statusRequest, sectionsSettled()]);
+    land(container, card, state.section, kept);
+    await settled([statusRequest, sectionsSettled()], card, kept);
     return;
   }
 
-  land(container, card, state.section);
+  land(container, card, state.section, kept);
 
   const productionRequest = (async () => {
     try {
@@ -804,7 +810,7 @@ export async function renderWellCard(
     }
   })();
 
-  await Promise.all([statusRequest, productionRequest, sectionsSettled()]);
+  await settled([statusRequest, productionRequest, sectionsSettled()], card, kept);
 }
 
 /**
@@ -839,23 +845,89 @@ function setParams(params: Record<string, string | null>, refetch = false): void
   document.dispatchEvent(new CustomEvent("gw-param-set", { detail: { params, refetch } }));
 }
 
+/** The previous card's subscription, released when the next card lands. */
+let releaseHighlight: (() => void) | null = null;
+
 /**
  * Mount, highlight, and land focus. With `?section=` present the landing target is that
  * section's disclosure rather than the card heading, so a deep-linked reader lands on the
  * thing the link named; `applySection` carries the same quiet-focus rule `focusPanel` does.
  */
-/** The previous card's subscription, released when the next card lands. */
-let releaseHighlight: (() => void) | null = null;
-
-function land(container: HTMLElement, card: HTMLElement, section: string | null): void {
+function land(
+  container: HTMLElement,
+  card: HTMLElement,
+  section: string | null,
+  kept: Standing | null,
+): void {
   container.replaceChildren(card);
   // Once now, and again when the glossary lands: the section titles are built statically and
   // were painted before the vocabulary arrived on almost every cold load, so a title that is
   // a term (`Peer control`) was marked on one load in ten.
   releaseHighlight?.();
   releaseHighlight = onGlossaryReady(() => highlight(card, termIndex()));
+  // A re-land moves neither the reader's focus nor their scroll: they are already reading
+  // this card, and the section a deep link named was scrolled to when it first landed.
+  if (kept) return;
   if (section) applySection(section);
   else focusPanel(container);
+}
+
+/**
+ * The reader's own state in a card, which belongs to them rather than to the response: the
+ * disclosures they opened and their place in the scroll. Which sections are open is
+ * `sections.ts`'s memory, keyed by api10, and survives a re-mount on its own.
+ */
+interface Standing {
+  scrollTop: number;
+  open: Set<string>;
+}
+
+/**
+ * A `<details>` has no id, so it is addressed by where it sits: its section, its summary, and
+ * which of the identical ones it is. Two `Column spans derivations` notes under one heading
+ * are a real shape, and opening the first must not open the second.
+ */
+function disclosureKeys(card: HTMLElement): Map<HTMLDetailsElement, string> {
+  const seen = new Map<string, number>();
+  const keys = new Map<HTMLDetailsElement, string>();
+  for (const details of card.querySelectorAll<HTMLDetailsElement>("details")) {
+    const section = details.closest<HTMLElement>(".gw-section")?.dataset["section"] ?? "";
+    const base = `${section}/${details.querySelector("summary")?.textContent ?? ""}`;
+    const nth = (seen.get(base) ?? 0) + 1;
+    seen.set(base, nth);
+    keys.set(details, `${base}#${nth}`);
+  }
+  return keys;
+}
+
+function standing(container: HTMLElement, api10: string): Standing | null {
+  const card = container.querySelector<HTMLElement>(".gw-card");
+  if (!card || card.dataset["api10"] !== api10) return null;
+  // The one sign the figures are being re-asked for, since nothing is torn down to say so.
+  card.setAttribute("aria-busy", "true");
+  const open = new Set<string>();
+  for (const [details, key] of disclosureKeys(card)) if (details.open) open.add(key);
+  return {
+    scrollTop: card.querySelector<HTMLElement>(".gw-panel-body")?.scrollTop ?? 0,
+    open,
+  };
+}
+
+/**
+ * After the sections have drained, not at `land`: a disclosure inside a lazily loaded section
+ * does not exist yet when the card is swapped in, and a scroll offset restored over a body
+ * that is still filling clamps to the height it had at that moment.
+ */
+async function settled(
+  requests: Promise<unknown>[],
+  card: HTMLElement,
+  kept: Standing | null,
+): Promise<void> {
+  await Promise.all(requests);
+  if (!kept) return;
+  for (const [details, key] of disclosureKeys(card)) if (kept.open.has(key)) details.open = true;
+  const body = card.querySelector<HTMLElement>(".gw-panel-body");
+  if (body) body.scrollTop = kept.scrollTop;
 }
 
 /** The one served normalisation arm, named where the control and the request both read it. */
@@ -1467,10 +1539,6 @@ export const PENDING_ALLOCATION = "production_pending_allocation";
 /** The third production state: filed below the well, with nothing rolled up to it. */
 export const POOL_GRAIN = "production_reported_at_pool_grain";
 
-/**
- * The production slot for a well whose regulator reports at the lease. It is a state, not an
- * absence: the section is titled for what is pending and links to the rule that says so.
- */
 /** A rule the panel sends the reader to, named by its own id so the link says which. */
 export interface PendingRuleLink {
   href: string;
@@ -1537,6 +1605,10 @@ export function poolGrainPanel(warning: ApiWarning): HTMLElement {
   return frame;
 }
 
+/**
+ * The production slot for a well whose regulator reports at the lease. It is a state, not an
+ * absence: the section is titled for what is pending and links to the rule that says so.
+ */
 export function pendingProductionPanel(
   warning: ApiWarning,
   links: PendingRuleLink[] = [],
