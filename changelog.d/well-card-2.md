@@ -163,7 +163,16 @@
       and the response offered a resolvable chain for a figure it had not served
 - [Fix] a press of `Per 1,000 ft`, `Read at …` or `Widen to the whole record` re-lands
       the card without taking the reader's place: the card stays on screen instead of
-      flashing back to a loading placeholder, and the disclosures they opened and their
-      scroll position come back with it
+      flashing back to a loading placeholder, and the disclosures they opened, their
+      scroll position and their focus stay where they were
+- [Fix] a second window of a normalised or allocated series answered 500: the response
+      derivation's partition named the well, the basis and the vintage but not the window
+      or the stream set, so every window of one well shared a derivation id and the
+      lineage store's determinism guard refused the second for the life of the store;
+      two presses on the card reached it
+- [Fix] the card's error banner invents no problem type where the API named none: a
+      typeless failure read `Internal Server Error (about:blank)` and linked
+      `/v1/errors/about:blank`, a page that does not exist, instead of naming the status
+      and the request that failed
 - [Fix] the capture band's row names fit at every width, the vintage control uses the
       text-safe cyan, and the widening control no longer abuts the sentence it follows
