@@ -11,6 +11,7 @@ import pytest
 
 from glasswell.ingest import co_wells
 from glasswell.ingest.base import open_ingest_run
+from tests.integration.test_co_staging import blank_text_columns
 from tests.integration.test_co_staging import seeded as _seeded
 from tests.integration.test_co_staging import staged_gis as _staged_gis
 
@@ -184,6 +185,44 @@ def test_a_blank_left_in_staging_by_an_earlier_generation_promotes_as_absent(
     assert empty == 0
     assert absent > 0
     assert "cr_co_wells_shp_blank_is_absent_1" in cited
+
+
+# Every non-key text attribute the promotion stages. The two identity fields are left alone on
+# purpose: blanking them quarantines the row as key_incomplete before it can reach canonical,
+# and a sweep over rows that never arrived proves nothing.
+_BLANKABLE = (
+    "operator", "operat_num", "well_name", "well_num", "facil_id", "facil_stat",
+    "well_class", "loc_qual", "loc_id",
+)
+
+
+def test_no_text_column_of_the_spine_carries_an_empty_string_after_a_promotion(
+    staged_gis, seeded, lineage_env
+) -> None:
+    """gate-cofix L-4: the class claim, made true at the write path rather than at the selector.
+
+    The rule is registered per Colorado archive and the guard added with it lives in the
+    selector, so "no jurisdiction can reproduce this" held for the handle and not for the
+    column: nothing stopped a parser appending '' to canonical.wells. This is the standing
+    sweep. Every non-key attribute is planted blank in staging -- the shape the two
+    pre-rule generations really are in -- and no text column of the spine may hold an empty
+    string afterwards, whichever column a later jurisdiction files one in.
+    """
+    with seeded.cursor() as cursor:
+        cursor.execute(
+            "update staging.co_ecmc_wells set "
+            + ", ".join(f"{column} = ''" for column in _BLANKABLE)
+        )
+        planted = cursor.rowcount
+    seeded.commit()
+
+    with open_ingest_run(seeded, source_id=co_wells.SOURCE_ID, environment=lineage_env) as run:
+        report = co_wells.promote_headers(run)
+    seeded.commit()
+
+    assert planted > 0
+    assert report.wells_appended > 0
+    assert blank_text_columns(seeded, "canonical.wells") == {}
 
 
 def test_the_promotion_reads_no_mart_and_writes_no_staging(promoted) -> None:

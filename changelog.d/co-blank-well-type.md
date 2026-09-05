@@ -23,3 +23,6 @@
       `?geometry_provenance=` now answer the unfiltered population, and every text predicate
       addresses the value the response serves rather than the column beneath it (gate-cofix
       M-4)
+- [New] a standing post-promotion sweep: every non-key attribute is planted blank in staging
+      and no text column of canonical.wells may hold an empty string afterwards, so the
+      class claim holds at the write path and not only at the selector (gate-cofix L-4)
