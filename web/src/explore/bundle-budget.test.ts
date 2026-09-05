@@ -42,7 +42,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 const BUDGET_BYTES = {
   entryGzip: 14_000,
   entryCssGzip: 7_400,
-  explorerRouteGzip: 79_700,
+  explorerRouteGzip: 79_750,
   mapChunkGzip: 330_000,
 };
 

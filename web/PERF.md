@@ -145,7 +145,7 @@ rest on it.
 |---|---:|---|
 | entry chunk | 14,000 | +1.9% over 13,737 (v0.82 train head ca7dce7, re-walked; 13,026 at v0.80 P0, 13,950 at v0.78) |
 | **entry stylesheet** | **7,400** | the ratcheted value: 7,367 measured at the card group's last phase plus 33 B. Was 7,420 — the 6,520 measured on the v0.77 tree plus the 900 B ceiling the rail was allowed to spend |
-| explorer route, map excluded | 79,700 | +0.04% over 79,672 (v0.82 train head, re-walked: the card at 506c460 measured 79,645 and the register's layer-panel change adds 27 B; 28 B of headroom, the budget unraised — see REG-WC-1) |
+| explorer route, map excluded | 79,750 | +0.04% over 79,717 (v0.82 train head with the band fix; the budget was raised 79,700 → 79,750 by the owner on 2026-09-05 for round 10's 42 B, which removes a correctness dependency rather than adding a feature — REG-WC-1; the register's layer-panel change had spent 27 B) |
 | map chunk | 330,000 | +1.3% over 325,632 (v0.82 train head, re-walked; 313,823 at C11) |
 
 **The fourth budget, and why it is the only one carrying deliberate slack.** The other three
@@ -472,6 +472,7 @@ harness: the numbers are claims about production.
 | **status** | **1,561–1,647 ms** | 397–418 ms | 85–86 ms | **296,767** |
 | well_type | 490–497 ms | 256–257 ms | 45–46 ms | 12,778 |
 | completion_year | 557–573 ms | 317–319 ms | 47–49 ms | 12,778 |
+| 2026-09-05 | v0.82 train head + card round 10 (`8eb59ab`, the band aligns after layout) | 13,737 | 79,717 | 325,643 | +42 on the route for one coalesced rAF that removes the band's dependence on a later resize tick; the explorer-route budget raised 79,700 → 79,750 deliberately (owner, REG-WC-1) |
 
 Four of the five are answered index-only off `wells_facet_dimensions_idx` with **0 heap
 fetches**, which is what deduping per `(state_code, api10)` buys: the api10-only partition
