@@ -49,7 +49,12 @@ jobs:
           [ "$EVENT" = pull_request ] && range="${BASE}...HEAD"
           git diff --name-only "$range" > changed.txt
           match() { grep -qE "$1" changed.txt && echo true || echo false; }
-          db=$(match '^(src/|tests/(contract|integration|support|fixtures)/|requirements\.lock$|Makefile$|\.github/workflows/)')
+          # One list, one source: scripts/test-scope.py holds the paths that reach a database
+          # tier and emits the pattern. It had tests/conftest.py and this regex did not, so a
+          # harness-only pull request skipped all four shards and reported green.
+          # If the script fails the pattern is empty, which matches every line and runs the
+          # shards -- the same "any doubt runs it" direction as every other branch here.
+          db=$(match "$(python3 scripts/test-scope.py --db-filter)")
           # A release commit's only pyproject edit is the version string, and no test reads it.
           if [ "$db" = false ] && grep -qx 'pyproject.toml' changed.txt; then
             other=$(git diff "$range" -- pyproject.toml | grep -E '^[+-][^+-]' | grep -cvE '^[+-][[:space:]]*version[[:space:]]*=' || true)  # grep -c exits 1 on zero

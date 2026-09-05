@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import re
 import subprocess
 import sys
 from collections import defaultdict
@@ -32,6 +33,26 @@ ALWAYS = "tests/unit"
 # builds on, a dependency set, the harness itself. Each falls back to the whole suite.
 FULL_SUITE_PATHS = ("tests/conftest.py", "requirements.lock", "Makefile", "pyproject.toml")
 FULL_SUITE_PREFIXES = ("tests/support/", "tests/fixtures/", ".github/workflows/")
+# Where the database tiers themselves live. `pyproject.toml` is deliberately absent from the
+# derivation below: a release commit's only edit to it is the version string, and both this tool
+# and the workflow test that separately.
+DB_TIER_PREFIXES = ("src/", "tests/contract/", "tests/integration/")
+
+
+def db_filter_pattern() -> str:
+    """The ERE `ci.yml`'s `changes` job matches a diff against to decide whether to run the four
+    database shards.
+
+    Emitted here rather than written in the workflow so the gate and `make test` cannot disagree
+    about what reaches a database tier. `tests/conftest.py` was in this file's fallback list and
+    not in the workflow's regex, so a harness-only pull request skipped all four shards and
+    reported `CI complete` green.
+    """
+    alternatives = [re.escape(prefix) for prefix in (*DB_TIER_PREFIXES, *FULL_SUITE_PREFIXES)]
+    alternatives += [
+        f"{re.escape(path)}$" for path in FULL_SUITE_PATHS if path != "pyproject.toml"
+    ]
+    return "^(" + "|".join(alternatives) + ")"
 
 
 def changed_paths(base: str | None) -> list[str]:
@@ -179,7 +200,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--print", action="store_true", help="write the selection to stdout, one path per line"
     )
+    parser.add_argument(
+        "--db-filter",
+        action="store_true",
+        help="print the ERE ci.yml matches a diff against to decide whether to run the shards",
+    )
     arguments = parser.parse_args(argv)
+
+    if arguments.db_filter:
+        print(db_filter_pattern())
+        return 0
 
     paths = changed_paths(arguments.base)
     if not paths:
