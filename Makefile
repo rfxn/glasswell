@@ -17,7 +17,8 @@ ANVIL_ENV      := DOCKER_HOST=$(ANVIL_HOST) DOCKER_TLS_VERIFY=1 DOCKER_CERT_PATH
 # can find them without touching anything else on the host.
 TEST_LABEL ?= glasswell.test
 
-.PHONY: help venv install test test-anvil test-local test-unit test-integration test-e2e \
+.PHONY: help venv install test test-full test-scope test-anvil test-local test-unit \
+        test-integration test-e2e durations \
         dbtier-preflight serve-branch changelog changelog-page changelog-lint build-web \
         release release-check deploy ship \
         lint fmt clean prune-test-volumes check-workstation snapshot jurisdictions
@@ -25,13 +26,16 @@ TEST_LABEL ?= glasswell.test
 help:
 	@echo "venv              create $(VENV)"
 	@echo "install           install glasswell and dev dependencies (editable)"
-	@echo "test              full suite against whichever daemon is configured"
-	@echo "test-anvil        full suite on anvil — the default for a full run (DIR-14)"
-	@echo "test-local        full suite on this workstation's daemon"
+	@echo "test              the tests this diff can reach, four workers, selection printed"
+	@echo "test-scope        print the selection make test would run, and run nothing"
+	@echo "test-full         the whole suite, four workers — what the nightly runs serially"
+	@echo "test-anvil        whole suite on anvil — the default for a full run (DIR-14)"
+	@echo "test-local        whole suite on this workstation's daemon"
 	@echo "dbtier-preflight  check a remote daemon's path can carry the database tiers"
 	@echo "test-unit         pure-function tier, no docker required"
 	@echo "test-integration  ephemeral PostGIS tier"
 	@echo "test-e2e          browser path against \$$GLASSWELL_BASE_URL (needs a key)"
+	@echo "durations         refresh tests/.durations.json, which balances the CI shards"
 	@echo "prune-test-volumes  reclaim volumes a killed test session left behind"
 	@echo "check-workstation   flag glasswell persistent state on a workstation"
 	@echo "serve-branch      ephemeral PostGIS + seeds + uvicorn for a branch (GW_ROOT=...)"
@@ -55,19 +59,30 @@ install: venv
 	$(PY) -m pip install --upgrade pip
 	$(PY) -m pip install -e '.[dev]'
 
+# Selected, not whole: scripts/test-scope.py prints what it excluded and why, and falls back to
+# the whole suite whenever it cannot prove a change is narrow. CI never trusts the selection --
+# the PR gate runs all four shards -- so a false negative here costs a round trip, not a merge.
 test: prune-test-volumes
-	$(PY) -m pytest tests -q
+	@selection="$$($(PY) scripts/test-scope.py)"; \
+	  $(PY) -m pytest $$selection -q -ra -n 4 --dist loadfile
+
+test-scope:
+	@$(PY) scripts/test-scope.py --print
+
+# The explicit whole suite. Run it before pushing a release train; `make test` is for the loop.
+test-full: prune-test-volumes
+	$(PY) -m pytest tests -q -ra -n 4 --dist loadfile
 
 # The suite reaches a remote daemon through published ports rather than the bridge network;
 # tests/conftest.py:daemon_address is where that branch is taken. The preflight goes first
 # because a reachable daemon says nothing about whether the path can carry a bulk transfer.
 test-anvil: dbtier-preflight
-	@$(ANVIL_ENV) $(MAKE) --no-print-directory test
+	@$(ANVIL_ENV) $(MAKE) --no-print-directory test-full
 
 dbtier-preflight:
 	@$(ANVIL_ENV) $(PY) -m tests.support.dbtier_preflight
 
-test-local: test
+test-local: test-full
 
 check-workstation:
 	@scripts/workstation-hygiene.sh
@@ -77,6 +92,12 @@ test-unit:
 
 test-integration: prune-test-volumes
 	$(PY) -m pytest tests -q -m integration
+
+# pytest-split balances the four CI shards from this file; without it they split by count and
+# the slowest shard is the critical path. --store-durations is unsupported under xdist, so this
+# is serial and slow on purpose. The nightly measures the same thing on a runner.
+durations: prune-test-volumes
+	$(PY) -m pytest tests -q --store-durations --durations-path tests/.durations.json
 
 # DR-25/N-10: the session fixture removes its own volume, but a killed session cannot.
 # Two agents filled /home to 100% this way in one day, so the reclaim is not a manual step.

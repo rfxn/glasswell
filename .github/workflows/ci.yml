@@ -6,18 +6,102 @@ on:
   pull_request:
     branches: [main]
 
+# A PR ref supersedes itself: a fix push cancels the run it replaces. A push to main does not --
+# every tree that lands on main gets its own verdict.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+  actions: read
+
 jobs:
-  python:
-    name: Python — ruff and the full pytest suite (unit, integration, contract)
+  changes:
+    name: What changed
+    runs-on: ubuntu-latest
+    outputs:
+      db: ${{ steps.filter.outputs.db }}
+      web: ${{ steps.filter.outputs.web }}
+      shell: ${{ steps.filter.outputs.shell }}
+      collateral: ${{ steps.filter.outputs.collateral }}
+      covered: ${{ steps.covered.outputs.covered }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # Any uncertainty answers "run it": an unreachable base, a force push, a first push.
+      # The unit tier is not filtered at all -- it reads CHANGELOG.md, VERSION, infra/ and
+      # scripts/, so no diff is provably outside it, and it costs 43 s.
+      - name: Classify the diff
+        id: filter
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          run_all() { printf '%s=true\n' db web shell collateral >> "$GITHUB_OUTPUT"; exit 0; }
+          case "$BASE" in ''|0000000000000000000000000000000000000000) run_all ;; esac
+          git cat-file -e "${BASE}^{commit}" 2>/dev/null || run_all  # base pruned or rewritten
+          range="${BASE}..HEAD"
+          [ "$EVENT" = pull_request ] && range="${BASE}...HEAD"
+          git diff --name-only "$range" > changed.txt
+          match() { grep -qE "$1" changed.txt && echo true || echo false; }
+          db=$(match '^(src/|tests/(contract|integration|support|fixtures)/|requirements\.lock$|Makefile$|\.github/workflows/)')
+          # A release commit's only pyproject edit is the version string, and no test reads it.
+          if [ "$db" = false ] && grep -qx 'pyproject.toml' changed.txt; then
+            other=$(git diff "$range" -- pyproject.toml | grep -E '^[+-][^+-]' | grep -cvE '^[+-][[:space:]]*version[[:space:]]*=' || true)  # grep -c exits 1 on zero
+            [ "${other:-0}" -gt 0 ] && db=true
+          fi
+          {
+            printf 'db=%s\n'         "$db"
+            printf 'web=%s\n'        "$(match '^(web/|tests/e2e/|\.github/workflows/)')"
+            printf 'shell=%s\n'      "$(match '^(infra/|scripts/|.*\.sh$|\.github/workflows/)')"
+            printf 'collateral=%s\n' "$(match '^(assets/|changelog\.d/|docs/|blueprints/|scripts/(changelog-assemble|render-changelog)\.py$|.*\.md$|\.github/workflows/)')"
+          } >> "$GITHUB_OUTPUT"
+
+      # A merge commit whose tree equals a parent's tree IS that parent's tree. ci.yml is part
+      # of the tree, so a green run on that parent is a green run of this workflow on this
+      # content. Push events only: a pull_request merge ref has no such parent.
+      - name: Is this tree already green
+        id: covered
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          printf 'covered=false\n' >> "$GITHUB_OUTPUT"
+          [ "$EVENT" = push ] || exit 0
+          tree=$(git rev-parse 'HEAD^{tree}')
+          for parent in $(git rev-list --parents -n 1 HEAD | cut -d' ' -f2-); do
+            [ "$(git rev-parse "${parent}^{tree}")" = "$tree" ] || continue
+            green=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${parent}&status=success" --jq '.total_count' 2>/dev/null || echo 0)  # any API failure runs the gate
+            if [ "${green:-0}" -gt 0 ]; then
+              printf 'covered=true\n' >> "$GITHUB_OUTPUT"
+              printf '::notice::tree %s already green at %s\n' "${tree:0:12}" "${parent:0:12}"
+              exit 0
+            fi
+          done
+
+  python-lint:
+    name: Python — ruff, the tile allowlist and the unit tier
+    needs: changes
+    if: needs.changes.outputs.covered != 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0        # test_release_tooling's evidence probe skips on a shallow clone
 
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.lock
 
       - name: Install the recorded environment
         run: |
@@ -30,30 +114,124 @@ jobs:
         run: python -m ruff check .
 
       # DR-05: the tile allowlist the proxy enforces and the function list martin is configured
-      # to publish must be the same set. Property types come from each function's select list,
-      # so there is no second declaration to compare. This fails fast without a database.
-      # The file is named here, not a node id -- a node id is what went stale -- so this gate
-      # keeps a step of its own and cannot be lost in a tier's total. The seam track moved both
-      # fixtureless martin gates out of the integration tier, which was the point of the move,
-      # and the id did not follow, so the step exited 4 on "not found" rather than running
-      # anything. The file's own third test asserts that it collects under the unit tier.
+      # to publish must be the same set. It fails fast without a database, so it keeps a step of
+      # its own and cannot be lost in a tier's total.
       - name: martin config equals the tile allowlist
-        run: >
-          python -m pytest -q
-          tests/unit/test_martin_config.py
+        run: python -m pytest -q tests/unit/test_martin_config.py
 
-      # The integration and contract tiers start their own PostGIS container through the
-      # docker CLI, so no `services:` block applies here. The runner's daemon is local, so the
-      # harness reaches it on the bridge IP; a remote daemon (anvil, `make test-anvil`) gets a
-      # published port instead.
-      # GLASSWELL_REQUIRE_DOCKER turns a missing daemon into a failure, not a silent skip.
-      - name: pytest
-        env:
-          GLASSWELL_REQUIRE_DOCKER: "1"
-        run: python -m pytest tests -q
+      # Sharding's own failure mode is a file that falls into no shard and silently stops
+      # running. The union of the four groups must equal the whole DB collection.
+      - name: Shard parity — the union of the four groups is the suite
+        run: |
+          set -euo pipefail
+          total=$(python -m pytest tests/contract tests/integration -q --collect-only | grep -c '^tests/')
+          sum=0
+          for group in 1 2 3 4; do
+            n=$(python -m pytest tests/contract tests/integration -q --collect-only \
+                  --splits 4 --group "$group" --durations-path tests/.durations.json | grep -c '^tests/')
+            sum=$((sum + n))
+          done
+          printf 'shards collect %d of %d\n' "$sum" "$total"
+          [ "$sum" -eq "$total" ]
+
+      - name: Unit tier
+        run: python -m pytest tests/unit -q -ra
+
+  python-db:
+    name: Python — contract and integration, shard ${{ matrix.group }}/4
+    needs: changes
+    if: needs.changes.outputs.db == 'true' && needs.changes.outputs.covered != 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [1, 2, 3, 4]
+    env:
+      GLASSWELL_REQUIRE_DOCKER: "1"
+      PGSERVER: gw-ci-${{ github.run_id }}-${{ matrix.group }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.lock
+
+      - name: Install the recorded environment
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.lock
+          python -m pip install -e . --no-deps
+
+      # One server per job, started here rather than once per xdist worker: worker teardown is
+      # not guaranteed (measured: one container survived a -n 6 run), and a container the
+      # workflow starts is a container the workflow removes.
+      - name: Start the PostGIS server this job owns
+        run: |
+          set -euo pipefail
+          docker volume create --label glasswell.test=1 "${PGSERVER}-data"
+          docker run -d --name "$PGSERVER" --label glasswell.test=1 \
+            -v "${PGSERVER}-data:/var/lib/postgresql/data" \
+            -e POSTGRES_USER=glasswell -e POSTGRES_PASSWORD="$GITHUB_RUN_ID" -e POSTGRES_DB=postgres \
+            postgis/postgis:16-3.4 \
+            -c fsync=off -c synchronous_commit=off -c full_page_writes=off \
+            -c wal_level=minimal -c max_wal_senders=0 -c max_wal_size=2GB -c checkpoint_timeout=30min
+          ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$PGSERVER")
+          printf 'GLASSWELL_TEST_SERVER_DSN=postgresql://glasswell:%s@%s:5432/{database}?connect_timeout=5&keepalives=1&keepalives_idle=10&keepalives_interval=5&keepalives_count=3&tcp_user_timeout=30000\n' \
+            "$GITHUB_RUN_ID" "$ip" >> "$GITHUB_ENV"
+
+      # -ra so a skip is named rather than counted: two mechanisms are known-inert in CI and a
+      # third (test_martin_publishes without its image) would be a hole, not a skip.
+      - name: Contract and integration tiers
+        run: |
+          set -euo pipefail
+          python -m pytest tests/contract tests/integration -q -ra \
+            -n 4 --dist loadfile \
+            --splits 4 --group "${{ matrix.group }}" --durations-path tests/.durations.json
+
+      - name: Remove the server this job started
+        if: always()
+        run: |
+          docker rm -f "$PGSERVER" >/dev/null 2>&1 || true            # ephemeral runner; hygiene, not correctness
+          docker volume rm -f "${PGSERVER}-data" >/dev/null 2>&1 || true  # same
+
+  harness-hygiene:
+    name: Python — the harness owns its storage
+    needs: changes
+    if: needs.changes.outputs.db == 'true' && needs.changes.outputs.covered != 'true'
+    runs-on: ubuntu-latest
+    env:
+      GLASSWELL_REQUIRE_DOCKER: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.lock
+      - name: Install the recorded environment
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements.lock
+          python -m pip install -e . --no-deps
+      # DR-25/N-10 asserts on the container the fixture starts, so this one file runs the
+      # self-managed path the shards bypass -- GLASSWELL_TEST_SERVER_DSN is deliberately unset
+      # here. Six tests, one container, serial.
+      - name: Harness hygiene
+        run: python -m pytest tests/integration/test_harness_hygiene.py -q -ra
 
   web:
     name: Web — vitest, tsc and the production build
+    needs: changes
+    if: needs.changes.outputs.web == 'true' && needs.changes.outputs.covered != 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -83,6 +261,8 @@ jobs:
 
   e2e-guards:
     name: E2E — the browserless guard suite (tests/e2e/lib.test.mjs)
+    needs: changes
+    if: needs.changes.outputs.web == 'true' && needs.changes.outputs.covered != 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -101,6 +281,8 @@ jobs:
 
   shell:
     name: Shell — bash -n and shellcheck on everything that ships
+    needs: changes
+    if: needs.changes.outputs.shell == 'true' && needs.changes.outputs.covered != 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -121,6 +303,8 @@ jobs:
 
   collateral:
     name: Collateral checks
+    needs: changes
+    if: needs.changes.outputs.collateral == 'true' && needs.changes.outputs.covered != 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -226,6 +410,8 @@ jobs:
 
   map-chrome:
     name: UI chrome — map fold and Status geometry
+    needs: changes
+    if: needs.changes.outputs.web == 'true' && needs.changes.outputs.covered != 'true'
     runs-on: ubuntu-latest
     # Map rows come from the static registry and Status receives a mocked valid envelope, so
     # their geometry is a bundle property. This job needs no database, key, or deployed
@@ -275,3 +461,23 @@ jobs:
           node tests/e2e/chrome-fold.mjs
           node tests/e2e/status-surface.mjs
           node tests/e2e/hidden-display.mjs
+
+  # The one required status check. Every other job can be filtered out; this one always runs,
+  # so a filtered PR reports a verdict instead of waiting forever for a check that never
+  # arrives. Branch protection must be repointed to this context in the same change.
+  ci:
+    name: CI complete
+    if: always()
+    needs: [changes, python-lint, python-db, harness-hygiene, web, e2e-guards, shell, collateral, map-chrome]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every needed job succeeded or was skipped
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$RESULTS"
+          bad=$(printf '%s' "$RESULTS" \
+            | jq -r 'to_entries[] | select(.value.result != "success" and .value.result != "skipped") | "\(.key)=\(.value.result)"')
+          if [ -n "$bad" ]; then printf 'not green:\n%s\n' "$bad"; exit 1; fi
+          echo "all green"
