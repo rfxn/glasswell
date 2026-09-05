@@ -93,3 +93,68 @@
       system gesture left it at an arbitrary height with its snap transition off
 - [New] the rail names the well it carries, the lineage drawer offers the way back to it, and
       the Lineage index counts again when another section draws
+- [New] the production chart is a control surface: the legend toggles a stream off
+      plot, band and readout together and refuses to hide the last one, a log scale
+      names what it cannot place, and a drag across the band brushes a window that
+      rides `from`/`to` into the URL and is answered by the server on reload
+- [New] a running total over the months on screen, computed on the served decimal
+      strings rather than through a float, carrying no derivation handle at all and
+      saying so: it counts each stream's own reported, reported-zero and no-report
+      months and points at the ⌾ beside every point it summed
+- [New] `?normalization=per_lateral_ft` divides a well's monthly volumes by its own
+      lateral length as a served arm rather than in the browser, so the unit reads
+      `bbl/kft`, the basis names the divisor, the method and the liquids policy
+      together, and one chain resolves the production and the geometry it divided by
+- [New] the lateral floor the divisor refuses below is read from the
+      `cr_ff_fluid_intensity` family at request time and cited beside the length rule,
+      where it was a constant in the serving module
+- [New] the capture band: one row per stream whose window holds a month read at an
+      earlier capture, a key that says in words what the two marks mean, and one
+      control that re-reads the series at the earliest capture the window holds
+- [New] the chart as a data table, fetched on the press and by no reader who lands on
+      Explore, with one row per month and the unit, the null-semantics class and the
+      point's own derivation handle in every cell
+- [New] `links.type_curve` and a `type_curve_scope` block on every well record, so the
+      Peer control section renders on a served link rather than on a client guess, and
+      states the relation verbatim, the quantile convention, the ladder rung, the peer
+      count per month, the pad-group exclusion and the knowledge cutoff
+- [New] a Production by pool section, drawn with the monthly chart's own table rekeyed
+      per pool and expanded by default where the jurisdiction files below the well, so
+      a New Mexico card shows the record instead of an empty chart
+- [New] CSV and JSON export of the window on screen, one row per month per stream, each
+      carrying its unit, its class, its report vintage and its derivation handle, headed
+      by the basis of every stream and the URL that reproduces the view
+- [New] twelve glossary terms for the card's second generation: bottom hole, basin
+      boundary, producing month, normalised volume, running total, status history, peer
+      control, held-out subject, held out, log scale, derivation chain and scope label
+- [New] a vocabulary gate over the shipped string literals that fails on the reserves
+      and resource *nouns* rather than on the verb, holds `EUR` to an uppercase token
+      beside a volume unit, and asserts the quantile-convention negation is still served
+- [Change] the entry stylesheet budget ratchets 7,420 to 7,400 B gzip, which is the
+         7,367 B this group measured plus 33: the card's second generation added three
+         sections and the stylesheet fell, because the drawer's chrome moved onto the
+         drawer's own sheet
+- [Fix] a normalised series over a well whose months were promoted separately answered
+      500: the divided points are evidence rows on the response derivation now, so the
+      column carries one handle, every point's month names its own evidence, and the
+      registrar is never handed a series that carries point handles
+- [Fix] a month one promotion filed twice is addressed by the report vintage it was read
+      at, where the point's ⌾ answered `selector_ambiguous` on a served figure; a
+      restatement is a second row and never an edit, so the month alone never named it
+- [Fix] no ⌾ is drawn on a month the response served no figure for: a withheld or
+      unreported month resolved to nothing, and on a column with per-point handles it
+      borrowed the first month's and opened another month's chain
+- [Fix] `Per 1,000 ft`, `Read at …` and `Widen to the whole record` re-land the card
+      instead of writing the URL and waiting for a reload; a brush still redraws what
+      the card already holds, because those months need no request
+- [Fix] a log axis prints no label on the minor ticks uPlot leaves unlabelled, where it
+      printed the literal `null` eight times down both sides of a served chart
+- [Fix] the table's stylesheet ships with the table rather than with the chart: on a
+      pool-grain well the chart never loads, so both pool tables overflowed the card
+      with no way to scroll to the columns past its edge. The peer, pools and export
+      rules moved off the chart's sheet for the same reason
+- [Fix] the data table's pinned month column marks the edge it covers with a border
+      rather than a shadow, which Chromium paints on no cell of a collapsed-border
+      table: a half-covered `10100.000 mcf` read as `000 mcf` with nothing to say so
+- [Fix] the capture band's row names fit at every width, the vintage control uses the
+      text-safe cyan, and the widening control no longer abuts the sentence it follows
