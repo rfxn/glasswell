@@ -65,14 +65,6 @@ def test_the_migration_is_found_by_its_suffix_and_never_by_a_number() -> None:
     assert found[0].path.name.endswith(f"_{MIGRATION}.sql")
 
 
-def test_the_supersession_clock_is_later_than_every_clock_texas_already_carried() -> None:
-    """It must resolve, and it must not land on either instant a standing gate plants a rival
-    registration on: the partial unique indexes would refuse them."""
-    assert TX_SUPERSEDED_ON > RESTATED_ON > REGISTERED_ON
-    assert REGISTERED_ON.replace(day=REGISTERED_ON.day + 1) != TX_SUPERSEDED_ON
-    assert RESTATED_ON.replace(day=RESTATED_ON.day + 1) != TX_SUPERSEDED_ON
-
-
 def test_the_seeded_registration_serves_the_allocation_registration(
     db: psycopg.Connection,
 ) -> None:

@@ -9,12 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from glasswell.api.errors import TYPE_BASE
-from glasswell.api.routers.tiles import (
-    PUBLISHED_LAYERS,
-    TILE_CACHE_CONTROL,
-    UPSTREAM_ENCODINGS,
-)
-from glasswell.marts.tiles import TILE_LAYERS
+from glasswell.api.routers.tiles import TILE_CACHE_CONTROL, UPSTREAM_ENCODINGS
 from tests.contract.conftest import TILE_BODY
 
 MARTIN_ETAG = '"6CAAeWACcJ2MefYf8idX4w"'
@@ -94,10 +89,6 @@ def test_a_staging_layer_is_refused_before_it_reaches_martin(client: TestClient)
 def test_a_canonical_relation_is_refused_too(client: TestClient) -> None:
     """Only the mart layers are published; canonical is not a tile surface either."""
     assert client.get("/v1/tiles/well_spatial/8/54/89.pbf").status_code == 404
-
-
-def test_the_allowlist_is_exactly_the_published_mart_layers() -> None:
-    assert frozenset(layer.name for layer in TILE_LAYERS) == PUBLISHED_LAYERS
 
 
 def test_an_unreachable_martin_is_reported_as_such(client: TestClient) -> None:

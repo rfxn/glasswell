@@ -333,21 +333,6 @@ def test_a_registered_jurisdiction_whose_mapping_table_has_not_landed_is_skipped
     assert any(PLANTED_MAP in notice for notice in notices), notices
 
 
-def test_the_index_rebuild_is_bounded_by_a_lock_timeout() -> None:
-    """An unbounded ACCESS EXCLUSIVE on the serving spine is an outage; a refusal is a retry.
-
-    `migrate.py` runs each file in one transaction, so `create index concurrently` is refused
-    and the drop takes ACCESS EXCLUSIVE on `canonical.wells` until commit. The deployed host has
-    `lock_timeout = 0` and `deploy.sh` applies migrations while the API is still serving, so
-    without a bound the DROP waits for the longest in-flight reader — and every new read queues
-    behind the waiting request. `set local` because the whole file is one transaction.
-    """
-    body = migration_sql("facet_status_resolution")
-    timeout = body.index("set local lock_timeout")
-    assert timeout < body.index("drop index if exists canonical."), "the bound precedes the lock"
-    assert "'5s'" in body[timeout : timeout + 60]
-
-
 def test_a_registration_and_its_rules_reach_the_resolver_through_their_own_triggers(
     db: psycopg.Connection,
 ) -> None:

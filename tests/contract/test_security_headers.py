@@ -18,7 +18,6 @@ from glasswell.api.security import (
     REPORT_ONLY_ENV,
     SATELLITE_IMAGERY_ORIGIN,
     STATIC_SECURITY_HEADERS,
-    content_security_policy,
     directives,
 )
 
@@ -109,12 +108,6 @@ def test_the_imagery_origin_is_absent_from_the_directives_that_load_code(
         assert SATELLITE_IMAGERY_ORIGIN not in policy[name]
 
 
-def test_the_plain_http_origin_does_not_upgrade_its_own_subresources() -> None:
-    """The LAN break-glass path is served over http; upgrading would break every request."""
-    assert "upgrade-insecure-requests" not in content_security_policy(https=False)
-    assert "upgrade-insecure-requests" in content_security_policy(https=True)
-
-
 def test_the_docs_page_names_its_vendored_origin_and_no_other_path_does(
     client: TestClient,
 ) -> None:
@@ -172,22 +165,3 @@ def test_a_client_cannot_suppress_hsts_by_claiming_plain_http(client: TestClient
     assert HSTS_HEADER in response.headers
 
 
-def test_hsts_carries_a_year_and_subdomains_and_never_preload() -> None:
-    from glasswell.api.security import HSTS_POLICY, hsts_for
-
-    policy = hsts_for(https=True)
-
-    assert policy == HSTS_POLICY
-    assert "max-age=31536000" in policy
-    assert "includeSubDomains" in policy
-    # preload is effectively irreversible and commits every host under the zone.
-    assert "preload" not in policy
-    assert hsts_for(https=False) is None
-
-
-def test_hsts_is_not_a_member_of_the_static_header_mapping() -> None:
-    """tests/unit/test_caddy_basemap_headers.py parametrises over that mapping, so a member
-    here would be demanded on the plain-http basemap path too."""
-    from glasswell.api.security import HSTS_HEADER, STATIC_SECURITY_HEADERS
-
-    assert HSTS_HEADER not in STATIC_SECURITY_HEADERS

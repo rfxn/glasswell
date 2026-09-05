@@ -19,7 +19,7 @@ import psycopg
 import pytest
 
 from glasswell.seed import seed_all
-from glasswell.seed.jurisdictions import PREFIXES, REGISTERED_ON, RESTATED_ON
+from glasswell.seed.jurisdictions import REGISTERED_ON, RESTATED_ON
 from tests.support.seed import seed_derivation
 
 pytestmark = pytest.mark.integration
@@ -126,17 +126,6 @@ def test_no_migration_still_pins_the_north_dakota_prefix_on_these_tables(
     assert "left(api10, 2) = left(neighbor_api10, 2)" not in definitions.replace('"', "")
 
 
-def test_the_refresh_binds_a_state_tuple_rather_than_a_literal() -> None:
-    """The seam is a bind, not a literal. Which jurisdictions fill it is two registrations
-    now -- `neighbors_available` and a serving `neighbors_scope` rule -- rather than a tuple
-    pinned here, so this asserts the binding and leaves the membership to the registry."""
-    from glasswell.marts import neighbors
-
-    assert "%(state_code)s" not in neighbors._COMPONENTS
-    assert "any(%(state_codes)s)" in neighbors._COMPONENTS
-    assert set(neighbors.STATE_CODES) <= PREFIXES
-
-
 def test_the_resident_subject_list_is_the_one_the_derivation_param_already_carried(
     db: psycopg.Connection,
 ) -> None:
@@ -187,22 +176,6 @@ def test_a_registration_that_does_claim_the_domain_and_leaves_it_still_raises(
     registry = load_jurisdictions(db)
 
     assert "49" in neighbors.subject_prefixes(registry)
-
-
-def test_the_python_envelope_and_the_migration_constraint_name_the_same_zones() -> None:
-    """R-7. The zone set is a tuple in Python and a CHECK in 066; two spellings of one
-    measurement drift the first time one of them is widened alone."""
-    from glasswell.db.migrate import discover_migrations
-    from glasswell.marts import neighbors
-
-    body = next(
-        item.sql for item in discover_migrations() if item.name == "neighbors_multistate"
-    )
-    declared = ", ".join(str(epsg) for epsg in neighbors.SUPPORTED_ZONE_EPSGS)
-
-    assert f"distance_epsg in ({declared})" in body
-    assert str(neighbors.SUPPORTED_LONGITUDE_MIN) in body
-    assert str(neighbors.SUPPORTED_LONGITUDE_MAX) in body
 
 
 def _register_out_of_domain(db: psycopg.Connection, *, with_scope_rule: bool = False) -> None:

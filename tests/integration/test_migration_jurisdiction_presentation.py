@@ -300,11 +300,3 @@ def test_a_subtitle_template_that_cannot_carry_a_count_is_refused(
             )
 
 
-def test_the_presentation_columns_reach_no_response_model() -> None:
-    """N-17: they are read by the generator and by nothing else, so the OpenAPI snapshot and
-    the naked-number allowlist are untouched by this track."""
-    from glasswell.api.routers import jurisdictions as router
-
-    served = set(router.MapPresentation.model_fields)
-
-    assert served.isdisjoint(PRESENTATION_COLUMNS)

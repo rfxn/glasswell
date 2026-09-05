@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import json
 import math
-import subprocess
-import sys
 from decimal import Decimal
 from pathlib import Path
 
@@ -542,18 +540,6 @@ def test_a_whole_basin_tile_is_smaller_than_it_was_unthinned(canonical_nd, refre
     )
 
     assert len(bytes(thinned)) < len(bytes(unthinned))
-
-
-def test_the_module_runs_as_the_command_p7_documents():
-    completed = subprocess.run(
-        [sys.executable, "-m", "glasswell.marts.nd_wells", "--help"],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    assert "--dsn" in completed.stdout
-
-
 
 
 def _cells_at(connection: psycopg.Connection, relation: str, zoom: int) -> int:

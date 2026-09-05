@@ -10,11 +10,17 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 
 import polars as pl
 import pytest
 
-from glasswell.ingest.nm_ocd import PromotionPolicy, promotion_records, route_collisions
+from glasswell.ingest import nm_wells
+from glasswell.ingest.nm_ocd import (
+    PromotionPolicy,
+    promotion_records,
+    route_collisions,
+)
 from glasswell.lineage.models import ConformanceRule
 from glasswell.lineage.serialization import hash_payload
 from glasswell.seed.conformance_nm import EFFECTIVE_FROM, NM_RULES
@@ -242,3 +248,11 @@ def test_a_different_month_or_stream_is_a_different_key_and_not_a_collision() ->
 
     assert routing.kept.height == 4
     assert routing.collisions.is_empty()
+
+
+def test_no_state_code_literal_lives_in_the_module() -> None:
+    """R8: the 30 is in cr_nm_wellhistory_api10_1's spec, read from the registry."""
+    source = Path(nm_wells.__file__).read_text(encoding="utf-8")
+
+    assert "'30'" not in source
+    assert '"30"' not in source

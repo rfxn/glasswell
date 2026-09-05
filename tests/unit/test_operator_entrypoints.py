@@ -7,6 +7,8 @@ stayed empty because neither half of the load was reachable as a command.
 from __future__ import annotations
 
 import importlib
+import subprocess
+import sys
 import tomllib
 from pathlib import Path
 
@@ -39,3 +41,15 @@ def test_both_halves_of_the_boundary_load_are_reachable_as_a_command(
 ) -> None:
     assert declared_scripts().get(command) == f"{module_path}:main"
     assert callable(getattr(importlib.import_module(module_path), "main", None))
+
+
+def test_the_nd_wells_module_runs_as_the_command_p7_documents():
+    """P7 documents `python -m glasswell.marts.nd_wells --dsn ...`; a module that stopped being
+    runnable that way would leave the documented command with nothing behind it."""
+    completed = subprocess.run(
+        [sys.executable, "-m", "glasswell.marts.nd_wells", "--help"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert "--dsn" in completed.stdout

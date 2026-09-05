@@ -11,8 +11,11 @@ first, and says which of the two it was.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
+from glasswell.marts import wells
 from glasswell.marts.wells import (
     LENGTH_SCOPE,
     LENGTH_SOURCE,
@@ -164,3 +167,11 @@ def test_every_profile_names_a_registered_jurisdiction() -> None:
     from glasswell.seed.jurisdictions import CODES
 
     assert {profile.jurisdiction_code for profile in MART_PROFILES} <= CODES
+
+
+def test_a_fifth_state_is_a_profile_row_and_not_a_module() -> None:
+    """The claim the Colorado track exists to make: a fifth state adds a row to the engine."""
+    assert not (Path(wells.__file__).parent / "co_wells.py").exists()
+    profile = wells.profile_for("CO")
+    assert profile.dataset == "marts.co_tiles"
+    assert [layer.name for layer in profile.layers] == ["co_wells"]

@@ -9,6 +9,7 @@ import pytest
 
 from glasswell.lineage.envelope import (
     ENVELOPE_META_KEYS,
+    GRANULARITIES,
     InlinedExplain,
     attach_lineage,
     figure,
@@ -379,3 +380,14 @@ def test_meta_carries_labels_warnings_deprecations_and_freshness():
     assert envelope["meta"]["deprecations"] == [{"code": "field_renamed", "detail": "oil_bbl"}]
     assert envelope["meta"]["source_freshness"] == {"nd_mpr_xlsx": {"state": "current"}}
     assert envelope["meta"]["next_cursor"] == "cur_02"
+
+
+def test_the_granularity_vocabulary_is_s_b_s_composed_token_set():
+    """The wire half of M-5. That the store admits exactly these is
+    tests/integration/test_granularity_vocabulary.py, which needs the CHECK to read."""
+    assert set(GRANULARITIES) == {"well_observed", "lease_reported", "lease_allocated"}
+
+
+def test_a_granularity_outside_the_composition_is_still_refused():
+    with pytest.raises(ValueError, match="granularity must be one of"):
+        figure("1.0", unit="mcf", derivation="drv_x", granularity="observed")
