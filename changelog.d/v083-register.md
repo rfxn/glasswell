@@ -25,3 +25,7 @@
       own case: the declaration is still there, it has no executor, and dropping it leaves a
       load of implemented kinds. The parametrisation is derived from the seed and pinned to
       the registry, so a declaration at a new pair is covered without an edit
+- [New] `/v1/conformance/<id>` serves `evidence_tag` and `evidence_commit` beside the
+      rationale and the effective date, so a rule says which release first carried it rather
+      than leaving that in `lineage.conformance_rule_publications` alone; additive on the
+      detail only, and the freeze differ reads all six schema changes as additive
