@@ -274,7 +274,9 @@ document at `/var/lib/glasswell/runs/<job>.json` rewritten whole after every tra
 carrying the step, its unit, its exit, its untruncated summary line and a stamp per
 transition. Everything downstream polls that file — the runbooks, `scripts/deploy.sh`,
 one job waiting on another — because an ssh exit says what the client saw and the file
-says what the host did.
+says what the host did. A step is done when it wrote the evidence it writes on completion,
+not when it exited 0: a unit stopped by hand answers `Result=success` with status 0, and a
+chain that believed that would run the next step over work that never happened.
 
 ---
 

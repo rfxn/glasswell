@@ -9,6 +9,12 @@
 - [New] the step's summary reaches the status file whole: the first ad-hoc host runner cut
       it at 600 characters, which left the figures it reported unparseable, and nothing in
       the tracked runner cuts, heads or tails a machine-readable line
+- [New] a step is judged by the evidence it wrote, not by its exit status: every glasswell
+      ingest and mart entry point prints one JSON document when it commits, and a step that ends
+      without it — or without the line `--expect` names — is treated as not done and stops the
+      chain, whatever the exit says, with `steps[].judged_by` recording which reading answered.
+      Measured 2026-09-05: `systemctl stop` of a running promotion answers `Result=success` and
+      exit 0, and the ad-hoc runner ran the next step over a promotion that had not happened
 - [New] `--resume` continues a job whose status says `stopped` under the same job name, log
       and status file, numbering the new steps after the ones already recorded, and
       `--after-job` starts one job behind another by reading that job's status file rather

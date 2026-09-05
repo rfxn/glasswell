@@ -106,6 +106,13 @@ sudo /usr/local/sbin/host-runner.sh --status tx-stage
 line the stage printed and a stamp per transition; `/var/log/glasswell/tx-stage.log` carries the
 journal. `result` is `complete` or `stopped`, and `stopped` names the step it stopped at.
 
+**A step is done when it says so, not when it exits 0.** Every ingest and mart entry point
+prints one JSON document when it commits, and the runner requires that line before it calls a
+step done — `steps[].judged_by` says `summary` where it did and `exit` where a step was
+declared to be judged on its status alone. Measured 2026-09-05 20:00Z: a `systemctl stop` of a
+running promotion answered `Result=success` and exit 0, and the ad-hoc runner ran the next step
+over a promotion that had not happened.
+
 **Three properties the runner sets, and what each of them bounds.**
 
 - `--wait` inside the runner, never `--collect`. `--collect` unloads the unit the moment it
@@ -314,10 +321,11 @@ monthly run once the history is in.
 **Measured 2026-09-05.** The six-year batch 2011–2016 was OOM-killed at the unit's
 `MemoryMax=6G`: 6.0 G peak with 3.4 G of swap in use. The transaction rolled back cleanly and
 nothing half-promoted survived it. The batches that had landed under the same ceiling were
-**5.23 M**, **5.72 M** and **6.72 M** rows; the resume then ran 2011–13, 2014–16, 2017–19,
-2020–22, 2023–24 and 2025–26 without touching the ceiling. Peak memory is not a clean function
-of the row count — the shape of the year matters too — so the budget sits below the largest
-batch that landed rather than at it.
+**5.23 M**, **5.72 M** and **6.72 M** rows. The first resume ran 2011–13, 2014–16, 2017–19,
+2020–22, 2023–24 and 2025–26, and **2011–2013 reached the ceiling too** — so from 2011 on it is
+one calendar year per unit. Peak memory is not a clean function of the row count — the shape of
+the year matters too — so the budget sits below the largest batch that landed rather than at
+it, and the recent years get a unit each.
 
 So the rule is a row budget: **keep a batch under about 5 M rows at `MemoryMax=6G`**, and let
 the year count fall out of that. Recent years carry far more lease-months than 1993 does, so
@@ -354,6 +362,11 @@ sudo /usr/local/sbin/host-runner.sh --status tx-promote \
 - The summary names a rule id — `cr_tx_pdq_format_*`, a datum rule, the PGDATA headroom
   refusal: **stop.** The batch size is not the problem and re-running it with fewer years
   changes nothing. Route it; Step 1's refusal section is the shape of the answer.
+
+- `exit` is 0, `systemd_result` is `success` and `judged_by` is `summary`: the batch was
+  **stopped or killed before it finished**, whatever the status says — it never printed the
+  line it prints when it commits. Nothing was promoted; treat it exactly as an OOM-kill and
+  resume from that year.
 
 Relation growth is calibrated at roughly 0.68 GB per million canonical rows, and
 `max_wal_size = 4GB` peaks at about double during a promotion. Rows are

@@ -145,9 +145,11 @@ transaction and you start over.
 
 ```bash
 sudo /usr/local/sbin/host-runner.sh --job mt-production --detach -- \
-  production --timeout 7200 --memory 6G \
+  production --timeout 7200 --memory 6G --expect ': staged ' \
     /opt/glasswell/venv/bin/glasswell-mt-bogc --raw-root /data/raw
 
+# `--expect` because this step prints one plain line per grain and no JSON: the runner treats
+# a step that ends without its own evidence as not done, whatever the exit status says.
 # Poll the status file; the summary line below is what `steps[].summary` holds when it lands.
 sudo /usr/local/sbin/host-runner.sh --status mt-production
 ```

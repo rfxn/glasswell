@@ -49,6 +49,7 @@ STEP_KEYS = {
     "exit",
     "systemd_result",
     "memory_peak",
+    "judged_by",
     "summary",
 }
 
@@ -245,6 +246,7 @@ class TestStatusGrammar:
         assert steps[0]["unit"] == "demo-1-stage"
         assert steps[0]["exit"] == 0
         assert steps[0]["systemd_result"] == "success"
+        assert steps[0]["judged_by"] == "summary"
         assert steps[0]["summary"] == '{"staged_rows": 12}'
         assert steps[1]["summary"] == '{"appended": 3}'
         assert all(STAMP.match(step["started"]) for step in steps)
@@ -292,7 +294,10 @@ class TestSummaryIsNeverTruncated:
     def test_systemd_own_verdict_is_not_the_step_s_summary(self, harness: Harness) -> None:
         # Measured against real systemd 2026-09-05: `journalctl -u <unit> -o cat` ends with
         # "<unit>.service: Deactivated successfully.", which is what the summary reported.
-        harness.run("--job", "verdict", "--", "load", "/bin/echo", "staged 5230000 rows")
+        harness.run(
+            "--job", "verdict", "--", "load", "--expect", "staged ",
+            "/bin/echo", "staged 5230000 rows",
+        )
 
         status = harness.status("verdict")
         assert status["steps"][0]["summary"] == "staged 5230000 rows"
@@ -335,7 +340,7 @@ class TestTheChainStops:
             "--",
             "first",
             "/bin/echo",
-            "ok",
+            '{"promoted": 1}',
             "--",
             "second",
             "/bin/sh",
@@ -374,7 +379,7 @@ class TestTheChainStops:
             "--",
             "second",
             "/bin/echo",
-            "ran anyway",
+            '{"ran": true}',
         )
 
         assert result.returncode == 3
@@ -429,6 +434,131 @@ class TestTheChainStops:
 
         assert explicit.returncode == 5
         assert len(harness.status("explicit")["steps"]) == 1
+
+
+class TestAStepIsJudgedByWhatItWrote:
+    """The 2026-09-05 20:00Z incident: `systemctl stop` of a running promotion answered
+    `Result=success` and exit 0 to `systemd-run --wait`, and the ad-hoc runner ran the next
+    step over a promotion that had not happened."""
+
+    def test_a_step_that_exits_zero_without_its_summary_is_not_done(
+        self, harness: Harness
+    ) -> None:
+        result = harness.run(
+            "--job", "stopped-by-hand", "--",
+            "promote", "/bin/true",
+            "--", "marts", "/bin/echo", '{"rebuilt": 1}',
+        )
+
+        assert result.returncode == 1
+        status = harness.status("stopped-by-hand")
+        assert status["result"] == "stopped"
+        assert status["step"] == "promote"
+        assert status["steps"][0]["exit"] == 0
+        assert status["steps"][0]["systemd_result"] == "success"
+        assert status["steps"][0]["judged_by"] == "summary"
+        assert not any("stopped-by-hand-2-marts" in line for line in harness.launches())
+
+    def test_keep_going_does_not_carry_on_past_a_step_that_left_no_evidence(
+        self, harness: Harness
+    ) -> None:
+        result = harness.run(
+            "--job", "silent", "--keep-going", "--",
+            "promote", "/bin/true",
+            "--", "marts", "/bin/echo", '{"rebuilt": 1}',
+        )
+
+        assert result.returncode == 1
+        assert len(harness.status("silent")["steps"]) == 1
+
+    def test_keep_going_still_carries_on_past_a_step_that_failed_and_said_so(
+        self, harness: Harness
+    ) -> None:
+        # An exit status that is not zero has already answered; --keep-going is about that.
+        result = harness.run(
+            "--job", "loud", "--keep-going", "--",
+            "one", "/bin/sh", "-c", "echo broke; exit 3",
+            "--", "two", "/bin/echo", '{"ran": 1}',
+        )
+
+        assert result.returncode == 3
+        status = harness.status("loud")
+        assert len(status["steps"]) == 2
+        assert status["steps"][0]["judged_by"] == "exit"
+
+    def test_a_killed_step_stops_the_chain_even_under_keep_going(
+        self, harness: Harness
+    ) -> None:
+        result = harness.run(
+            "--job", "culled", "--keep-going", "--",
+            "one", "/bin/sh", "-c", "exit 137",
+            "--", "two", "/bin/echo", '{"ran": 1}',
+            STUB_FORCE_RESULT="oom-kill",
+        )
+
+        assert result.returncode == 137
+        assert len(harness.status("culled")["steps"]) == 1
+
+    def test_expect_names_the_evidence_a_step_that_prints_no_json_writes(
+        self, harness: Harness
+    ) -> None:
+        # glasswell-mt-bogc prints one plain line per grain after it commits, and no JSON.
+        result = harness.run(
+            "--job", "montana", "--",
+            "production", "--expect", ": staged ",
+            "/bin/echo", "MT_HistoricalWellProduction.tab: staged 5809608, months 488",
+        )
+
+        assert result.returncode == 0, result.stderr
+        status = harness.status("montana")
+        assert status["result"] == "complete"
+        assert status["steps"][0]["judged_by"] == "summary"
+
+    def test_the_summary_is_the_evidence_line_when_the_step_named_one(
+        self, harness: Harness
+    ) -> None:
+        # systemd's own "Deactivated successfully." follows the step's output in the journal,
+        # and on a step with no JSON to prefer it would otherwise be the last word.
+        harness.run(
+            "--job", "montana", "--",
+            "production", "--expect", ": staged ",
+            "/bin/sh", "-c",
+            "echo 'MT_HistoricalWellProduction.tab: staged 5809608';"
+            " echo 'MT_HistoricalPRUProduction.tab: staged 1603216'; echo done",
+        )
+
+        summary = harness.status("montana")["steps"][0]["summary"]
+        assert summary == "MT_HistoricalPRUProduction.tab: staged 1603216"
+
+    def test_a_step_whose_expected_line_never_came_is_not_done(self, harness: Harness) -> None:
+        result = harness.run(
+            "--job", "montana", "--",
+            "production", "--expect", ": staged ",
+            "/bin/echo", "MT_HistoricalWellProduction.tab: opened",
+        )
+
+        assert result.returncode == 1
+        assert harness.status("montana")["result"] == "stopped"
+
+    def test_judge_by_exit_is_allowed_and_recorded_as_the_weakening_it_is(
+        self, harness: Harness
+    ) -> None:
+        result = harness.run(
+            "--job", "quiet", "--", "housekeeping", "--judge-by-exit", "/bin/true"
+        )
+
+        assert result.returncode == 0, result.stderr
+        status = harness.status("quiet")
+        assert status["result"] == "complete"
+        assert status["steps"][0]["judged_by"] == "exit"
+
+    def test_a_json_array_counts_as_a_document(self, harness: Harness) -> None:
+        # glasswell-scheduler --run prints one JSON array of plan entries.
+        result = harness.run(
+            "--job", "planned", "--", "run", "/bin/echo", '[{"job_id": "ingest_nd_gis"}]'
+        )
+
+        assert result.returncode == 0, result.stderr
 
 
 class TestWrittenAfterEveryTransition:
@@ -527,7 +657,7 @@ class TestResume:
     def test_it_continues_a_stopped_job_where_it_stopped(self, harness: Harness) -> None:
         harness.run(
             "--job", "tx-step3", "--",
-            "batch-a", "/bin/echo", "staged 5230000",
+            "batch-a", "/bin/echo", '{"rows": 5230000}',
             "--", "batch-b", "/bin/sh", "-c", "echo Killed; exit 137",
             "--", "batch-c", "/bin/echo", "never",
         )
@@ -535,8 +665,8 @@ class TestResume:
 
         resumed = harness.run(
             "--job", "tx-step3", "--resume", "--",
-            "batch-b1", "/bin/echo", "appended 2600000",
-            "--", "batch-b2", "/bin/echo", "appended 2610000",
+            "batch-b1", "/bin/echo", '{"appended": 2600000}',
+            "--", "batch-b2", "/bin/echo", '{"appended": 2610000}',
         )
 
         assert resumed.returncode == 0, resumed.stderr
@@ -555,7 +685,9 @@ class TestResume:
     def test_the_log_and_the_stamps_are_appended_not_replaced(self, harness: Harness) -> None:
         harness.run("--job", "tx-step3", "--", "batch-a", "/bin/sh", "-c", "echo first; exit 9")
 
-        harness.run("--job", "tx-step3", "--resume", "--", "batch-b", "/bin/echo", "second")
+        harness.run(
+            "--job", "tx-step3", "--resume", "--", "batch-b", "/bin/echo", '{"second": 1}'
+        )
 
         log = harness.log("tx-step3")
         assert "first" in log
@@ -581,10 +713,10 @@ class TestResume:
 
 class TestAfterJob:
     def test_it_runs_once_the_job_it_follows_has_completed(self, harness: Harness) -> None:
-        harness.run("--job", "first", "--", "one", "/bin/echo", "done")
+        harness.run("--job", "first", "--", "one", "/bin/echo", '{"done": 1}')
 
         second = harness.run(
-            "--job", "second", "--after-job", "first", "--", "two", "/bin/echo", "ran"
+            "--job", "second", "--after-job", "first", "--", "two", "/bin/echo", '{"ran": 1}'
         )
 
         assert second.returncode == 0, second.stderr
@@ -617,7 +749,7 @@ class TestAfterJob:
 
         waiting = subprocess.Popen(
             [str(RUNNER), "--job", "second", "--after-job", "first", "--",
-             "two", "/bin/echo", "ran"],
+             "two", "/bin/echo", '{"ran": 1}'],
             env={**harness.env, "GLASSWELL_WAIT_INTERVAL": "1"},
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -725,8 +857,8 @@ class TestStepsFile:
         steps.write_text(
             "# the two halves\n"
             "\n"
-            "stage --memory 4G /bin/echo staged\n"
-            "promote /bin/echo promoted\n",
+            'stage --memory 4G /bin/echo {"staged":1}\n'
+            'promote /bin/echo {"promoted":1}\n',
             encoding="utf-8",
         )
 
@@ -888,13 +1020,28 @@ class TestDetach:
     def test_it_hands_the_job_to_a_transient_unit_and_prints_the_poll_command(
         self, harness: Harness
     ) -> None:
-        result = harness.run("--job", "backgrounded", "--detach", "--", "load", "/bin/echo", "hi")
+        result = harness.run(
+            "--job", "backgrounded", "--detach", "--", "load", "/bin/echo", '{"ok": 1}'
+        )
 
         assert result.returncode == 0, result.stderr
         assert "--status backgrounded" in result.stdout
         launched = harness.launches()
         assert any("--unit=backgrounded-runner" in line for line in launched)
         assert not any("--detach" in line for line in launched)
+
+    def test_the_detached_run_is_handed_the_configuration_this_one_resolved(
+        self, harness: Harness
+    ) -> None:
+        # systemd starts the unit with PID 1's environment, so a detached job would otherwise
+        # write its status somewhere other than where the launching command was told it does.
+        harness.run("--job", "carried", "--detach", "--", "load", "/bin/echo", '{"ok": 1}')
+
+        launch = harness.argv("carried-runner")
+        assert f"--setenv=GLASSWELL_RUNS_DIR={harness.runs}" in launch
+        assert f"--setenv=GLASSWELL_LOG_DIR={harness.logs}" in launch
+        assert any(a.startswith("--setenv=GLASSWELL_DSN=") for a in launch)
+        assert any(a.startswith("--setenv=GLASSWELL_RAW_ROOT=") for a in launch)
 
     def test_it_waits_for_the_status_file_before_handing_back_the_poll_command(
         self, harness: Harness
@@ -914,7 +1061,9 @@ class TestDetach:
         self, harness: Harness
     ) -> None:
         # A resume reuses the job name, and a corpse under that name would refuse it.
-        harness.run("--job", "backgrounded", "--detach", "--", "load", "/bin/echo", "hi")
+        harness.run(
+            "--job", "backgrounded", "--detach", "--", "load", "/bin/echo", '{"ok": 1}'
+        )
 
         systemctl = (harness.root / "systemctl.log").read_text(encoding="utf-8")
         assert "reset-failed backgrounded-runner" in systemctl

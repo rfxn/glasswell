@@ -47,7 +47,15 @@ options:
   --status <job>        print the job's status JSON and exit
   --record              write one transition into a job's status file (for scripted chains)
 
-step options, before the command: --unit, --memory, --timeout, --user, --group, --setenv.
+step options, before the command: --unit, --memory, --timeout, --user, --group, --setenv,
+  --expect <text>     the step is done only if its own output carries a line holding <text>;
+                      the default is a JSON document line, which every glasswell ingest and
+                      mart entry point prints when it completes
+  --judge-by-exit     judge this step by its exit status alone, recorded as such
+
+A step that exits 0 without writing its own evidence is treated as NOT done and stops the
+chain: `systemctl stop` of a running step answers `Result=success` and exit 0, and a chain
+that believed that would run the next step over a promotion that never happened.
 
 exit: 0 the chain completed, the failing step's status when it did not, 2 a usage refusal,
       3 a refusal to re-run a job that already has a status file, or to resume one that
@@ -168,14 +176,14 @@ stamp() { printf '%s %s\n' "$(now)" "$1" >> "$stamps_file"; }
 
 record_step() {
     local index=$1 name=$2 unit=$3 started_at=$4 ended_at=$5 exit_code=$6
-    local systemd_result=$7 memory_peak=$8 summary=$9
+    local systemd_result=$7 memory_peak=$8 judged_by=$9 summary=${10}
     # One write, because a record torn between two appends would be a line the status file
     # cannot be assembled from.
-    printf '{"index":%s,"step":%s,"unit":%s,"started":%s,"ended":%s,"exit":%s,"systemd_result":%s,"memory_peak":%s,"summary":%s}\n' \
+    printf '{"index":%s,"step":%s,"unit":%s,"started":%s,"ended":%s,"exit":%s,"systemd_result":%s,"memory_peak":%s,"judged_by":%s,"summary":%s}\n' \
         "$index" "$(json_string "$name")" "$(json_string "$unit")" \
         "$(json_string "$started_at")" "$(json_or_null "$ended_at")" "${exit_code:-null}" \
         "$(json_or_null "$systemd_result")" "$(json_or_null "$memory_peak")" \
-        "$(json_string "$summary")" >> "$steps_record"
+        "$(json_string "$judged_by")" "$(json_string "$summary")" >> "$steps_record"
 }
 
 # The last record per step index wins, so a step that started and then ended is one entry rather
@@ -290,7 +298,8 @@ if [[ $mode == record ]]; then
         line=$(last_record "$index")
         [[ -n $line ]] || return 0
         record_step "$index" "$(record_value "$line" step)" "$(record_value "$line" unit)" \
-            "$(record_value "$line" started)" "$(now)" "$exit_code" "$systemd_result" "" "$summary"
+            "$(record_value "$line" started)" "$(now)" "$exit_code" "$systemd_result" "" exit \
+            "$summary"
     }
 
     open_index=$(open_record_index)
@@ -302,7 +311,7 @@ if [[ $mode == record ]]; then
             if [[ -n $open_index && $open_index != "$record_index" ]]; then
                 close_record "$open_index" 0 success ""
             fi
-            record_step "$record_index" "$record_name" "$record_unit" "$(now)" "" "" "" "" ""
+            record_step "$record_index" "$record_name" "$record_unit" "$(now)" "" "" "" "" exit ""
             stamp "$record_name start"
             write_status running "$record_name" "$record_index" "$record_unit" null null
             ;;
@@ -374,6 +383,8 @@ step_user=()
 step_group=()
 step_setenv_offset=()
 step_setenv_count=()
+step_expect=()
+step_judge=()
 step_command_offset=()
 step_command_count=()
 setenv_flat=()
@@ -381,13 +392,15 @@ command_flat=()
 steps_total=$index_offset
 
 parse_steps() {
-    local name unit memory timeout user group
+    local name unit memory timeout user group expect judge
     local -a step_env command_argv
     while [[ $# -gt 0 ]]; do
         name=$1
         shift
         [[ $name =~ $NAME_PATTERN ]] || fail_usage "step name '$name' is not a name"
         unit=""
+        expect=""
+        judge=summary
         memory=$default_memory
         timeout=$default_timeout
         user=$default_user
@@ -395,7 +408,7 @@ parse_steps() {
         step_env=(${global_setenv[@]+"${global_setenv[@]}"})
         while [[ $# -gt 0 ]]; do
             case "$1" in
-                --unit|--memory|--timeout|--user|--group|--setenv)
+                --unit|--memory|--timeout|--user|--group|--setenv|--expect)
                     [[ $# -ge 2 ]] || fail_usage "$1 needs a value"
                     ;;
             esac
@@ -406,6 +419,8 @@ parse_steps() {
                 --user) user=$2; shift 2 ;;
                 --group) group=$2; shift 2 ;;
                 --setenv) step_env+=("$2"); shift 2 ;;
+                --expect) expect=$2; shift 2 ;;
+                --judge-by-exit) judge="exit"; shift ;;
                 *) break ;;
             esac
         done
@@ -424,6 +439,8 @@ parse_steps() {
         step_timeout[steps_total]=$timeout
         step_user[steps_total]=$user
         step_group[steps_total]=$group
+        step_expect[steps_total]=$expect
+        step_judge[steps_total]=$judge
         step_setenv_offset[steps_total]=${#setenv_flat[@]}
         step_setenv_count[steps_total]=${#step_env[@]}
         setenv_flat+=(${step_env[@]+"${step_env[@]}"})
@@ -463,8 +480,19 @@ if (( detach )); then
         [[ $argument == --detach ]] && continue
         detach_argv+=("$argument")
     done
+    # The transient unit is started by systemd, so it inherits PID 1's environment and not
+    # this shell's: without these the detached run would resolve different paths from the
+    # foreground one it is meant to be identical to.
     systemd-run --unit="$job-runner" --collect --description="glasswell job $job" \
-        --property=TimeoutStartSec=infinity "$self_path" ${detach_argv[@]+"${detach_argv[@]}"}
+        --property=TimeoutStartSec=infinity \
+        "--setenv=GLASSWELL_RUNS_DIR=$RUNS_DIR" \
+        "--setenv=GLASSWELL_LOG_DIR=$LOG_DIR" \
+        "--setenv=GLASSWELL_CODE_ENV_FILE=$CODE_ENV_FILE" \
+        "--setenv=GLASSWELL_DSN=$SOCKET_DSN" \
+        "--setenv=GLASSWELL_RAW_ROOT=$RAW_ROOT" \
+        "--setenv=GLASSWELL_PGDATA=$PGDATA_DIR" \
+        "--setenv=GLASSWELL_WAIT_INTERVAL=$WAIT_INTERVAL" \
+        "$self_path" ${detach_argv[@]+"${detach_argv[@]}"}
     launch_status=$?
     if (( launch_status != 0 )); then
         printf 'host-runner.sh: could not launch %s-runner\n' "$job" >&2
@@ -510,14 +538,23 @@ host_pressure() {
 # The step's own last machine-readable line, whole. Truncating it is what made the first host
 # instance's figures unparseable, so nothing here cuts, heads or tails a line.
 step_summary() {
-    local text line last_json="" last_line=""
-    text=$(printf '%s\n' "$1" | LC_ALL=C tr -d '\000-\010\013\014\016-\037\177')
+    local text=$1 expect=$2 line last_expect="" last_json="" last_line=""
+    text=$(printf '%s\n' "$text" | LC_ALL=C tr -d '\000-\010\013\014\016-\037\177')
     while IFS= read -r line; do
         [[ -n $line ]] || continue
         last_line=$line
-        case "$line" in \{*) last_json=$line ;; esac
+        case "$line" in \{*|\[*) last_json=$line ;; esac
+        if [[ -n $expect && $line == *"$expect"* ]]; then last_expect=$line; fi
     done <<< "$text"
-    if [[ -n $last_json ]]; then printf '%s' "$last_json"; else printf '%s' "$last_line"; fi
+    # The evidence line when the step named one, its own document when it printed one, and
+    # otherwise whatever was said last -- which after a `systemctl stop` is systemd saying so.
+    if [[ -n $last_expect ]]; then
+        printf '%s' "$last_expect"
+    elif [[ -n $last_json ]]; then
+        printf '%s' "$last_json"
+    else
+        printf '%s' "$last_line"
+    fi
 }
 
 # The job this one follows is read from its status file, never from a unit's Result: a
@@ -541,10 +578,25 @@ wait_for_job() {
     printf '== job %s completed at %s\n' "$after_job" "$finished_at"
 }
 
+# The step's own completion evidence: the line every glasswell ingest and mart entry point
+# prints when it commits, or the text a step was declared to end with.
+step_evidence() {
+    local text=$1 expect=$2 line
+    while IFS= read -r line; do
+        if [[ -n $expect ]]; then
+            [[ $line == *"$expect"* ]] && { printf 'found'; return 0; }
+        else
+            [[ $line == \{* || $line == \[* ]] && { printf 'found'; return 0; }
+        fi
+    done <<< "$text"
+    printf 'absent'
+}
+
 run_step() {
     local index=$1
     local name=${step_names[index]} unit=${step_units[index]}
     local started_at ended_at exit_status systemd_result exec_status memory_peak journal payload summary
+    local judged_by evidence
     local -a command_argv properties step_env=()
     command_argv=("${command_flat[@]:${step_command_offset[index]}:${step_command_count[index]}}")
     if (( step_setenv_count[index] > 0 )); then
@@ -568,7 +620,7 @@ run_step() {
     started_at=$(now)
     printf '== %s unit=%s start=%s %s\n' "$name" "$unit" "$started_at" "$(host_pressure)"
     stamp "$name start"
-    record_step "$index" "$name" "$unit" "$started_at" "" "" "" "" ""
+    record_step "$index" "$name" "$unit" "$started_at" "" "" "" "" "${step_judge[index]}" ""
     write_status running "$name" "$index" "$unit" null null
 
     # A failed unit from an earlier run stays loaded, and its name would refuse this one.
@@ -586,18 +638,42 @@ run_step() {
     # (measured against real systemd, 2026-09-05). `_SYSTEMD_UNIT` is the step's alone.
     payload=$(journalctl _SYSTEMD_UNIT="$unit.service" --no-pager -o cat)
     [[ -n $payload ]] || payload=$journal
-    summary=$(step_summary "$payload")
+    summary=$(step_summary "$payload" "${step_expect[index]}")
 
     printf -- '-- journal %s --\n%s\n-- end journal %s --\n' "$unit" "$journal" "$unit"
     printf '== %s unit=%s end=%s rc=%s Result=%s ExecMainStatus=%s MemoryPeak=%s\n' \
         "$name" "$unit" "$ended_at" "$exit_status" "$systemd_result" "$exec_status" "$memory_peak"
     stamp "$name end rc=$exit_status Result=$systemd_result ExecMainStatus=$exec_status MemoryPeak=$memory_peak"
-    record_step "$index" "$name" "$unit" "$started_at" "$ended_at" "$exit_status" \
-        "$systemd_result" "$memory_peak" "$summary"
 
+    # An exit status that is not zero has already answered, and the answer is no. Only a step
+    # that looks done is judged on what it wrote, because that is the case a `systemctl stop`
+    # and a silent kill both produce: Result=success, exit 0, and nothing promoted.
+    judged_by="exit"
     if (( exit_status != 0 )) || [[ $systemd_result != success || $exec_status != 0 ]]; then
-        printf 'STOP at %s (%s): rc=%s Result=%s ExecMainStatus=%s — the unit is left loaded for inspection\n' \
-            "$name" "$unit" "$exit_status" "$systemd_result" "$exec_status"
+        step_failed=1
+    elif [[ ${step_judge[index]} == exit ]]; then
+        step_failed=0
+    else
+        judged_by="summary"
+        evidence=$(step_evidence "$payload" "${step_expect[index]}")
+        if [[ $evidence == found ]]; then step_failed=0; else step_failed=1; fi
+    fi
+
+    case "$systemd_result" in
+        killed|oom-kill|timeout|abort|watchdog|start-limit-hit) step_hard_stop=1 ;;
+    esac
+    if (( step_failed )) && [[ $judged_by == summary ]]; then step_hard_stop=1; fi
+
+    record_step "$index" "$name" "$unit" "$started_at" "$ended_at" "$exit_status" \
+        "$systemd_result" "$memory_peak" "$judged_by" "$summary"
+
+    if (( step_failed )); then
+        printf 'STOP at %s (%s): rc=%s Result=%s ExecMainStatus=%s judged_by=%s — the unit is left loaded for inspection\n' \
+            "$name" "$unit" "$exit_status" "$systemd_result" "$exec_status" "$judged_by"
+        if [[ $judged_by == summary ]]; then
+            printf '%s ended without the evidence it writes when it finishes (%s). A unit stopped by hand answers Result=success and exit 0, so the step is judged not done and the chain does not continue over it.\n' \
+                "$name" "${step_expect[index]:-a JSON document line}"
+        fi
         if (( exit_status == 0 )); then exit_status=1; fi
         return "$exit_status"
     fi
@@ -617,7 +693,10 @@ printf '== job %s start=%s steps=%s code=%s\n' "$job" "$started" "$steps_total" 
 
 failed_index=0
 failed_exit=0
+step_failed=0
+step_hard_stop=0
 for (( step_position = index_offset + 1; step_position <= steps_total; step_position++ )); do
+    step_hard_stop=0
     run_step "$step_position"
     step_status=$?
     if (( step_status != 0 )); then
@@ -625,7 +704,9 @@ for (( step_position = index_offset + 1; step_position <= steps_total; step_posi
             failed_index=$step_position
             failed_exit=$step_status
         fi
-        if (( stop_on_fail )); then break; fi
+        # --keep-going carries on past a step that failed and said so. A step that was
+        # stopped, killed or left no evidence said nothing, so nothing is carried on past it.
+        if (( stop_on_fail )) || (( step_hard_stop )); then break; fi
     fi
 done
 
