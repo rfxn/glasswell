@@ -747,10 +747,12 @@ def get_well_production(
         first = next(iter(points.values()))
         # A month one promotion filed twice is two rows under one derivation id, so `pm` alone
         # under-specifies it and the point's ⌾ answered 422 on a served figure (visual M5).
+        # `held` and `points` read different tables and nothing makes them disjoint, so a
+        # held month can also be refiled — and a month served no figure takes no handle.
         refiled = {
             month
             for month, row in points.items()
-            if (row["derivation_id"], name, month) in restated
+            if (row["derivation_id"], name, month) in restated and month not in held
         }
         spans = len(derivations) > 1
         drawn = [None if month in held else _volume(points.get(month)) for month in months]

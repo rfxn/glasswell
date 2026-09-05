@@ -12,6 +12,7 @@ from decimal import Decimal
 import psycopg
 import pytest
 from fastapi.testclient import TestClient
+from psycopg.types.json import Jsonb
 
 from glasswell.api.examples import EXAMPLE_API10
 from glasswell.lineage.capture import derive, lineage_session
@@ -265,3 +266,106 @@ def test_a_month_filed_twice_names_the_vintage_it_was_read_at(client: TestClient
 
     assert f"rv={data['series']['oil_bbl_report_vintage'][at]}" in handle
     assert client.get("/v1/explain", params={"h": handle, "depth": "1"}).status_code == 200
+
+
+HELD_AND_REFILED_API10 = "3305310477"
+HELD_MONTH = date(2026, 2, 1)
+DRAWN_MONTH = date(2026, 1, 1)
+COLLISION_RULE = "cr_nd_api_identity_1"
+
+
+@pytest.fixture
+def held_and_refiled(client: TestClient, db: psycopg.Connection) -> str:
+    """One month that is both filed twice and still colliding — the two sets are not disjoint.
+
+    `refiled` is read from `canonical.production_monthly` and `held` from
+    `lineage.quarantine_rows`; nothing joins them, so a month can be in both.
+    """
+    seed_well(db, api10=HELD_AND_REFILED_API10, well_name="ND STATE 9-4H")
+    manifest = seed_manifest(db, sha256="e1" * 32, source_key="2026_02.xlsx")
+    derivation = _promote_month(db, HELD_MONTH, manifest)
+    _insert_production(
+        db,
+        api10=HELD_AND_REFILED_API10,
+        production_month=DRAWN_MONTH,
+        stream="oil",
+        volume=Decimal("900"),
+        manifest_id=manifest,
+        derivation_id=derivation,
+    )
+    for vintage, volume in ((date(2026, 7, 1), Decimal("2500")), (REPORT_VINTAGE, Decimal("2750"))):
+        _insert_production(
+            db,
+            api10=HELD_AND_REFILED_API10,
+            production_month=HELD_MONTH,
+            stream="oil",
+            volume=volume,
+            manifest_id=manifest,
+            derivation_id=derivation,
+            report_vintage=vintage,
+        )
+    with db.cursor() as cursor:
+        cursor.execute(
+            "insert into lineage.quarantine_rows (quarantine_id, row_fingerprint, source_id,"
+            " staging_table, stage, reason_code, rule_id, row_payload, first_seen_at,"
+            " first_seen_manifest_id, last_seen_at, last_seen_manifest_id)"
+            " values ('qtn_held_refiled', 'fp_held_refiled', 'nd_mpr_xlsx', 'staging.nd_mpr_oil',"
+            " 'conform', 'key_collision', %s, %s, now(), %s, now(), %s)",
+            (
+                COLLISION_RULE,
+                Jsonb(
+                    {
+                        "api10": HELD_AND_REFILED_API10,
+                        "pool": "DUPEROW",
+                        "stream_canonical": "oil",
+                        "production_month": HELD_MONTH.isoformat(),
+                        "volume": "3585.000",
+                        "unit": "bbl",
+                    }
+                ),
+                manifest,
+                manifest,
+            ),
+        )
+    db.commit()
+    return HELD_AND_REFILED_API10
+
+
+def _held_index(data: dict) -> int:
+    return data["series"]["pm"].index(f"{HELD_MONTH:%Y-%m}")
+
+
+@pytest.mark.contract
+def test_a_withheld_month_that_was_also_filed_twice_is_served_no_handle(
+    client: TestClient, held_and_refiled: str
+) -> None:
+    """R8 read backwards: papers for a number the response did not serve.
+
+    `point_handles` guards on `held`; `point_overrides` is the same decision on the other
+    arm and has to make it the same way, or `_lineage` offers a chain for a null point to
+    every consumer that is not the browser.
+    """
+    data = client.get(f"/v1/wells/{held_and_refiled}/production", params={"stream": "oil"}).json()[
+        "data"
+    ]
+    index = _held_index(data)
+
+    assert data["series"]["oil_bbl"][index] is None
+    assert data["series"]["oil_bbl_null_semantics"][index] == "multi_pool_pending"
+    assert f"series.oil_bbl.{index}" not in data["_lineage"]
+
+
+@pytest.mark.contract
+def test_the_column_handle_still_stands_when_the_only_refiled_month_is_held(
+    client: TestClient, held_and_refiled: str
+) -> None:
+    """Dropping the override must not drop the column: the drawn month still explains."""
+    data = client.get(f"/v1/wells/{held_and_refiled}/production", params={"stream": "oil"}).json()[
+        "data"
+    ]
+    handle = data["_lineage"]["series.oil_bbl"]
+    at = data["series"]["pm"].index(f"{DRAWN_MONTH:%Y-%m}")
+
+    assert data["series"]["oil_bbl"][at] is not None
+    point = f"{handle}&pm={DRAWN_MONTH:%Y-%m}"
+    assert client.get("/v1/explain", params={"h": point, "depth": "1"}).status_code == 200
