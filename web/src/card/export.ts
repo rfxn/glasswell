@@ -12,6 +12,8 @@
  * screen; putting it in a file beside a handle column would give it provenance it does not
  * have, which is the same ruling the chart applies by refusing it a ring.
  */
+import { handleAt } from "../chart/series.ts";
+
 import type { Envelope } from "../api/envelope.ts";
 import type { ChartSeries } from "../chart/series.ts";
 
@@ -40,6 +42,11 @@ export function toCsv(chart: ChartSeries, context: ExportContext): string {
     comment(`api10=${context.api10}`),
     comment(`grain=${context.grain}`),
     comment(`normalization=${context.normalization ?? "none"}`),
+    // The policy rides wherever the number does (R8): one line per stream the wire gave a
+    // basis, which is the liquids policy and, under normalisation, the divisor beside it.
+    ...chart.columns
+      .filter((column) => column.basis)
+      .map((column) => comment(`basis ${column.stream}=${column.basis}`)),
     comment(`as_of_resolved=${context.asOfResolved ?? "latest"}`),
     comment(`reproduce=${context.url}`),
     comment(
@@ -59,7 +66,7 @@ export function toCsv(chart: ChartSeries, context: ExportContext): string {
           column.unit,
           column.nullSemantics[index] ?? "",
           column.vintages[index] ?? "",
-          column.handles[index] ?? column.handle ?? "",
+          handleAt(column, index, month) ?? "",
         ]
           .map((cell) => escape(String(cell)))
           .join(","),

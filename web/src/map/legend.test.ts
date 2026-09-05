@@ -179,7 +179,7 @@ describe("the legend", () => {
     expect(rowFor(legend.element, "active")!.querySelector("input")).toBe(box);
   });
 
-  it("shows an em dash, never a zero, for a count it does not have", () => {
+  it("shows the absent mark, never a zero, for a count it does not have", () => {
     const legend = createLegend({ onFilter: () => {} });
     legend.setCounts({}, 12);
     expect(rowFor(legend.element, "dry")!.querySelector(".gw-lg-count")?.textContent).toBe(ABSENT_MARK);
@@ -591,7 +591,7 @@ describe("counts that are being fetched", () => {
 });
 
 describe("counts that could not be had", () => {
-  it("shows an em dash and says so, so absence is not read as a count of none", () => {
+  it("shows the absent mark and says so, so absence is not read as a count of none", () => {
     const legend = createLegend({ onFilter: () => {} });
     legend.setCounts({ active: 20_643 }, 12);
     legend.setUnavailable(12);
@@ -846,7 +846,7 @@ describe("the map-extent filter node (M1-2)", () => {
     expect(nodeHandle(legend.element).dataset["handle"]).toBe(TOTAL.handle);
   });
 
-  it("shows an em dash, never a zero, when the answer carried no total", () => {
+  it("shows the absent mark, never a zero, when the answer carried no total", () => {
     const legend = createLegend({ onFilter: () => {} });
     legend.setCounts({ active: 3 }, 12);
     expect(nodeCount(legend.element)).toBe(ABSENT_MARK);

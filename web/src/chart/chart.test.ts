@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // uPlot draws to a 2d context happy-dom does not provide. The frame around the plot is the
@@ -257,6 +258,63 @@ describe("report vintage, one layer down", () => {
     const details = host.querySelector("details.gw-vintages");
     expect(details?.textContent).toContain("2026-08-20");
     expect(details?.textContent).not.toContain("2026-07-01");
+  });
+
+  it("keys the capture band on the page, in words, once", () => {
+    // The band's vocabulary lived in titles only, and a title is mouse-only. The key says what
+    // the two marks mean beside the band, the way the state key and the allocation key do.
+    renderChart(host, mixed(), callbacks);
+    const key = host.querySelector(".gw-restate-key");
+
+    expect(key?.textContent).toContain("latest capture");
+    expect(key?.textContent).toContain("earlier capture");
+    expect(host.querySelectorAll(".gw-restate-key")).toHaveLength(1);
+  });
+
+  it("names the row in a word that fits, and keeps the word capture for the key", () => {
+    renderChart(host, mixed(), callbacks);
+    const name = host.querySelector(".gw-restate-row .gw-state-name");
+
+    expect(name?.textContent).toBe("Oil · read");
+  });
+
+  it("offers the earlier read once, under the band, not once per stream", () => {
+    const pm = months("2026-01", 4);
+    const data = production(pm);
+    const threeStreams = toChartSeries({
+      ...data,
+      streams: ["oil", "gas", "water"],
+      series: {
+        ...data.series,
+        oil_bbl_report_vintage: pm.map((_, index) => (index === 0 ? "2026-07-01" : "2026-08-20")),
+        gas_mcf_report_vintage: pm.map((_, index) => (index === 0 ? "2026-07-01" : "2026-08-20")),
+        water_bbl: pm.map(() => "10"),
+        water_bbl_report_vintage: pm.map((_, index) => (index === 0 ? "2026-07-01" : "2026-08-20")),
+        water_bbl_null_semantics: pm.map(() => "reported"),
+      },
+      _lineage: {
+        ...data._lineage,
+        ...Object.fromEntries(pm.map((_, index) => [`series.water_bbl.${index}`, `drv_w${index}`])),
+      },
+      _units: { ...data._units, "series.water_bbl": "bbl" },
+    });
+    const vintage = vi.fn();
+    renderChart(host, threeStreams, { ...callbacks, onVintage: vintage });
+
+    expect(host.querySelectorAll(".gw-restate-row")).toHaveLength(3);
+    const reads = host.querySelectorAll<HTMLButtonElement>(".gw-vintage-read");
+    expect(reads).toHaveLength(1);
+    expect(reads[0]?.closest(".gw-restate-row")).toBeNull();
+    reads[0]?.click();
+    expect(vintage).toHaveBeenCalledWith("2026-07-01");
+  });
+
+  it("paints the default capture mark at a contrast a reader can see, in the stylesheet", () => {
+    // 31 of 32 cells on the ND well are this mark, and it painted at 1.56:1 in dark.
+    const css = readFileSync("src/chart/chart.css", "utf8");
+    const latest = css.match(/\.gw-restate-latest\s*\{[^}]*\}/)?.[0] ?? "";
+    expect(latest).not.toContain("--panel");
+    expect(latest).toMatch(/--(slate|ink|cyan|amber)/);
   });
 
   it("says nothing at all where the series carried no vintage", () => {
@@ -678,12 +736,67 @@ describe("brushing a range, and the total that follows it", () => {
     expect(row.textContent).toContain("each point's ⌾ is beside it");
   });
 
+  it("sums normalised points on the decimal string, never through a float", () => {
+    // Three three-decimal points whose float sum is 99.45100000000001: the total is a figure
+    // on the page and has to read like one.
+    const raw = ["7.462", "10.113", "81.876"];
+    const normalised: ProductionData = {
+      ...production(months("2025-01", 3)),
+      streams: ["oil"],
+      series: {
+        pm: months("2025-01", 3),
+        oil_bbl: raw,
+        oil_bbl_report_vintage: raw.map(() => "2026-08-01"),
+        oil_bbl_null_semantics: raw.map(() => "reported"),
+      },
+      _lineage: Object.fromEntries(raw.map((_, index) => [`series.oil_bbl.${index}`, `drv_oil${index}`])),
+      _units: { "series.oil_bbl": "bbl/kft" },
+    };
+    renderChart(host, toChartSeries(normalised), callbacks);
+    drag(0, 2);
+
+    const total = host.querySelector(".gw-running-value")?.textContent ?? "";
+    expect(total).toBe("Oil 99.451 bbl/kft");
+  });
+
+  it("draws no capture band for a window that holds no earlier capture", () => {
+    // Brushing the restated month out of the window left three rows of "latest capture" and
+    // no control: a band drawn to say nothing.
+    const pm = months("2026-01", 4);
+    const data = production(pm);
+    const mixed = toChartSeries({
+      ...data,
+      series: {
+        ...data.series,
+        oil_bbl_report_vintage: pm.map((_, index) => (index === 0 ? "2026-07-01" : "2026-08-20")),
+      },
+    });
+    renderChart(host, mixed, { ...callbacks, onVintage: vi.fn() });
+    expect(host.querySelector(".gw-restate-row")).not.toBeNull();
+    drag(1, 3);
+
+    expect(host.querySelector(".gw-restate-row")).toBeNull();
+    expect(host.querySelector(".gw-restate-key")).toBeNull();
+    expect(host.querySelector(".gw-vintage-read")).toBeNull();
+  });
+
   it("counts the classes of the months it summed, not the ones it did not", () => {
     // The first month of the fixture reads zero, so a brush that includes it says so.
     drag(0, 2);
     const total = host.querySelector(".gw-running-total")?.textContent ?? "";
 
     expect(total).toContain("1 reported zero");
+  });
+
+  it("counts each stream's own classes, under each stream's own total", () => {
+    // The sentence took `columns[0].nullSemantics` and sat under an Oil and a Gas total: the
+    // fixture's first month reads zero for oil and reported for gas, so one of the two totals
+    // was described by the other's arrays (H-28).
+    drag(0, 2);
+    const scope = host.querySelector(".gw-running-scope")?.textContent ?? "";
+
+    expect(scope).toContain("Oil 2 reported, 1 reported zero, 0 no report");
+    expect(scope).toContain("Gas 3 reported, 0 reported zero, 0 no report");
   });
 });
 
@@ -710,17 +823,31 @@ describe("the per-lateral-foot control", () => {
     expect(host.querySelector(".gw-normalize-toggle")?.getAttribute("aria-pressed")).toBe("true");
   });
 
-  it("states the reason where no divisor is served rather than offering a dead control", () => {
+  it("states the reason on the page where no divisor is served, and keeps the control reachable", () => {
+    // A reason that lives in a title on a disabled button is mouse-only: a disabled button is
+    // out of the tab order, so a keyboard reader never gets the sentence. The control stays
+    // focusable and says it is unavailable, and the reason is text beside it with the rule
+    // that decided it linked.
     renderChart(
       host,
       sparse,
       callbacks,
-      control({ available: false, reason: "cr_mt_paths_length_scope_1 withholds it" }),
+      control({
+        available: false,
+        reason: "cr_mt_paths_length_scope_1 withholds it",
+        rule: "/v1/conformance/cr_mt_paths_length_scope_1",
+      }),
     );
     const toggle = host.querySelector<HTMLButtonElement>(".gw-normalize-toggle");
 
-    expect(toggle?.disabled).toBe(true);
-    expect(toggle?.title).toContain("cr_mt_paths_length_scope_1");
+    expect(toggle?.disabled).toBe(false);
+    expect(toggle?.getAttribute("aria-disabled")).toBe("true");
+    expect(toggle?.tabIndex).toBeGreaterThanOrEqual(0);
+    const reason = host.querySelector(".gw-normalize-reason");
+    expect(reason?.textContent).toContain("cr_mt_paths_length_scope_1 withholds it");
+    expect(reason?.querySelector("a")?.getAttribute("href")).toBe(
+      "/v1/conformance/cr_mt_paths_length_scope_1",
+    );
     toggle?.click();
     expect(changed).not.toHaveBeenCalled();
   });
@@ -804,6 +931,9 @@ describe("the table alternative", () => {
   // Fetched on the press: the chart chunk rides the explorer route, and a table nobody opened
   // is not something every Explore reader should download.
   const press = async (): Promise<void> => {
+    // Warmed first: the press imports the module, and a cold transform under a loaded
+    // machine outlasts the ticks below, which made this a race rather than a test.
+    await import("../card/table.ts");
     const before = host.querySelector(".gw-table-toggle")?.getAttribute("aria-pressed");
     host.querySelector<HTMLButtonElement>(".gw-table-toggle")?.click();
     for (let tick = 0; tick < 20; tick += 1) {
@@ -843,5 +973,59 @@ describe("the table alternative", () => {
     await press();
 
     expect(host.querySelectorAll(".gw-series-table tbody tr").length).toBe(60);
+  });
+});
+
+describe("the selection label, in the stylesheet", () => {
+  const css = readFileSync("src/chart/chart.css", "utf8");
+  // Every block whose selector list names it, joined: a class styled by two rules is read as
+  // the cascade reads it, not as its first block alone.
+  const rule = (selector: string): string =>
+    [...css.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/([^{}]+)\{([^}]*)\}/g)]
+      .filter((match) => (match[1] ?? "").split(",").some((each) => each.trim() === selector))
+      .map((match) => match[2])
+      .join("");
+
+  it("uses the text-safe cyan, so the light theme clears 4.5:1 the day it is reachable", () => {
+    const selected = rule(".gw-window-selected");
+    expect(selected).toContain("var(--cyan-text)");
+    expect(selected).not.toMatch(/var\(--cyan\)/);
+  });
+
+  it("paints the vintage control in the same text-safe cyan, for the same reason", () => {
+    // `--cyan` at 11.52 px measured 3.25:1 in the light theme on the one control the capture
+    // band offers (visual N9) -- the token N4 was about, on a control landed after it.
+    const read = rule(".gw-vintage-read");
+    expect(read).toContain("var(--cyan-text)");
+    expect(read).not.toMatch(/var\(--cyan\)[^-]/);
+  });
+
+  it("keeps the widening control off the end of the sentence it follows", () => {
+    // The control is a child of `.gw-window-note`, whose left edge measured 0.0 px from the
+    // end of the text: the bar read `6 moWiden to the whole record` (visual N11).
+    expect(rule(".gw-window-widen")).toMatch(/margin-left:\s*var\(--gw-space-2\)/);
+  });
+});
+
+describe("a reloaded brushed link on the card", () => {
+  // R-20: on reload the server answers the brushed window, so the client holds only those
+  // months and the bar's "All" would describe the window rather than the record. It says
+  // which it is describing and carries the way back to the record.
+  it("says it is showing all of the months it was handed, and offers the whole record", () => {
+    const widened = vi.fn();
+    renderChart(host, sparse, callbacks, { span: "served", onWiden: widened });
+
+    expect(host.querySelector(".gw-window-note")?.textContent).toContain("All of the months shown");
+    expect(host.querySelector(".gw-window-note")?.textContent).not.toContain("on record");
+    const widen = host.querySelector<HTMLButtonElement>(".gw-window-widen");
+    expect(widen?.textContent).toBe("Widen to the whole record");
+    widen?.click();
+    expect(widened).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers no widening where nothing narrowed the request", () => {
+    renderChart(host, sparse, callbacks);
+    expect(host.querySelector(".gw-window-widen")).toBeNull();
+    expect(host.querySelector(".gw-window-note")?.textContent).toContain("on record");
   });
 });

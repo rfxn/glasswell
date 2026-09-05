@@ -32,6 +32,7 @@ from glasswell.api.responses import (
     iso,
     month_label,
 )
+from glasswell.api.routers.completions import FRACFOCUS_SOURCE_ID, INTENSITY_FAMILY
 from glasswell.api.routers.wells import (
     API10_PATTERN,
     LENGTH_SCOPE,
@@ -39,7 +40,12 @@ from glasswell.api.routers.wells import (
     pending_allocation,
 )
 from glasswell.lengths import LengthRuleUnregistered, resolve_length_method
-from glasswell.lineage.conformance import allocated_series_rule, lease_reporting_rule
+from glasswell.lineage.conformance import (
+    allocated_series_rule,
+    lease_reporting_rule,
+    load_rules,
+    rule_for_family,
+)
 from glasswell.lineage.envelope import series
 from glasswell.lineage.ids import format_handle
 from glasswell.lineage.jurisdictions import JurisdictionRegistry
@@ -493,6 +499,9 @@ def _state_code(connection, api10: str) -> str | None:
         " ND publishes one workbook a month, so a month is promoted by its own derivation:"
         " `_lineage` keys a handle per point (`series.oil_bbl.0`) whenever the points of a"
         " column disagree, and each handle explains to the file that carries that month."
+        " It keys per point for the same reason where one promotion filed a month more than"
+        " once: a restatement is a second row and never an edit, so that point's handle also"
+        " names the report vintage (`&rv=`) it was read at."
         " In North Dakota these are well-level regulator reports, so `granularity` is"
         " `well_observed` — nothing here is allocated. A series never silently mixes"
         " vintages: `as_of` selects the greatest report vintage at or before the date and"
@@ -780,6 +789,8 @@ def get_well_production(
         )
     )
     columns: list[str] = []
+    point_outputs: dict[str, dict[str, Any]] = {}
+    restated = _restated_points(connection, api10)
     for name in STREAM_COLUMNS:
         if name not in requested:
             continue
@@ -788,6 +799,7 @@ def get_well_production(
             continue
         column = STREAM_COLUMNS[name]
         columns.append(column)
+        policy = stream_basis(name, state_code, registry=registry)
         derivations = {row["derivation_id"] for row in points.values()}
         if len(derivations) > 1:
             warnings.append(
@@ -795,7 +807,13 @@ def get_well_production(
                     "code": "series_spans_derivations",
                     "detail": (
                         f"{len(derivations)} derivations contributed to this column;"
-                        " _lineage carries one handle per point"
+                        + (
+                            " _lineage carries one handle per point"
+                            if divisor is None
+                            else " the normalised column is one response derivation citing"
+                            " every one of them, so _lineage carries that handle and each"
+                            " point's month names its own evidence row"
+                        )
                     ),
                     "pointer": f"/series/{column}",
                 }
@@ -803,31 +821,72 @@ def get_well_production(
         held = {month: row for (month, stream), row in pending.items() if stream == name}
         warnings.extend(_pending_warning(held, column))
         first = next(iter(points.values()))
+        # A month one promotion filed twice is two rows under one derivation id, so `pm` alone
+        # under-specifies it and the point's ⌾ answered 422 on a served figure (visual M5).
+        refiled = {
+            month
+            for month, row in points.items()
+            if (row["derivation_id"], name, month) in restated
+        }
         spans = len(derivations) > 1
         drawn = [None if month in held else _volume(points.get(month)) for month in months]
+        unit = first["unit"] if divisor is None else f"{first['unit']}/kft"
         if divisor is not None:
             drawn = [_normalise(value, divisor) for value in drawn]
+            # A response series may not carry per-point handles (provenance.py refuses them),
+            # so the divided points are evidence rows on the response derivation instead: the
+            # chart addresses a point as `<column handle>&pm=<month>`, and that selector has
+            # to name an output somebody recorded. Each row names the promotion it divided.
+            for month, value in zip(months, drawn, strict=True):
+                if value is None:
+                    continue
+                point_outputs[f"api10={api10}&col={column}&pm={month_label(month)}"] = {
+                    "value": value,
+                    "unit": unit,
+                    "derivation": points[month]["derivation_id"],
+                }
         payload[column] = series(
             drawn,
-            unit=first["unit"] if divisor is None else f"{first['unit']}/kft",
+            unit=unit,
             derivation=first["derivation_id"],
             selector=f"api10={api10}&col={column}",
             granularity=first["granularity"],
+            # The divisor joins the basis rather than replacing it: a per-foot oil figure still
+            # has to say oil means oil plus condensate, and a per-foot figure whose length
+            # method is not on the wire is a number a reader cannot reproduce.
             basis=(
-                stream_basis(name, state_code, registry=registry)
+                policy
                 if divisor is None
-                # The divisor is the basis: a per-foot figure whose length method is not on the
-                # wire is a number a reader cannot reproduce.
-                else f"per lateral foot · {divisor.feet} ft · {divisor.method}"
+                else " · ".join(
+                    part
+                    for part in (policy, f"per lateral foot · {divisor.feet} ft · {divisor.method}")
+                    if part
+                )
             ),
             point_handles=(
                 [
                     None
                     if month in held
-                    else _point_handle(api10, column, month, points.get(month))
+                    else _point_handle(
+                        api10, column, month, points.get(month), restated=month in refiled
+                    )
                     for month in months
                 ]
-                if spans
+                if spans and divisor is None
+                else None
+            ),
+            # One derivation covers the column, so its handle stands and only the refiled
+            # months need the longer selector. Overriding the whole column would hand the
+            # legend's own ⌾ one month's chain.
+            point_overrides=(
+                {
+                    index: str(
+                        _point_handle(api10, column, month, points[month], restated=True)
+                    )
+                    for index, month in enumerate(months)
+                    if month in refiled
+                }
+                if refiled and not spans and divisor is None
                 else None
             ),
         )
@@ -902,7 +961,8 @@ def get_well_production(
                 {row["derivation_id"] for row in observed} | set(divisor.derivations)
             ),
             correlation_id=request.state.request_id,
-            rule_ids=[divisor.rule_id],
+            rule_ids=[divisor.rule_id, divisor.floor_rule_id],
+            point_outputs=point_outputs,
         )
         links["length_rule"] = f"/v1/conformance/{divisor.rule_id}"
     return enveloped(
@@ -919,9 +979,6 @@ def get_well_production(
 
 
 PER_LATERAL_FT = "per_lateral_ft"
-# The floor cr_ff_fluid_intensity_1 registers for the same division, reused rather than
-# re-decided: below it the divisor is not a lateral, it is a stub of one.
-MIN_LATERAL_FT = Decimal("1000")
 
 # The basin the compute CRS is chosen by, from the well's current row.
 _WELL_BASIN = """
@@ -943,6 +1000,7 @@ class LateralDivisor(BaseModel):
     feet: Decimal
     derivations: tuple[str, ...]
     rule_id: str
+    floor_rule_id: str
     method: str
     compute_crs: str
 
@@ -950,6 +1008,23 @@ class LateralDivisor(BaseModel):
 def _refuse_normalisation(detail: str) -> ProblemError:
     """One refusal shape: the reason and, where one exists, the rule that decided it."""
     return ProblemError("validation_failed", detail=detail)
+
+
+def _lateral_floor(connection: psycopg.Connection) -> tuple[Decimal, str]:
+    """R8: the floor is a row. cr_ff_fluid_intensity registers it for the same division and
+    completions reads it at request time; this reads the same row rather than restating it."""
+    try:
+        rule = rule_for_family(
+            load_rules(connection, source_id=FRACFOCUS_SOURCE_ID, stage="conform"),
+            INTENSITY_FAMILY,
+        )
+    except LookupError:
+        raise _refuse_normalisation(
+            f"no rule in family {INTENSITY_FAMILY} is registered, so the lateral floor this"
+            " division needs is undefined and no normalised figure is served: a registry gap,"
+            " not a fact about the well"
+        ) from None
+    return Decimal(str(rule.spec["min_lateral_ft"])), rule.rule_id
 
 
 def _lateral_divisor(
@@ -995,16 +1070,18 @@ def _lateral_divisor(
     feet = metres_to_feet(
         sum((Decimal(str(row["length_m"])) for row in laterals), Decimal(0))
     ).quantize(Decimal("0.01"))
-    if feet < MIN_LATERAL_FT:
+    floor, floor_rule = _lateral_floor(connection)
+    if feet < floor:
         raise _refuse_normalisation(
-            f"the lateral measures {feet} ft, below the {MIN_LATERAL_FT} ft floor"
-            " cr_ff_fluid_intensity_1 registers for this division: below it the divisor is a"
-            " stub rather than a lateral"
+            f"the lateral measures {feet} ft, below the {floor} ft floor {floor_rule}"
+            " registers for this division: below it the divisor is a stub rather than a"
+            " lateral"
         )
     return LateralDivisor(
         feet=feet,
         derivations=tuple(sorted({str(row["derivation_id"]) for row in laterals})),
         rule_id=method.rule_id,
+        floor_rule_id=floor_rule,
         method=method.method,
         compute_crs=method.compute_crs,
     )
@@ -1972,11 +2049,43 @@ def _volume(row: dict[str, Any] | None) -> str | None:
     return None if row is None else str(row["volume"])
 
 
-def _point_handle(api10: str, column: str, month: date, row: dict[str, Any] | None) -> str | None:
-    """D3: the point's own promotion, addressed by the month it reports (SB-07 §9.3)."""
+def _point_handle(
+    api10: str,
+    column: str,
+    month: date,
+    row: dict[str, Any] | None,
+    *,
+    restated: bool = False,
+) -> str | None:
+    """D3: the point's own promotion, addressed by the month it reports (SB-07 §9.3).
+
+    `restated` adds the report vintage, which is the rest of the row's key where one promotion
+    filed the month more than once: without it the selector identifies two rows and refuses.
+    """
     if row is None:
         return None
-    return format_handle(row["derivation_id"], f"api10={api10}&col={column}&pm={month:%Y-%m}")
+    selector = f"api10={api10}&col={column}&pm={month:%Y-%m}"
+    if restated:
+        selector += f"&rv={row['report_vintage']:%Y-%m-%d}"
+    return format_handle(row["derivation_id"], selector)
+
+
+_RESTATED_POINTS = """
+select derivation_id, stream, production_month
+  from canonical.production_monthly
+ where entity_type = 'well' and api10 = %(api10)s and entity_key = %(api10)s
+ group by derivation_id, stream, production_month
+having count(*) > 1
+"""
+
+
+def _restated_points(
+    connection: psycopg.Connection, api10: str
+) -> set[tuple[str, str, date]]:
+    """Every (promotion, stream, month) a selector of `api10&col&pm` would answer twice."""
+    with connection.cursor() as cursor:
+        cursor.execute(_RESTATED_POINTS, {"api10": api10})
+        return {(row[0], row[1], row[2]) for row in cursor.fetchall()}
 
 
 def _freshness(connection: psycopg.Connection, source_ids: list[str]) -> dict[str, Any]:

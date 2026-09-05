@@ -80,7 +80,7 @@ export async function renderLineageDrawer(
       return;
     }
     const body = panelBody(summary(chain), nodeList(chain));
-    if (chain.truncated) {
+    if (chain.truncated && depth < FULL_DEPTH) {
       // The marker is on the chain and the way past it is beside the marker: a reader told a
       // chain stopped short and left there has been shown a limit rather than a lineage.
       const deeper = document.createElement("button");

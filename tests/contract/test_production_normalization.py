@@ -61,6 +61,16 @@ def test_the_basis_names_the_divisor_and_the_method_it_was_measured_by(
     assert any(method in basis for method in ("geodesic", "projected"))
 
 
+def test_the_liquids_policy_survives_normalisation(client: TestClient) -> None:
+    """State the policy wherever the number appears: a per-foot oil figure still has to say
+    that oil means oil plus condensate, beside the divisor it now also carries."""
+    plain = client.get(PATH).json()["data"]["_basis"]["series.oil_bbl"]
+    basis = served(client)["data"]["_basis"]["series.oil_bbl"]
+
+    assert plain in basis
+    assert "per lateral foot" in basis
+
+
 def test_the_handle_changes_with_the_number_and_resolves_both_inputs(
     client: TestClient,
 ) -> None:
@@ -80,6 +90,27 @@ def test_the_handle_changes_with_the_number_and_resolves_both_inputs(
     # The production it divided, and the geometry it divided by.
     assert "canonical.production_monthly" in datasets
     assert "canonical.well_spatial" in datasets
+    # The chart addresses a point by appending its month to the column's handle, so every
+    # drawn month has to be evidence the response derivation recorded, not only the column.
+    month = body["data"]["series"]["pm"][
+        next(index for index, value in enumerate(body["data"]["series"]["oil_bbl"]) if value)
+    ]
+    point = client.get("/v1/explain", params={"h": f"{handle}&pm={month}", "depth": "1"})
+    assert point.status_code == 200, point.text
+
+
+def test_a_withheld_month_is_served_as_an_absence_and_not_as_a_figure(
+    client: TestClient,
+) -> None:
+    """The other half of R8's second rule: the normalised arm records an evidence row per
+    divided point, so a month with no volume has none — and a ⌾ drawn on it would answer
+    `selector_ambiguous` for a figure that was never served (visual M5)."""
+    body = served(client)["data"]
+    at = body["series"]["water_bbl_null_semantics"].index("withheld")
+
+    assert body["series"]["water_bbl"][at] is None
+    handle = f"{body['_lineage']['series.water_bbl']}&pm={body['series']['pm'][at]}"
+    assert client.get("/v1/explain", params={"h": handle, "depth": "1"}).status_code == 422
 
 
 def test_the_rule_that_measured_the_length_is_linked(client: TestClient) -> None:
@@ -98,6 +129,39 @@ def test_a_jurisdiction_that_withholds_the_length_is_refused_by_name(
     assert answer.status_code == 422
     detail = answer.json()["detail"]
     assert "cr_" in detail or "no lateral geometry" in detail
+
+
+def test_the_lateral_floor_is_the_rule_s_and_moves_when_the_rule_does(
+    client: TestClient, db: psycopg.Connection
+) -> None:
+    """R8: cr_ff_fluid_intensity registers the floor as data and completions reads it at
+    request time; the divisor has to read the same row, or a superseded floor leaves the
+    refusal describing a registry that no longer says that. The registry is append-only, so
+    the floor moves the only way it can: a successor rule."""
+    with db.cursor() as cursor:
+        cursor.execute(
+            "insert into lineage.conformance_rule_publications"
+            " (rule_id, published_vintage, evidence_tag, evidence_commit)"
+            " values ('cr_ff_fluid_intensity_2', current_date, 'contract-fixture', %s)",
+            ("a" * 40,),
+        )
+        cursor.execute(
+            "insert into lineage.conformance_rules (rule_id, rule_family, supersedes_rule_id,"
+            " source_id, stage, applies_to_fields, rule_kind, spec, rule, rationale,"
+            " evidence_url, effective_from, published_vintage)"
+            " select 'cr_ff_fluid_intensity_2', rule_family, rule_id, source_id, stage,"
+            " applies_to_fields, rule_kind, jsonb_set(spec, '{min_lateral_ft}', '20000'),"
+            " rule, rationale, evidence_url, current_date, current_date"
+            " from lineage.conformance_rules where rule_id = 'cr_ff_fluid_intensity_1'"
+        )
+    db.commit()
+
+    response = client.get(PATH, params={"normalization": "per_lateral_ft"})
+
+    assert response.status_code == 422, response.text
+    detail = response.json()["detail"]
+    assert "20000" in detail
+    assert "cr_ff_fluid_intensity_2" in detail
 
 
 def test_an_unknown_normalisation_is_refused_rather_than_ignored(client: TestClient) -> None:

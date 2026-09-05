@@ -208,3 +208,15 @@ def test_no_as_of_is_offered_on_the_control(client: TestClient) -> None:
     }
     assert "as_of" not in names
     assert {"stream", "normalization", "horizon", "origin", "publication"} <= names
+
+
+def test_the_peer_table_s_own_axis_and_facts_are_labelled_terms(client: TestClient) -> None:
+    """§10 places `Producing month` on the peer control's only axis; the card asks the labels
+    block for `/series/month_index` and the response has to carry it, or the header is plain
+    text beside a `Peers` header that is a term. The facts the section prints carry theirs."""
+    labels = _curve(client)["meta"]["labels"]
+
+    assert labels["/series/month_index"] == "gt_producing_month"
+    assert labels["/stream"] == "gt_stream"
+    assert labels["/normalization"] == "gt_normalised_volume"
+    assert labels["/relation"] == "gt_peer_control"

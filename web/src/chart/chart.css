@@ -68,11 +68,12 @@
   align-items: center;
   gap: var(--gw-space-2);
   margin: 0.2rem 0 0;
-  color: var(--cyan);
+  color: var(--cyan-text);
   font-size: var(--gw-fs-micro);
 }
 
-.gw-window-clear {
+.gw-window-clear,
+.gw-window-widen {
   padding: 0;
   border: 0;
   background: none;
@@ -80,6 +81,12 @@
   font: inherit;
   text-decoration: underline;
   cursor: pointer;
+}
+
+/* The widening control is a child of the sentence it follows, not a flex sibling of it, so it
+   read as `6 moWiden to the whole record` with nothing between them. */
+.gw-window-widen {
+  margin-left: var(--gw-space-2);
 }
 
 .gw-running-total {
@@ -123,15 +130,25 @@
   border-color: var(--cyan);
 }
 
-.gw-normalize-toggle:disabled {
-  opacity: 0.5;
+.gw-normalize-toggle[aria-disabled="true"] {
+  /* Unavailable, and still legible: the reason is text beside it, and the control stays in
+     the tab order so that text is reachable. `--slate` clears 4.5:1 in both themes. */
+  color: var(--slate);
+  border-style: dashed;
   cursor: default;
+}
+
+.gw-normalize-reason {
+  flex-basis: 100%;
+  margin: 0.2rem 0 0;
 }
 
 /* The third vocabulary's own prefix: `gw-state-*` is the null semantics, `gw-alloc-*` the
    allocation class, and these say whether the month was filed more than once. */
 .gw-restate-latest {
-  background: var(--hairline-strong);
+  /* The default mark is 31 of 32 cells on a typical well, and the hairline it used painted at
+     1.56:1 against the strip: a band that reads as empty with one amber square in it. */
+  background: var(--slate);
 }
 
 .gw-restate-earlier {
@@ -163,110 +180,14 @@
   border-color: var(--cyan);
 }
 
-/* The table is the plot's alternative, so it takes the plot's width and scrolls rather than
-   pushing the card wider than the rail. */
-.gw-series-table {
-  overflow-x: auto;
-  margin: 0 0 0.4rem;
-}
-
-.gw-series-table table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: var(--gw-fs-micro);
-}
-
-.gw-series-table caption {
-  text-align: left;
-  color: var(--slate);
-  padding-bottom: 0.2rem;
-}
-
-.gw-series-table th,
-.gw-series-table td {
-  border-bottom: 1px solid var(--hairline);
-  padding: 0.15rem 0.4rem 0.15rem 0;
-  text-align: left;
-  white-space: nowrap;
-}
-
-/* The month stays readable while the streams scroll past it: a row whose identity has left
-   the viewport is a row of numbers about nothing, which at 390 is every row. */
-.gw-series-table tbody th,
-.gw-series-table thead th:first-child {
-  position: sticky;
-  left: 0;
-  background: var(--panel);
-  padding-right: 0.6rem;
-}
-
-
-
-.gw-table-value {
-  font-family: var(--gw-font-mono);
-}
-
-.gw-table-state {
-  color: var(--slate);
-  white-space: normal;
-}
-
 .gw-vintage-read {
   margin-left: var(--gw-space-2);
   padding: 0 var(--gw-space-2);
   border: 1px solid var(--hairline-strong);
   border-radius: var(--gw-radius-pill);
   background: none;
-  color: var(--cyan);
+  color: var(--cyan-text);
   font: inherit;
   font-size: var(--gw-fs-micro);
   cursor: pointer;
-}
-
-.gw-export {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--gw-space-2);
-  margin-top: 0.4rem;
-}
-
-.gw-export button {
-  padding: 0 var(--gw-space-2);
-  border: 1px solid var(--hairline-strong);
-  border-radius: var(--gw-radius-pill);
-  background: none;
-  color: var(--slate);
-  font: inherit;
-  font-size: var(--gw-fs-micro);
-  cursor: pointer;
-}
-
-.gw-export-note {
-  flex-basis: 100%;
-  margin: 0;
-}
-
-.gw-peer-facts dd,
-.gw-peer-identity {
-  font-family: var(--gw-font-mono);
-  font-size: var(--gw-fs-micro);
-}
-
-.gw-peer-title,
-.gw-pool-title {
-  margin: 0.2rem 0;
-  font-size: var(--gw-fs-eyebrow);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--slate);
-}
-
-.gw-peer-reasons {
-  margin: 0.2rem 0 0 1rem;
-  padding: 0;
-}
-
-.gw-coverage-line {
-  margin: 0.1rem 0 0;
 }

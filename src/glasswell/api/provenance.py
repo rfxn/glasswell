@@ -170,7 +170,7 @@ def _selector_outputs(node: Any) -> dict[str, dict[str, Any]]:
         elif isinstance(value, Series):
             if value.selector is None:
                 raise ValueError("an API-response series must carry a selector")
-            if value.point_handles is not None:
+            if value.point_handles is not None or value.point_overrides is not None:
                 raise ValueError("an API-response series may not carry point handles")
             selector = _normal_selector(value.selector)
             evidence = json_ready({"values": list(value.values), "unit": value.unit})

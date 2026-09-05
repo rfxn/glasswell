@@ -10,6 +10,7 @@ import {
   allocationClass,
   formatMonth,
   formatValue,
+  sumDecimal,
   nullSemantics,
   restatement,
   shareDetail,
@@ -22,7 +23,7 @@ import { nearestIndex, readoutAt } from "./cursor.ts";
 import type { Readout, ReadoutRow } from "./cursor.ts";
 import { chartOptions, streamStroke } from "./options.ts";
 import type { ChartSeries, SeriesColumn } from "./series.ts";
-import { chartWindow, defaultSpan, describeWindow, spanChoices } from "./window.ts";
+import { chartWindow, defaultSpan, describeShown, describeWindow, spanChoices } from "./window.ts";
 
 const PLOT_HEIGHT = 260;
 
@@ -53,6 +54,8 @@ export interface NormalizationControl {
   /** False where no divisor is served: no lateral, a rule that withholds it, no compute CRS. */
   available: boolean;
   reason?: string;
+  /** The rule that withholds the divisor, linked beside the reason where one decided it. */
+  rule?: string;
   onChange(on: boolean): void;
 }
 
@@ -64,6 +67,11 @@ export interface ChartOptions {
    */
   span?: "default" | "served";
   normalization?: NormalizationControl;
+  /**
+   * R-20: with `span: "served"` on the card the months on hand are the ones a `from`/`to`
+   * request returned, so the bar says it is showing all of them and offers the record back.
+   */
+  onWiden?: () => void;
 }
 
 /** One live chart per host: a repaint must not leave the last one's observers running. */
@@ -149,6 +157,7 @@ export function renderChart(
           draw();
         },
         brush ? { ...brush, onClear: () => setBrush(null) } : null,
+        served ? (options.onWiden ?? null) : null,
       ),
     );
     // A window the record does not reach is served as an empty series. That is a fact about the
@@ -161,7 +170,11 @@ export function renderChart(
         draw();
       }),
     );
-    if (options.normalization) axes.appendChild(normalizationControl(options.normalization));
+    if (options.normalization) {
+      axes.appendChild(normalizationControl(options.normalization));
+      const refused = normalizationReason(options.normalization);
+      if (refused) axes.appendChild(refused);
+    }
     axes.appendChild(
       tableControl(table !== null, (next) => {
         if (!next) {
@@ -258,12 +271,6 @@ export function renderChart(
   draw();
 }
 
-/**
- * The series as the reader has it set: hidden streams dropped from the columns, the scales and
- * the drawn data together, so the plot, the band and the readout cannot disagree about which
- * streams are on. A stream is never dropped from the legend -- a toggle a reader cannot undo
- * is a delete.
- */
 /** The months a brush left, as a view over the window: no request, no aggregation. */
 function selected(chart: ChartSeries, from: string, to: string): ChartSeries {
   const first = chart.months.indexOf(from);
@@ -287,6 +294,12 @@ function selected(chart: ChartSeries, from: string, to: string): ChartSeries {
   return { ...chart, months: cut(chart.months), x, columns, data: [x, ...columns.map((c) => c.values)] };
 }
 
+/**
+ * The series as the reader has it set: hidden streams dropped from the columns, the scales and
+ * the drawn data together, so the plot, the band and the readout cannot disagree about which
+ * streams are on. A stream is never dropped from the legend -- a toggle a reader cannot undo
+ * is a delete.
+ */
 function shown(chart: ChartSeries, hidden: ReadonlySet<string>): ChartSeries {
   const columns = chart.columns.filter((column) => !hidden.has(column.stream));
   if (columns.length === chart.columns.length) return chart;
@@ -417,14 +430,24 @@ function windowBar(
   served: boolean,
   onSpan: (span: number | null) => void,
   brush: { from: string; to: string; onClear: () => void } | null = null,
+  onWiden: (() => void) | null = null,
 ): HTMLElement {
   const bar = document.createElement("div");
   bar.className = "gw-window-bar";
   const note = document.createElement("p");
   note.className = "gw-window-note";
   note.setAttribute("data-no-glossary", "");
-  note.textContent = describeWindow(window_, served);
+  note.textContent = onWiden ? describeShown(window_) : describeWindow(window_, served);
   bar.appendChild(note);
+  if (onWiden) {
+    const widen = document.createElement("button");
+    widen.type = "button";
+    widen.className = "gw-window-widen";
+    widen.textContent = "Widen to the whole record";
+    widen.title = "Drop the from and to this link carried and ask for every month on record.";
+    widen.addEventListener("click", onWiden);
+    note.appendChild(widen);
+  }
   if (brush) {
     // A fourth state beside the spans, and the way out of it: a window a reader dragged into
     // and cannot drag out of is a trap, and `All` would otherwise mean two different things.
@@ -559,8 +582,11 @@ function normalizationControl(control: NormalizationControl): HTMLElement {
   toggle.setAttribute("aria-pressed", String(control.on));
   toggle.textContent = "Per 1,000 ft";
   if (!control.available) {
-    toggle.disabled = true;
-    toggle.title = control.reason ?? "No lateral length is served for this well.";
+    // Not `disabled`: a disabled button is out of the tab order, so its title is mouse-only and
+    // a keyboard reader never gets the sentence. Reachable, marked unavailable, and the reason
+    // is text beside it (normalizationReason) rather than a tooltip.
+    toggle.setAttribute("aria-disabled", "true");
+    toggle.setAttribute("aria-describedby", "gw-normalize-reason");
     return toggle;
   }
   toggle.title = control.on
@@ -568,6 +594,22 @@ function normalizationControl(control: NormalizationControl): HTMLElement {
     : "Divide every point by this well's lateral length, served with its own handle.";
   toggle.addEventListener("click", () => control.onChange(!control.on));
   return toggle;
+}
+
+/** The served refusal as text, with the rule that decided it linked where one did. */
+function normalizationReason(control: NormalizationControl): HTMLElement | null {
+  if (control.available) return null;
+  const note = document.createElement("p");
+  note.className = "gw-note gw-normalize-reason";
+  note.id = "gw-normalize-reason";
+  note.textContent = control.reason ?? "No lateral length is served for this well.";
+  if (control.rule) {
+    const link = document.createElement("a");
+    link.href = control.rule;
+    link.textContent = "the rule that decided that";
+    note.append(" See ", link, ".");
+  }
+  return note;
 }
 
 /** What log costs, per stream, in the months on screen. */
@@ -606,23 +648,28 @@ function runningTotal(chart: ChartSeries): HTMLElement | null {
   row.appendChild(title);
 
   for (const column of chart.columns) {
-    const sum = column.values.reduce<number>((total, value) => total + (value ?? 0), 0);
     const entry = document.createElement("span");
     entry.className = "gw-running-value";
-    entry.textContent = `${column.label} ${formatValue(String(sum))} ${column.unit}`;
+    entry.textContent = `${column.label} ${formatValue(sumDecimal(column.raw))} ${column.unit}`;
     row.appendChild(entry);
   }
 
-  // Its own scope on the same line, counted from the points it summed: three classes, and
-  // `withheld` is not one of them -- it is not a production null-semantics class at all.
-  const first = chart.columns[0] as SeriesColumn;
-  const count = (state: string): number =>
-    first.nullSemantics.filter((each) => each === state).length;
+  // Its own scope on the same line, counted per column from the points that column summed:
+  // a month withheld for gas and reported for oil is one array apart, so one stream's counts
+  // under three totals described two of them wrongly. Three classes, and `withheld` is not one
+  // of them -- it is not a production null-semantics class at all.
+  const counted = chart.columns.map((column) => {
+    const count = (state: string): number =>
+      column.nullSemantics.filter((each) => each === state).length;
+    return (
+      `${column.label} ${count("reported")} reported, ${count("reported_zero")} reported zero,` +
+      ` ${count("no_report")} no report`
+    );
+  });
   const scope = document.createElement("p");
   scope.className = "gw-note gw-running-scope";
   scope.textContent =
-    `Running total over the ${chart.months.length} months shown, ${count("reported")} reported,` +
-    ` ${count("reported_zero")} reported zero, ${count("no_report")} no report.` +
+    `Running total over the ${chart.months.length} months shown. ${counted.join("; ")}.` +
     ` It is computed on this page from the ${chart.months.length} points shown; each point's` +
     " ⌾ is beside it.";
   row.appendChild(scope);
@@ -755,63 +802,85 @@ function stateKey(chart: ChartSeries, callbacks: ChartCallbacks): HTMLElement {
 }
 
 /**
- * The four null-semantics states as one band per stream, aligned under the plot: a gap in the
- * line could be any of them, and the band says which without collapsing them into each other.
+ * The capture band: one row per stream whose drawn window holds a month read at an earlier
+ * capture, a key that says what the two marks mean in words, and one control under the band
+ * that re-reads the series at the earliest capture the window holds. None of it where the
+ * window holds no earlier capture: a band of "latest capture" marks says nothing.
  */
-/** One row per stream that carries a restated month, and none where nothing was restated. */
-function restatementRows(
+function captureBand(
   chart: ChartSeries,
   onVintage: ((asOf: string) => void) | undefined,
 ): HTMLElement[] {
-  return chart.columns
-    .filter((column) => column.mixedVintages)
-    .map((column) => {
-      const row = document.createElement("div");
-      row.className = "gw-state-row gw-restate-row";
-      const name = document.createElement("span");
-      name.className = "gw-state-name";
-      name.textContent = `${column.label} · capture`;
-      const cells = document.createElement("div");
-      cells.className = "gw-state-cells gw-restate-cells";
-      cells.setAttribute("role", "img");
-      cells.setAttribute(
-        "aria-label",
-        `Which months of ${column.label.toLowerCase()} were filed more than once`,
-      );
-      // Against the newest vintage in the window, which is the capture the rest of the line is
-      // drawn at: a month read at an older one is the fact this row exists to show.
-      const newest = [...column.vintages].filter(Boolean).sort().pop() ?? null;
-      const earlier = new Set<string>();
-      column.vintages.forEach((vintage, index) => {
-        const older = Boolean(vintage) && vintage !== newest;
-        if (older && vintage) earlier.add(vintage);
-        const mark = restatement(older ? "earlier_capture" : "latest_capture");
-        const cell = document.createElement("span");
-        cell.className = `gw-state-mark ${mark.className}`;
-        cell.setAttribute("data-index", String(index));
-        cell.title = `${chart.months[index] ?? ""} · ${mark.label}. ${mark.title}`;
-        cells.appendChild(cell);
-      });
-      row.append(name, cells);
-      // §4.3 item 3: the way to read the series as it stood at the earlier capture. It is a
-      // re-request, not a redraw, and the proof it is real is that every point's handle
-      // changes -- a different promotion, a different workbook.
-      const oldest = [...earlier].sort()[0];
-      if (oldest && onVintage) {
-        const read = document.createElement("button");
-        read.type = "button";
-        read.className = "gw-vintage-read";
-        read.textContent = `Read at ${oldest}`;
-        read.title =
-          `Request this series as of ${oldest}. Every point then resolves to the promotion` +
-          " that was in force at that capture.";
-        read.addEventListener("click", () => onVintage(oldest));
-        row.appendChild(read);
-      }
-      return row;
+  const rows: HTMLElement[] = [];
+  const earlier = new Set<string>();
+  for (const column of chart.columns) {
+    // Against the newest vintage in the window, which is the capture the rest of the line is
+    // drawn at: a month read at an older one is the fact this row exists to show.
+    const newest = [...column.vintages].filter(Boolean).sort().pop() ?? null;
+    const older = column.vintages.map((vintage) => Boolean(vintage) && vintage !== newest);
+    if (!older.some(Boolean)) continue;
+    const row = document.createElement("div");
+    row.className = "gw-state-row gw-restate-row";
+    const name = document.createElement("span");
+    name.className = "gw-state-name";
+    // A word that fits the name column at every width; "capture" is the key's word.
+    name.textContent = `${column.label} · read`;
+    const cells = document.createElement("div");
+    cells.className = "gw-state-cells gw-restate-cells";
+    cells.setAttribute("role", "img");
+    cells.setAttribute(
+      "aria-label",
+      `Which months of ${column.label.toLowerCase()} were read at an earlier capture`,
+    );
+    column.vintages.forEach((vintage, index) => {
+      if (older[index] && vintage) earlier.add(vintage);
+      const mark = restatement(older[index] ? "earlier_capture" : "latest_capture");
+      const cell = document.createElement("span");
+      cell.className = `gw-state-mark ${mark.className}`;
+      cell.setAttribute("data-index", String(index));
+      cell.title = `${chart.months[index] ?? ""} · ${mark.label}. ${mark.title}`;
+      cells.appendChild(cell);
     });
+    row.append(name, cells);
+    rows.push(row);
+  }
+  if (rows.length === 0) return rows;
+
+  const key = document.createElement("p");
+  key.className = "gw-state-key gw-restate-key";
+  for (const state of ["latest_capture", "earlier_capture"]) {
+    const described = restatement(state);
+    const item = document.createElement("span");
+    item.className = "gw-state-key-item";
+    const swatch = document.createElement("span");
+    swatch.className = `gw-state-mark ${described.className}`;
+    swatch.title = described.title;
+    item.append(swatch, described.label);
+    key.appendChild(item);
+  }
+  rows.push(key);
+  // §4.3 item 3: the way to read the series as it stood at the earliest capture the window
+  // holds. Once, under the band, because it is one request whichever stream's row it sits by;
+  // it is a re-request, not a redraw, and every point's handle changes with it.
+  const oldest = [...earlier].sort()[0];
+  if (oldest && onVintage) {
+    const read = document.createElement("button");
+    read.type = "button";
+    read.className = "gw-vintage-read";
+    read.textContent = `Read at ${oldest}`;
+    read.title =
+      `Request this series as of ${oldest}. Every point then resolves to the promotion` +
+      " that was in force at that capture.";
+    read.addEventListener("click", () => onVintage(oldest));
+    rows.push(read);
+  }
+  return rows;
 }
 
+/**
+ * The four null-semantics states as one band per stream, aligned under the plot: a gap in the
+ * line could be any of them, and the band says which without collapsing them into each other.
+ */
 function stateBand(
   chart: ChartSeries,
   onVintage: ((asOf: string) => void) | undefined,
@@ -852,7 +921,7 @@ function stateBand(
   for (const row of allocationRows(chart)) wrapper.appendChild(row);
   // The third vocabulary, and only where it has something to say: a well nobody restated
   // carries no row at all rather than a row of "as filed" marks.
-  for (const row of restatementRows(chart, onVintage)) wrapper.appendChild(row);
+  for (const row of captureBand(chart, onVintage)) wrapper.appendChild(row);
   return wrapper;
 }
 

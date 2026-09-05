@@ -38,6 +38,15 @@ describe("the CSV an analyst takes away", () => {
     expect(csv).toContain("drv_a#api10=3305310451&col=oil_bbl&pm=2025-10");
   });
 
+  it("leaves the handle column empty on a month with no output of its own", () => {
+    // The row carried October's handle under November's absence, because the column handle of
+    // a per-point column is its first point's. A file is where that survives longest.
+    const rows = csv.split("\n").filter((line) => line.startsWith("2025-11"));
+
+    expect(rows[0]).not.toContain("drv_a");
+    expect(rows[0]?.endsWith(",")).toBe(true);
+  });
+
   it("says which absence an empty value is, rather than writing a zero", () => {
     const rows = csv.split("\n").filter((line) => line.startsWith("2025-11"));
 
@@ -49,6 +58,12 @@ describe("the CSV an analyst takes away", () => {
     expect(csv).toContain("# api10=3305310451");
     expect(csv).toContain("# as_of_resolved=2026-08-01");
     expect(csv).toContain(`# reproduce=${context.url}`);
+  });
+
+  it("heads the file with the basis of every stream that has one", () => {
+    // The policy rides wherever the number does: a file of oil figures that does not say oil
+    // means oil plus condensate has dropped the sentence the chart frame shows beside them.
+    expect(csv).toContain("# basis oil=oil+condensate");
   });
 
   it("has no running-total column, and says why", () => {

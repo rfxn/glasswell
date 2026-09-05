@@ -196,6 +196,26 @@ describe("per-point lineage (SB-07 §9.3)", () => {
     const column = toChartSeries({ ...production, _lineage: {} }).columns[0];
     expect(column && handleAt(column, 1, "2026-02")).toBeNull();
   });
+
+  it("offers no ring on a month the response served no output for", () => {
+    // A withheld or unreported month has no `canonical.production_monthly` row, so the
+    // composed selector names nothing and `/v1/explain` answers 404 `lineage_unresolved`.
+    // The blueprint's rule is the other way round: a figure that cannot be explained is not
+    // served as a figure, so the ring is not drawn (visual M5).
+    const withheld = toChartSeries(production).columns[1];
+    expect(withheld?.nullSemantics[1]).toBe("withheld");
+    expect(withheld && handleAt(withheld, 1, "2026-02")).toBeNull();
+    const unreported = toChartSeries(production).columns[0];
+    expect(unreported && handleAt(unreported, 2, "2026-03")).toBeNull();
+  });
+
+  it("never lends one month's handle to another that has none", () => {
+    // The column handle of a per-point column is its first point's, so falling back to it on
+    // an unexplained month opened a different month's chain under this month's number.
+    const column = toChartSeries(perPoint).columns[0];
+    expect(column?.handles[2]).toBeNull();
+    expect(column && handleAt(column, 2, "2026-03")).toBeNull();
+  });
 });
 
 describe("pointHandle", () => {

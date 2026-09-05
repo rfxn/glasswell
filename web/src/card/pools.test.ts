@@ -80,8 +80,10 @@ describe("the pool filings, where the regulator files below the well", () => {
     expect(first?.querySelector(".gw-table-value")?.textContent).toBe("1200.000 bbl");
     expect(first?.querySelector(".gw-table-state")?.textContent).toBe("reported");
     first?.querySelector<HTMLButtonElement>(".gw-handle")?.click();
+    // The month, because the cell is a point: the column handle resolves to every month the
+    // pool filed, which is the wrong subject for one row of it.
     expect(callbacks.onExplain).toHaveBeenCalledWith(
-      "drv_p#entity_key=3002599001:BONE SPRING&col=oil_bbl",
+      "drv_p#entity_key=3002599001:BONE SPRING&col=oil_bbl&pm=2026-01",
     );
   });
 

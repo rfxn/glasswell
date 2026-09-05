@@ -1,0 +1,53 @@
+/*
+ * The chart as a table. On its own stylesheet rather than the chart's because the table is
+ * drawn where the chart is not: a New Mexico well files per completion pool, so `pools.ts`
+ * renders these tables and the chart chunk -- and every rule that was on it -- never loads.
+ */
+.gw-series-table {
+  overflow-x: auto;
+  margin: 0 0 0.4rem;
+}
+
+.gw-series-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--gw-fs-micro);
+}
+
+.gw-series-table caption {
+  text-align: left;
+  color: var(--slate);
+  padding-bottom: 0.2rem;
+}
+
+.gw-series-table th,
+.gw-series-table td {
+  border-bottom: 1px solid var(--hairline);
+  padding: 0.15rem 0.4rem 0.15rem 0;
+  text-align: left;
+  white-space: nowrap;
+}
+
+/* The month stays readable while the streams scroll past it: a row whose identity has left
+   the viewport is a row of numbers about nothing, which at 390 is every row. The right edge
+   says "covered", because a figure scrolled half under an opaque month column read as a whole
+   one (`000 mcf` for 10100.000 mcf). It is a border and not a shadow: Chromium paints no
+   box-shadow on the cells of a collapsed-border table, so the shadow drew nothing at all. */
+.gw-series-table tbody th,
+.gw-series-table thead th.gw-table-month {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--panel);
+  padding-right: 0.6rem;
+  border-right: 2px solid var(--slate);
+}
+
+.gw-table-value {
+  font-family: var(--gw-font-mono);
+}
+
+.gw-table-state {
+  color: var(--slate);
+  white-space: normal;
+}

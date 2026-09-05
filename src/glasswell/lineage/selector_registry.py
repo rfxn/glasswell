@@ -561,9 +561,10 @@ def _validate_production(
     if (api10 is None) == (entity_key is None):
         raise InvalidSelector("production selectors require exactly one entity identity")
     production_month = terms.pop("pm", None)
+    report_vintage = terms.pop("rv", None)
     if terms:
         raise InvalidSelector(
-            "production selectors require one entity identity, col, and optional pm"
+            "production selectors require one entity identity, col, and optional pm and rv"
         )
 
     statement = (
@@ -571,6 +572,17 @@ def _validate_production(
         " where derivation_id = %s and stream = %s"
     )
     parameters: list[object] = [derivation["derivation_id"], stream]
+    if report_vintage is not None:
+        # A restatement is a second row, never an edit, so the month is not the last of this
+        # table's key: one promotion that filed a month twice answers `pm` with two rows.
+        try:
+            parsed_vintage = date.fromisoformat(report_vintage)
+        except ValueError:
+            raise InvalidSelector("rv must be YYYY-MM-DD") from None
+        if parsed_vintage.isoformat() != report_vintage:
+            raise InvalidSelector("rv must be YYYY-MM-DD")
+        statement += " and report_vintage = %s"
+        parameters.append(parsed_vintage)
     if api10 is not None:
         if re.fullmatch(r"[0-9]{10}", api10) is None:
             raise InvalidSelector("api10 must be exactly ten digits")

@@ -125,13 +125,17 @@ document.addEventListener("gw-section-set", (event) => {
 // basis a normalisation applies -- has to reach the URL so the link is shareable and the
 // server answers it on reload. `replace`, never `push`: a drag is not a navigation.
 document.addEventListener("gw-param-set", (event) => {
-  const { params } = (event as CustomEvent<{ params: Record<string, string | null> }>).detail;
+  const { params, refetch } = (
+    event as CustomEvent<{ params: Record<string, string | null>; refetch?: boolean }>
+  ).detail;
   const extra = { ...state.extra };
   for (const [key, value] of Object.entries(params)) {
     if (value === null) delete extra[key];
     else extra[key] = [value];
   }
   commit({ extra }, "replace");
+  // "card": the reader is already looking at this well, so nothing moves the camera.
+  if (refetch && state.well) landCard(state.well, "card");
 });
 
 function commit(next: Partial<AppState>, mode: "push" | "replace" = "push"): void {
@@ -187,7 +191,16 @@ function showWell(
   railWell = api10;
   railPoint = null;
   mountedWell = api10;
-  const source = pendingSource;
+  landCard(api10, pendingSource);
+}
+
+/**
+ * Mount the card for `api10` against the state of record. Called again by `gw-param-set` when
+ * the parameter is one the server answers: `Per 1,000 ft`, `Read at …` and `Widen to the whole
+ * record` change what the figures *are*, and until the card asks again the URL says one thing
+ * and the chart draws another.
+ */
+function landCard(api10: string, source: SelectSource): void {
   // Loaded on the first well opened, not by every reader who loads the app: the card is the
   // largest module on the entry path and a reader who never clicks a dot never needs it. The
   // panel is raised by the card itself, once it has something to put in it — raising it here

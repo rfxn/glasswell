@@ -245,6 +245,23 @@ export function roundTo(value: string, digits: number): string {
   return sign + carried.slice(0, split) + (digits ? `.${carried.slice(split)}` : "");
 }
 
+/** The exact sum of decimal strings, scaled through BigInt: a three-decimal series summed as floats prints a float's tail. */
+export function sumDecimal(values: readonly (string | null)[]): string {
+  const parts = values.flatMap((value) => {
+    const match = value === null ? null : /^(-?)(\d+)(?:\.(\d+))?$/.exec(value.trim());
+    return match ? [[match[1] ?? "", match[2] ?? "0", match[3] ?? ""] as const] : [];
+  });
+  const digits = Math.max(0, ...parts.map(([, , fraction]) => fraction.length));
+  let total = 0n;
+  for (const [sign, whole, fraction] of parts) {
+    const scaled = BigInt(whole + fraction.padEnd(digits, "0"));
+    total += sign === "-" ? -scaled : scaled;
+  }
+  const text = (total < 0n ? -total : total).toString().padStart(digits + 1, "0");
+  const split = text.length - digits;
+  return (total < 0n ? "-" : "") + text.slice(0, split) + (digits ? `.${text.slice(split)}` : "");
+}
+
 /** `digits` rounds the figure to at most that many decimals, never zero-padded; omitted, it renders as served. */
 export function formatFigure(figure: Figure, digits?: number): string {
   if (!figure.unit) {

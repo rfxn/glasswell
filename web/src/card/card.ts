@@ -13,7 +13,7 @@ import { focusPanel } from "../chrome/overlays.ts";
 import { crossingLink, openThisSeries, rowsForThisWell } from "../explore/bridge.ts";
 import { labelElement } from "../glossary/gw-term.ts";
 import { highlight } from "../glossary/index.ts";
-import { termIndex } from "../glossary/store.ts";
+import { onGlossaryReady, termIndex } from "../glossary/store.ts";
 import {
   absentValue,
   formatMonth,
@@ -534,6 +534,10 @@ export async function renderWellCard(
   const poolsBody = document.createElement("div");
   const peerBody = document.createElement("div");
   const poolGrain = well.meta.warnings.find((warning) => warning.code === POOL_GRAIN);
+  // The warning says why the well-level chart is absent; the link says where the record is.
+  // The section is gated on the link, like every other section, and fetches the path served.
+  const poolsPath = well.links?.["pools"];
+  const poolsRule = well.links?.["pools_rule"];
   const lineageBody = document.createElement("div");
   const identityHost = document.createElement("div");
 
@@ -551,6 +555,9 @@ export async function renderWellCard(
       body: cumulativeSlot,
       present: loadCumulative !== undefined,
       ...(loadCumulative ? { load: loadCumulative } : {}),
+      ...(well.links?.["cumulatives_rule"]
+        ? { absentRule: well.links["cumulatives_rule"] }
+        : {}),
     },
     {
       id: "identity",
@@ -600,14 +607,14 @@ export async function renderWellCard(
       // N-24: expanded where the Production section is in its pool-grain state, because the
       // record the reader came for is here rather than there.
       expanded: poolGrain !== undefined,
-      present: poolGrain !== undefined,
+      present: poolsPath !== undefined,
       body: poolsBody,
       load: () =>
         renderPools(
           poolsBody,
-          `/v1/wells/${api10}/production/pools`,
+          poolsPath ?? "",
           query,
-          poolGrain?.rule_id ? { reporting_rule: `/v1/conformance/${poolGrain.rule_id}` } : {},
+          poolsRule ? { reporting_rule: poolsRule } : {},
           {
             onExplain: callbacks.onExplain,
             labelTermFor: (pointer: string) => labelFor(well, pointer),
@@ -754,9 +761,20 @@ export async function renderWellCard(
           onBrush: (from, to) => setParams({ from, to }),
           // The `as_of` arm of the request seam: the same parameter the route already
           // forwards, used by a control rather than only by a URL somebody typed.
-          onVintage: (asOf) => setParams({ as_of: asOf }),
+          onVintage: (asOf) => setParams({ as_of: asOf }, true),
         },
-        { normalization: normalizationControl(detail, well, state) },
+        {
+          normalization: normalizationControl(detail, well, state),
+          // R-20: a reloaded link carried `from`/`to`, so the server answered the window and
+          // the months on hand are all of it. The bar says so and offers the record back by
+          // dropping both parameters through the same seam a brush writes them through.
+          ...(state.extra["from"]?.[0] || state.extra["to"]?.[0]
+            ? {
+                span: "served" as const,
+                onWiden: () => setParams({ from: null, to: null }, true),
+              }
+            : {}),
+        },
       );
       for (const note of warningNotes(production.meta.warnings)) chartNotes.appendChild(note);
       highlight(chartFrame, termIndex());
@@ -805,15 +823,20 @@ function normalizationControl(
     available: Boolean(detail.lateral_length_ft) && detail.length_method !== "not_served",
     reason: withheld
       ? "This jurisdiction withholds the lateral length by rule, so there is no divisor to" +
-        " normalise by; the rule is linked in the Drilling band."
+        " normalise by."
       : "No lateral length is served for this well, so there is nothing to divide by.",
-    onChange: (next) => setParams({ normalization: next ? PER_LATERAL_FT : null }),
+    ...(withheld ? { rule: withheld } : {}),
+    onChange: (next) => setParams({ normalization: next ? PER_LATERAL_FT : null }, true),
   };
 }
 
-/** main.ts is the single writer of app state, so the card announces rather than writes. */
-function setParams(params: Record<string, string | null>): void {
-  document.dispatchEvent(new CustomEvent("gw-param-set", { detail: { params } }));
+/**
+ * main.ts is the single writer of app state, so the card announces rather than writes.
+ * `refetch` marks a parameter the *server* answers -- the normalisation basis, the vintage,
+ * the served window -- which the card cannot honour by redrawing what it holds.
+ */
+function setParams(params: Record<string, string | null>, refetch = false): void {
+  document.dispatchEvent(new CustomEvent("gw-param-set", { detail: { params, refetch } }));
 }
 
 /**
@@ -821,9 +844,16 @@ function setParams(params: Record<string, string | null>): void {
  * section's disclosure rather than the card heading, so a deep-linked reader lands on the
  * thing the link named; `applySection` carries the same quiet-focus rule `focusPanel` does.
  */
+/** The previous card's subscription, released when the next card lands. */
+let releaseHighlight: (() => void) | null = null;
+
 function land(container: HTMLElement, card: HTMLElement, section: string | null): void {
   container.replaceChildren(card);
-  highlight(card, termIndex());
+  // Once now, and again when the glossary lands: the section titles are built statically and
+  // were painted before the vocabulary arrived on almost every cold load, so a title that is
+  // a term (`Peer control`) was marked on one load in ten.
+  releaseHighlight?.();
+  releaseHighlight = onGlossaryReady(() => highlight(card, termIndex()));
   if (section) applySection(section);
   else focusPanel(container);
 }

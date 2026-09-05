@@ -32,6 +32,12 @@ const control = {
     peer_count: [42, 41, 40],
   },
   _lineage: { "series.monthly_p50": "drv_tc#api10=3305310451&col=monthly_p50" },
+  _units: {
+    "series.monthly_p10": "bbl",
+    "series.monthly_p50": "bbl",
+    "series.monthly_p90": "bbl",
+    "series.peer_count": "count",
+  },
 };
 
 const envelope = (over: Record<string, unknown> = {}) => ({
@@ -148,5 +154,41 @@ describe("the peer control, which is not a forecast", () => {
 
     host.querySelector<HTMLButtonElement>(".gw-handle")?.click();
     expect(callbacks.onExplain).toHaveBeenCalledWith("drv_tc#api10=3305310451&col=monthly_p50");
+  });
+});
+
+describe("what the quantiles are measured in", () => {
+  it("states the stream and the normalisation the control was served on", async () => {
+    serve(envelope());
+    await renderPeerControl(host, "/v1/wells/3305310451/type-curve", {}, callbacks);
+
+    const facts = [...host.querySelectorAll(".gw-peer-facts dt")].map((node) => node.textContent);
+    const values = [...host.querySelectorAll(".gw-peer-facts dd")].map((node) => node.textContent);
+    expect(facts).toContain("Stream");
+    expect(values).toContain("oil");
+    expect(facts).toContain("Normalisation");
+    expect(values).toContain("typecurve_absolute");
+  });
+
+  it("puts the served unit on every quantile column, so a volume is never a bare number", async () => {
+    serve(envelope());
+    await renderPeerControl(host, "/v1/wells/3305310451/type-curve", {}, callbacks);
+
+    const heads = [...host.querySelectorAll(".gw-peer-table th[scope=col]")].map(
+      (node) => node.textContent,
+    );
+    expect(heads.filter((head) => head?.includes("bbl"))).toHaveLength(3);
+    expect(host.querySelector(".gw-peer-table caption")?.textContent).toContain("bbl");
+  });
+});
+
+describe("the relation at a phone width", () => {
+  it("offers a break at every underscore, so the token never leaves one letter on its own line", async () => {
+    serve(envelope());
+    await renderPeerControl(host, "/v1/wells/3305310451/type-curve", {}, callbacks);
+
+    const cell = host.querySelector(".gw-peer-relation");
+    expect(cell?.textContent).toBe("control_type_curve_not_a_forecast");
+    expect(cell?.querySelectorAll("wbr")).toHaveLength(5);
   });
 });

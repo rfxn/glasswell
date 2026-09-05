@@ -2,12 +2,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ChartSeries } from "../chart/series.ts";
+import { buildIndex } from "../glossary/index.ts";
+import { publishGlossary } from "../glossary/store.ts";
 import { statusColour } from "../map/status.ts";
 
-const renderChart = vi.fn<(container: HTMLElement, chart: ChartSeries) => void>();
+const renderChart =
+  vi.fn<(container: HTMLElement, chart: ChartSeries, callbacks: unknown, options: unknown) => void>();
 const selectWell = vi.fn<(api10: string | null, source: string) => void>();
 vi.mock("../chart/chart.ts", () => ({
-  renderChart: (container: HTMLElement, chart: ChartSeries) => renderChart(container, chart),
+  // Every argument forwarded: the R-20 case reads what the card hands the chart, not the frame.
+  renderChart: (container: HTMLElement, chart: ChartSeries, callbacks: unknown, options: unknown) =>
+    renderChart(container, chart, callbacks, options),
 }));
 vi.mock("../bus.ts", () => ({
   selectWell: (api10: string | null, source: string) => selectWell(api10, source),
@@ -1481,9 +1486,147 @@ describe("a cumulative total that some months were allocated into", () => {
   });
 });
 
+describe("a section title that is a glossary term", () => {
+  // `land()` highlighted once at mount and nothing re-ran it for statically built markup, so a
+  // title painted before the glossary arrived lost the race almost every cold load. The
+  // store's `onGlossaryReady` exists for exactly this.
+  const empty = { index_version: "none", entries: [], stopwords: [] };
+
+  afterEach(() => {
+    publishGlossary(buildIndex(empty), new Map());
+  });
+
+  it("is marked when the glossary lands after the card did", async () => {
+    publishGlossary(buildIndex(empty), new Map());
+    vi.stubGlobal("fetch", vi.fn(stubFetch({ [`/v1/wells/${API10}`]: wellEnvelope })));
+
+    await renderWellCard(host, API10, callbacks);
+    expect(host.querySelector("#gw-section-head-lineage gw-term")).toBeNull();
+
+    publishGlossary(
+      buildIndex({
+        index_version: "test",
+        entries: [{ surface: "Lineage", term_id: "gt_lineage", n_words: 1 }],
+        stopwords: [],
+      }),
+      new Map([
+        [
+          "gt_lineage",
+          {
+            term_id: "gt_lineage",
+            term: "Lineage",
+            aliases: [],
+            short_definition: "Where a number came from.",
+            domain_tags: [],
+            highlightable: true,
+          },
+        ],
+      ]),
+    );
+
+    expect(host.querySelector("#gw-section-head-lineage gw-term")).not.toBeNull();
+  });
+});
+
+describe("a reloaded brushed link", () => {
+  // R-20: the server answered the brushed window, so the client holds only those months. The
+  // card tells the chart so, and the way back drops the two parameters through the same seam
+  // a brush writes them through. The bar itself is chart.test.ts's subject.
+  it("hands the chart a served span and the widening that drops both parameters", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        stubFetch({
+          [`/v1/wells/${API10}/cumulatives`]: cumulativesEnvelope,
+          [`/v1/wells/${API10}/production`]: productionEnvelope,
+          [`/v1/wells/${API10}`]: wellEnvelope,
+        }),
+      ),
+    );
+    window.history.replaceState(null, "", `/?well=${API10}&from=2026-01&to=2026-03`);
+    const announced: unknown[] = [];
+    document.addEventListener("gw-param-set", (event) => {
+      announced.push((event as CustomEvent<{ params: unknown }>).detail.params);
+    });
+
+    await renderWellCard(host, API10, callbacks);
+
+    const options = renderChart.mock.calls[renderChart.mock.calls.length - 1]?.[3] as
+      | { span?: string; onWiden?: () => void }
+      | undefined;
+    expect(options?.span).toBe("served");
+    options?.onWiden?.();
+    expect(announced).toEqual([{ from: null, to: null }]);
+  });
+
+  it("marks the three server-answered controls, and a brush as not one", async () => {
+    // Every one of them wrote the URL and fetched nothing: the card re-landed only on a
+    // reload, so `Per 1,000 ft` divided nothing and `Widen` widened nothing (visual M4). A
+    // brush is the opposite -- the months are already on hand and narrowing them is a view.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        stubFetch({
+          [`/v1/wells/${API10}/cumulatives`]: cumulativesEnvelope,
+          [`/v1/wells/${API10}/production`]: productionEnvelope,
+          [`/v1/wells/${API10}`]: wellEnvelope,
+        }),
+      ),
+    );
+    window.history.replaceState(null, "", `/?well=${API10}&from=2026-01&to=2026-03`);
+    const announced: { params: unknown; refetch?: boolean }[] = [];
+    document.addEventListener("gw-param-set", (event) => {
+      announced.push((event as CustomEvent<{ params: unknown; refetch?: boolean }>).detail);
+    });
+
+    await renderWellCard(host, API10, callbacks);
+    const call = renderChart.mock.calls[renderChart.mock.calls.length - 1];
+    const chartCallbacks = call?.[2] as {
+      onBrush?: (from: string | null, to: string | null) => void;
+      onVintage?: (asOf: string) => void;
+    };
+    const options = call?.[3] as {
+      onWiden?: () => void;
+      normalization?: { onChange: (on: boolean) => void };
+    };
+    options?.onWiden?.();
+    options?.normalization?.onChange(true);
+    chartCallbacks?.onVintage?.("2026-06-01");
+    chartCallbacks?.onBrush?.("2026-01", "2026-02");
+
+    expect(announced.map((each) => each.refetch)).toEqual([true, true, true, false]);
+  });
+
+  it("hands the chart no served span where nothing narrowed the request", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        stubFetch({
+          [`/v1/wells/${API10}/cumulatives`]: cumulativesEnvelope,
+          [`/v1/wells/${API10}/production`]: productionEnvelope,
+          [`/v1/wells/${API10}`]: wellEnvelope,
+        }),
+      ),
+    );
+    window.history.replaceState(null, "", `/?well=${API10}`);
+
+    await renderWellCard(host, API10, callbacks);
+
+    const options = renderChart.mock.calls[renderChart.mock.calls.length - 1]?.[3] as
+      | { span?: string }
+      | undefined;
+    expect(options?.span).toBeUndefined();
+  });
+});
+
 describe("the third production state, and the sections it opens", () => {
   const poolGrain = {
     ...wellEnvelope,
+    links: {
+      ...wellEnvelope.links,
+      pools: "/v1/wells/3305310451/production/pools?from=served",
+      pools_rule: "/v1/conformance/cr_nm_wcproduction_pool_rollup_1",
+    },
     meta: {
       ...wellEnvelope.meta,
       warnings: [
@@ -1523,6 +1666,32 @@ describe("the third production state, and the sections it opens", () => {
     const pools = host.querySelector("#gw-section-pools");
     expect(pools).not.toBeNull();
     expect(pools?.querySelector(".gw-section-toggle")?.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("gates the Pools section on the served link, not on the client recognising a warning", async () => {
+    // M-11: the warning says why the chart is absent; the link says where the record is. A
+    // well that carries the first without the second has no section to open.
+    const unlinked = {
+      ...poolGrain,
+      links: Object.fromEntries(
+        Object.entries(poolGrain.links).filter(([key]) => key !== "pools"),
+      ),
+    };
+    vi.stubGlobal("fetch", vi.fn(stubFetch({ [`/v1/wells/${API10}`]: unlinked })));
+
+    await renderWellCard(host, API10, callbacks);
+
+    expect(host.querySelector("#gw-section-pools")).toBeNull();
+  });
+
+  it("fetches the filings from the path the link served, not one it minted", async () => {
+    const fetchSpy = vi.fn(stubFetch({ [`/v1/wells/${API10}`]: poolGrain }));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await renderWellCard(host, API10, callbacks);
+
+    const asked = fetchSpy.mock.calls.map((call) => String(call[0]));
+    expect(asked.some((url) => url.includes("/v1/wells/3305310451/production/pools?from=served"))).toBe(true);
   });
 
   it("says the pool-grain sentence once, in the panel rather than as a loose warning", async () => {

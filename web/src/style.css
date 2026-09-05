@@ -1546,7 +1546,7 @@ gw-figure {
 .gw-state-name {
   position: absolute;
   left: 0;
-  width: calc(var(--gw-band-left, 62px) - 4px);
+  width: calc(var(--gw-band-left, 68px) - 4px);
   color: var(--slate);
   font-size: var(--gw-fs-eyebrow);
   text-align: right;
@@ -1560,8 +1560,8 @@ gw-figure {
   display: flex;
   gap: 1px;
   height: 0.8rem;
-  margin-left: var(--gw-band-left, 62px);
-  margin-right: var(--gw-band-right, 62px);
+  margin-left: var(--gw-band-left, 68px);
+  margin-right: var(--gw-band-right, 68px);
   cursor: crosshair;
 }
 
