@@ -22,10 +22,9 @@
 -- where the read applies it, once, so the tile mart, the well card and the status summary
 -- cannot answer differently on the same screen.
 --
--- RENUMBER (integrator, at the merge train): this file is 084 because fix/co-blank-well-type
--- branches from main 80fb09d, whose last migration is 083, and db/migrate.py:63-66 refuses both
--- a gap and a duplicate. release/v0.82 already carries 084_well_basin_context.sql, so rename
--- this to 086_co_blank_is_absent.sql at the v0.83 train (085 is the status-truth vocabulary migration).
+-- RENUMBERED at the v0.83 train: this file was 084_co_blank_is_absent.sql on fix/co-blank-well-type
+-- (cut from main 80fb09d, whose last migration was 083); it is 086 behind 085_status_vocabulary.sql,
+-- because db/migrate.py:63-66 refuses both a gap and a duplicate. Nothing about the number is owed.
 --
 -- REPOINT CHECKLIST (integrator, at the merge train):
 --   1. evidence_tag UNRELEASED -> the tag that first carries these three rule ids. It appears
