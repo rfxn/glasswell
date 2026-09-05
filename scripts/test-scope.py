@@ -137,14 +137,15 @@ def affected_modules(seeds: set[str], src_importers: dict[str, set[str]]) -> set
     return seen
 
 
-def select(paths: list[str]) -> tuple[list[str], list[str]]:
+def select(paths: list[str], base: str | None = None) -> tuple[list[str], list[str]]:
     """Returns (pytest arguments, the reasons a narrower selection was refused)."""
     reasons: list[str] = []
     seeds: set[str] = set()
     stems: set[str] = set()
+    tiers: set[str] = set()
     for path in paths:
         if path in FULL_SUITE_PATHS or path.startswith(FULL_SUITE_PREFIXES):
-            if path == "pyproject.toml" and not _more_than_the_version(path):
+            if path == "pyproject.toml" and only_the_version_changed(_pyproject_diff(base)):
                 continue
             reasons.append(f"{path} reaches every tier")
             continue
@@ -155,7 +156,12 @@ def select(paths: list[str]) -> tuple[list[str], list[str]]:
             seeds.add(module_name(ROOT / path))
             stems.add(Path(path).stem)
         elif path.startswith("tests/"):
-            if Path(path).name.startswith("test_") and Path(path).suffix == ".py":
+            parts = Path(path).parts
+            # A conftest collects no tests, so naming the file selects nothing at all -- and
+            # every test in the tier is built on it.
+            if len(parts) == 3 and parts[2] == "conftest.py" and parts[1] in TIERS:
+                tiers.add(f"tests/{parts[1]}")
+            elif Path(path).name.startswith("test_") and Path(path).suffix == ".py":
                 stems.add("")  # a test file selects itself, handled below
             continue
         # Everything else -- docs, web/, infra/, assets/ -- reaches no Python test by import,
@@ -166,7 +172,7 @@ def select(paths: list[str]) -> tuple[list[str], list[str]]:
 
     src_importers, test_importers, _ = build_graph()
     reached = affected_modules(seeds, src_importers)
-    selected = {ALWAYS}
+    selected = {ALWAYS, *tiers}
     for module in reached:
         selected.update(test_importers.get(module, ()))
     for stem in stems:
@@ -177,21 +183,44 @@ def select(paths: list[str]) -> tuple[list[str], list[str]]:
             if candidate.exists():
                 selected.add(str(candidate.relative_to(ROOT)))
     selected.update(
-        path for path in paths if path.startswith("tests/") and Path(ROOT / path).exists()
+        path
+        for path in paths
+        if path.startswith("tests/")
+        and Path(ROOT / path).exists()
+        and Path(path).name != "conftest.py"
     )
     return sorted(selected), reasons
 
 
-def _more_than_the_version(path: str) -> bool:
-    diff = subprocess.run(
-        ["git", "-C", str(ROOT), "diff", "HEAD", "--", path], capture_output=True, text=True
-    ).stdout
+def _pyproject_diff(base: str | None) -> str:
+    """Working tree and index against HEAD, plus the branch's own range when a base is known.
+
+    Reading only the working tree is what made a *committed* dependency edit invisible -- which
+    is exactly the change this branch made when it added pytest-xdist.
+    """
+    ranges = ["HEAD"] if base is None else ["HEAD", f"{base}...HEAD"]
+    return "".join(
+        subprocess.run(
+            ["git", "-C", str(ROOT), "diff", ref, "--", "pyproject.toml"],
+            capture_output=True,
+            text=True,
+        ).stdout
+        for ref in ranges
+    )
+
+
+def only_the_version_changed(diff: str) -> bool:
+    """True only when a diff was seen and every changed line assigns `version`.
+
+    An empty diff means the tool cannot see the change it was told about, which is not proof
+    that the change is harmless -- it falls back like anything else it cannot read.
+    """
     body = [
         line
         for line in diff.splitlines()
         if line[:1] in "+-" and line[:3] not in ("+++", "---")
     ]
-    return any("version" not in line.split("=", 1)[0] for line in body)
+    return bool(body) and all("version" in line.split("=", 1)[0] for line in body)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -216,7 +245,7 @@ def main(argv: list[str] | None = None) -> int:
         print("test-scope: nothing changed; the unit tier alone", file=sys.stderr)
         selection, reasons = [ALWAYS], []
     else:
-        selection, reasons = select(paths)
+        selection, reasons = select(paths, arguments.base)
 
     if reasons:
         print(f"test-scope: whole suite — {'; '.join(sorted(set(reasons)))}", file=sys.stderr)
