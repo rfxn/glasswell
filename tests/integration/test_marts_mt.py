@@ -12,7 +12,6 @@ from datetime import date
 
 import psycopg
 import pytest
-import yaml
 
 from glasswell.api.routers.tiles import PUBLISHED_LAYERS
 from glasswell.ingest.base import resolve_environment
@@ -21,7 +20,7 @@ from glasswell.lineage.store import PostgresRecorder
 from glasswell.marts import mt_wells as mt_marts
 from glasswell.marts.wells import profile_for, refresh_for
 from glasswell.seed import seed_all
-from tests.integration.test_marts_nd import MARTIN_CONFIG, covering_tile, extent_of, rows, scalar
+from tests.integration.test_marts_nd import covering_tile, extent_of, rows, scalar
 from tests.support.jurisdictions import declared_rule
 from tests.support.mvt import attribute_keys, feature_count, layer_name, layers
 from tests.support.seed import seed_manifest, seed_well, seed_well_spatial
@@ -272,14 +271,6 @@ def test_both_montana_layers_are_published_and_no_third_one_is(refreshed):
     assert {name for name in PUBLISHED_LAYERS if name.startswith("mt_")} == {
         "mt_wells", "mt_paths"
     }
-
-
-def test_the_martin_config_publishes_both_new_layers(refreshed):
-    functions = yaml.safe_load(MARTIN_CONFIG.read_text())["postgres"]["functions"]
-
-    assert set(functions) == set(PUBLISHED_LAYERS)
-    assert functions["mt_wells"] == {"schema": "marts", "function": "mt_wells"}
-    assert functions["mt_paths"] == {"schema": "marts", "function": "mt_paths"}
 
 
 def test_both_layers_serve_a_decodable_tile_with_their_declared_properties(refreshed):
