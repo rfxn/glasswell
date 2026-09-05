@@ -54,6 +54,10 @@
       the sum admitting none of them — a word New Mexico's pools never file
 - [Fix] `?normalization=per_lateral_ft` is refused on the summed series for the reason the
       allocated arm gives, where it was accepted and silently ignored
+- [Fix] Unticking a status class on the map takes its strike off the canvas with it: the struck
+      overlay keeps its own set of terminal classes and the status gate now narrows that set,
+      where a press left the strike painted over the mark it had just removed for `dry` and
+      `plugged` on every registered jurisdiction
 - [Fix] Production by pool says the series above it is glasswell's sum of the filings on a well
       the rollup serves, where it told every pool-grain well that nothing rolls up and no sum is
       served — the opposite of the chart drawn above it, under the same rule id
