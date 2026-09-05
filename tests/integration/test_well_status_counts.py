@@ -23,6 +23,7 @@ from fastapi.testclient import TestClient
 
 from glasswell.api.routers.wells import STATUS_SUMMARY_SQL
 from glasswell.lineage.explain import MAX_HANDLES
+from glasswell.lineage.ids import parse_handle
 from glasswell.marts.producing import load_producing_policy, producing_params
 from glasswell.seed import seed_all
 from tests.support.seed import seed_manifest, seed_well, seed_well_spatial
@@ -46,6 +47,8 @@ ND_POPULATION: tuple[tuple[str, str | None, float], ...] = (
 OUTSIDE = ("3305300009", "inactive", -101.00)
 TX_WELL = ("4200300001", "service", -102.50, 32.30)
 LATITUDE = 47.50
+# The Colorado registry decision the spine and the summary both read through.
+BLANK_IS_ABSENT_RULE = "cr_co_wells_shp_blank_is_absent_1"
 
 
 @pytest.fixture
@@ -120,6 +123,38 @@ def test_the_absence_class_is_its_own_bucket_and_never_folded_into_one(
     )
 
 
+def seed_blank_typed_colorado_well(connection: psycopg.Connection) -> None:
+    """One Colorado header inside BOX whose well type ECMC filed as the empty string."""
+    manifest = seed_manifest(
+        connection, sha256="d" * 64, source_id="co_ecmc_wells_shp", source_key="wells.zip"
+    )
+    seed_well(
+        connection,
+        api10="0512300001",
+        manifest_id=manifest,
+        state_code="05",
+        basin=None,
+        status_canonical="active",
+        well_type_reported="",
+    )
+    seed_well_spatial(
+        connection,
+        api10="0512300001",
+        geom_type="surface",
+        wkt=f"POINT(-103.45 {LATITUDE})",
+        manifest_id=manifest,
+    )
+    connection.commit()
+
+
+def derivation_rules(client: TestClient, handle: str) -> set[str]:
+    """The rule ids the derivation behind a served figure cites, as ?explain=true walks them."""
+    derivation = parse_handle(handle).derivation_id
+    response = client.get(f"/v1/derivations/{derivation}", params={"include": "rules"})
+    assert response.status_code == 200, response.text
+    return {rule["rule_id"] for rule in response.json()["data"]["rules"]}
+
+
 def test_a_well_whose_type_the_source_left_blank_is_answered_rather_than_refused(
     population: psycopg.Connection, api_client: TestClient
 ) -> None:
@@ -132,32 +167,38 @@ def test_a_well_whose_type_the_source_left_blank_is_answered_rather_than_refused
     rows cannot be restated, so the read applies the rule: the blank is the absence it always
     was, counted in the total and named by no class.
     """
-    manifest = seed_manifest(
-        population, sha256="d" * 64, source_id="co_ecmc_wells_shp", source_key="wells.zip"
-    )
-    seed_well(
-        population,
-        api10="0512300001",
-        manifest_id=manifest,
-        state_code="05",
-        basin=None,
-        status_canonical="active",
-        well_type_reported="",
-    )
-    seed_well_spatial(
-        population,
-        api10="0512300001",
-        geom_type="surface",
-        wkt=f"POINT(-103.45 {LATITUDE})",
-        manifest_id=manifest,
-    )
-    population.commit()
+    seed_blank_typed_colorado_well(population)
 
     data = summary(api_client)["data"]
 
     assert "" not in [row["well_type_reported"] for row in data["well_types"]]
     assert data["wells"]["value"] == "9"
     assert sum(int(row["wells"]["value"]) for row in data["well_types"]) == 8
+
+
+def test_the_box_cites_the_rule_that_read_its_blanks_and_a_box_without_them_does_not(
+    population: psycopg.Connection, api_client: TestClient
+) -> None:
+    """gate-cofix H-1. R8 is a row *referenced by the derivations it shaped*, and this read is
+    the one that shaped the served list: applying the rule is what took the "" bucket out of
+    well_types. Cited per jurisdiction from lineage.jurisdiction_rules, so a box holding only
+    North Dakota rows cites nothing about Colorado - the failure mode wells.py:1663-1670 already
+    names in the other direction.
+    """
+    nd_only = summary(api_client)
+
+    assert BLANK_IS_ABSENT_RULE not in derivation_rules(api_client, nd_only["data"]["wells"]["d"])
+    assert BLANK_IS_ABSENT_RULE not in nd_only["links"]
+
+    seed_blank_typed_colorado_well(population)
+    with_colorado = summary(api_client)
+
+    assert BLANK_IS_ABSENT_RULE in derivation_rules(
+        api_client, with_colorado["data"]["wells"]["d"]
+    )
+    assert with_colorado["links"][BLANK_IS_ABSENT_RULE] == (
+        f"/v1/conformance/{BLANK_IS_ABSENT_RULE}"
+    )
 
 
 def test_a_well_outside_the_box_is_not_counted(

@@ -101,12 +101,16 @@ COUNT_UNIT = "wells"
 
 # R8: every per-jurisdiction decision this router serves is a row in lineage.jurisdiction_rules
 # resolved at the request's knowledge cut, never a map in this module. status_vocabulary,
-# geometry_provenance and length_scope are decisions; whether the neighbour mart holds subjects
-# is the neighbors_available column. An unregistered prefix yields a null rule, which is an
-# answer; a registry that resolves nothing is service_degraded.
+# geometry_provenance, length_scope and blank_is_absent are decisions; whether the neighbour
+# mart holds subjects is the neighbors_available column. An unregistered prefix yields a null
+# rule, which is an answer; a registry that resolves nothing is service_degraded.
 STATUS_VOCABULARY = "status_vocabulary"
 GEOMETRY_PROVENANCE = "geometry_provenance"
 LENGTH_SCOPE = "length_scope"
+# The decision behind `absent_if_blank`. A read-time absence normalisation is a mapping decision
+# that shapes a served figure -- applying it is what takes the "" bucket out of well_types -- so
+# the reads that apply it name it, and name it per jurisdiction: only a registered one cites it.
+BLANK_IS_ABSENT = "blank_is_absent"
 # Served in the figure's place where a jurisdiction registers a length_scope rule: the length
 # resolver answers nd_gis_horizontals_line for a well with no basin, so serving a length there
 # would put a rule about North Dakota geometry on a Montana map stick.
@@ -1087,7 +1091,15 @@ def list_wells(
         links={
             "next": next_link("/v1/wells", filters | {"limit": limit}, next_cursor)
             if next_cursor
-            else None
+            else None,
+            # One key per jurisdiction on the page, the way the summary links its rules: the
+            # spine read every source-reported text column here under the rule the reader is
+            # being pointed at, and a page spanning two states cites each state's own.
+            **{
+                rule: f"/v1/conformance/{rule}"
+                for row in items
+                if (rule := registry.rule_for(row["state_code"], BLANK_IS_ABSENT))
+            },
         },
     )
 
@@ -1669,7 +1681,16 @@ def get_well_status_summary(
             if (rule := registry.rule_for(row["state_code"], GEOMETRY_PROVENANCE))
         }
     ) if classed else []
-    response_rules = sorted({*rules, *provenance_rules})
+    # The rule STATUS_SUMMARY_SQL read the grouped columns under, resolved the same way and for
+    # the same reason: it decided what a blank well type means, so the list it produced cites it.
+    absence_rules = sorted(
+        {
+            rule
+            for row in counted
+            if (rule := registry.rule_for(row["state_code"], BLANK_IS_ABSENT))
+        }
+    )
+    response_rules = sorted({*rules, *provenance_rules, *absence_rules})
     data = {
         "bbox": box,
         "wells": _count(counted, selector=f"col=wells&bbox={selector_box}"),
@@ -1703,6 +1724,7 @@ def get_well_status_summary(
     )
     links = {rule: f"/v1/conformance/{rule}" for rule in rules}
     links |= {rule: f"/v1/conformance/{rule}" for rule in provenance_rules}
+    links |= {rule: f"/v1/conformance/{rule}" for rule in absence_rules}
     if policy:
         links |= {rule: f"/v1/conformance/{rule}" for rule in PRODUCING_RULE_IDS}
     minx, miny, maxx, maxy = envelope
@@ -2095,6 +2117,7 @@ def get_well(
     storage_epsg = crs[0]["storage_epsg"] if crs else STORAGE_EPSG
     status_vocabulary_rule = registry.rule_for(row["state_code"], STATUS_VOCABULARY)
     length_scope_rule = registry.rule_for(row["state_code"], LENGTH_SCOPE)
+    absence_rule = registry.rule_for(row["state_code"], BLANK_IS_ABSENT)
     neighbours_served, neighbours_rule, neighbours_reason = _neighbours(
         registry, row["state_code"]
     )
@@ -2310,6 +2333,9 @@ def get_well(
                 if status_vocabulary_rule
                 else {}
             ),
+            # Every source-reported text field on this card was read under it, so the reader
+            # can open the decision that turned a value the source filed into a null.
+            **({"absence_rule": f"/v1/conformance/{absence_rule}"} if absence_rule else {}),
         },
         explain=inline_for(connection, explain),
     )

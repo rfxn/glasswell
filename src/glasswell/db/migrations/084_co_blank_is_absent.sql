@@ -46,3 +46,26 @@ select rule_id, date '2026-09-05', 'UNRELEASED',
        'cr_co_directional_lines_blank_is_absent_1'
   ]::text[]) rule_id
 on conflict (rule_id) do nothing;
+
+-- The decision, as a row. R8 is not "a rule exists" but "a rule the derivations it shaped
+-- reference", and this rule shapes served figures: api/routers/wells.py reads every
+-- source-reported text column of the spine under it, and /v1/wells/status-summary groups by a
+-- well type it has applied. Registered per jurisdiction so the citation is Colorado's alone --
+-- a rule about ECMC's blanks on a Texas box is the mistake wells.py:1663-1670 already records
+-- in the other direction.
+--
+-- The instant is Colorado's existing registration (2026-09-02), not this train's date: the
+-- composite foreign key binds a rule row to the registration it belongs to, and this appends a
+-- decision to that registration rather than restating it. It must NOT be repointed with the
+-- rule publication above.
+--
+-- Guarded on residency exactly as 077's rule insert is: migrations run before the seed, so on a
+-- fresh database the conformance rule is not there yet and seed/jurisdictions.py supplies both.
+-- On a database that is already seeded, this is what lands it.
+insert into lineage.jurisdiction_rules
+    (jurisdiction_code, effective_from, published_at, decision, rule_id, serving, note)
+select 'CO', date '2026-09-02', date '2026-09-02',
+       'blank_is_absent', 'cr_co_wells_shp_blank_is_absent_1', true, null::text
+ where exists (select 1 from lineage.conformance_rules
+                where rule_id = 'cr_co_wells_shp_blank_is_absent_1')
+on conflict do nothing;
