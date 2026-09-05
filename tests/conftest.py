@@ -249,12 +249,8 @@ def declared_cluster_roles() -> dict[str, str]:
 def create_cluster_roles(dsn_template: str, declared: Mapping[str, str]) -> None:
     """Create the named roles, serialised against every other session doing the same.
 
-    A role is cluster-global, not per-database, so 001, 026 and 076's
-    `if not exists (select 1 from pg_roles ...)` is a check and not a lock: concurrent sessions
-    all pass it and all issue the CREATE. The advisory lock is what makes the check-then-create
-    atomic between sessions; the suppression is the second line, and it names both outcomes
-    because they are different SQLSTATEs -- an existing role is 42710, and losing the insert
-    race on `pg_authid_rolname_index` is 23505.
+    A role is cluster-global, not per-database, so the migrations' `if not exists` is a check and
+    not a lock; the advisory lock is what makes check-then-create atomic between sessions.
     """
     with psycopg.connect(dsn_template.format(database="postgres"), autocommit=True) as admin:
         admin.execute("select pg_advisory_lock(%s)", (CLUSTER_ROLE_LOCK,))
@@ -267,22 +263,15 @@ def create_cluster_roles(dsn_template: str, declared: Mapping[str, str]) -> None
 
 
 def ensure_cluster_roles(dsn_template: str) -> None:
-    """Create every role the migrations declare, before any worker migrates.
-
-    Every migration that runs afterwards -- the templates, and the `empty_db` tests that migrate
-    from scratch -- finds the roles present and never takes the branch.
-    """
+    """Create every role the migrations declare, so no migration ever takes its CREATE branch."""
     create_cluster_roles(dsn_template, declared_cluster_roles())
 
 
 def provided_server_identity(dsn_template: str) -> tuple[str, str]:
     """The password and the host:port a sibling container uses, read out of a provided DSN.
 
-    `postgres_password` and `database_address_for_containers` are set from the container this
-    session started; on the `GLASSWELL_TEST_SERVER_DSN` path there is no such container, and
-    they were left empty. Every test that hands a DSN to a subprocess or to a martin container
-    then built one with no password: 35 of them failed `fe_sendauth: no password supplied` and
-    two more `No route to host` on the first sharded CI run that got that far.
+    On the `GLASSWELL_TEST_SERVER_DSN` path there is no container to inspect, and these are what
+    every test that hands a DSN to a subprocess or to a sibling container builds one from.
     """
     parts = urlsplit(dsn_template.format(database="postgres"))
     if not parts.password or not parts.hostname:
