@@ -129,11 +129,14 @@ export async function getEnvelope<T>(
 async function problemOf(response: Response): Promise<Problem> {
   try {
     const body = (await response.json()) as Partial<Problem>;
+    // The spread first, and the three fields the panel cannot render without after it: served
+    // last, every fallback below was minted and then discarded by a key that was present and
+    // empty. The API serves no such body; something else answering on its behalf can.
     return {
+      ...body,
       type: body.type ?? "about:blank",
       title: problemTitle(response, body.title),
       status: body.status ?? response.status,
-      ...body,
     } as Problem;
   } catch {
     // A non-JSON body (a proxy error page, say) still has to render as a problem.

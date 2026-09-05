@@ -903,6 +903,40 @@ describe("well card", () => {
     expect(host.querySelector(".gw-error h3")?.textContent).toBe("Request failed (HTTP 500)");
   });
 
+  // `problemOf` spread the served body over the fields it had just computed, so every fallback
+  // it minted was discarded whenever the key was present. glasswell's own API serves none of
+  // these shapes; a JSON error page from something else on the way through can, which is the
+  // transport the fallback exists for.
+  async function headingFor(body: Record<string, unknown>): Promise<string | undefined> {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(JSON.stringify(body), {
+            status: 500,
+            headers: { "content-type": "application/problem+json" },
+          }),
+        ),
+      ),
+    );
+    await renderWellCard(host, API10, callbacks);
+    return host.querySelector(".gw-error h3")?.textContent ?? undefined;
+  }
+
+  it("fills a served title that is empty", async () => {
+    expect(await headingFor({ title: "", status: 500 })).toBe("Request failed (HTTP 500)");
+  });
+
+  it("fills a served problem type that is null, rather than rendering no heading at all", async () => {
+    expect(await headingFor({ type: null, title: "Bad thing", status: 500 })).toBe(
+      "Bad thing (HTTP 500)",
+    );
+  });
+
+  it("fills a served status that is null with the one the response carried", async () => {
+    expect(await headingFor({ title: "Bad thing", status: null })).toBe("Bad thing (HTTP 500)");
+  });
+
   it("names the request the API failed on when it served one", async () => {
     vi.stubGlobal(
       "fetch",
