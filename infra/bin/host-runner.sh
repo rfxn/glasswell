@@ -598,6 +598,7 @@ wait_for_job() {
         if (( $(date -u +%s) >= expires )); then
             printf 'STOP: job %s has not finished after %s seconds (deadline %s) — this job does not wait longer\n' \
                 "$after_job" "$after_timeout" "$deadline"
+            stamp "waiting for $after_job timed out after ${after_timeout}s"
             write_status stopped "after $after_job until $deadline" 0 "$after_job" 1 \
                 "$(json_string "$(now)")"
             exit 1
@@ -609,6 +610,7 @@ wait_for_job() {
     if [[ $result_word != complete ]]; then
         printf 'STOP: job %s is %s at %s — this job does not start behind it\n' \
             "$after_job" "$result_word" "$finished_at"
+        stamp "$after_job did not complete ($result_word at $finished_at)"
         write_status stopped "after $after_job" 0 "$after_job" 1 "$(json_string "$(now)")"
         exit 1
     fi

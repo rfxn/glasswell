@@ -842,6 +842,7 @@ class TestAfterJob:
         assert status["result"] == "stopped"
         assert "first" in status["step"]
         assert status["steps"] == []
+        assert any("did not complete" in entry for entry in status["stamps"]), status["stamps"]
         assert not any("second-1-two" in line for line in harness.launches())
 
     def test_a_job_that_never_ran_cannot_be_followed(self, harness: Harness) -> None:
@@ -913,6 +914,9 @@ class TestTheWaitHasADeadline:
             "the chain started behind a job that had not finished"
         )
         assert "1 second" in harness.log("second") or "1 seconds" in harness.log("second")
+        # A job with no steps has stamps for its evidence trail, and a follower that timed out
+        # has nothing else to show for the hours it spent.
+        assert any("timed out" in entry for entry in status["stamps"]), status["stamps"]
 
     def test_the_waiting_state_carries_the_deadline_it_is_waiting_to(
         self, harness: Harness
