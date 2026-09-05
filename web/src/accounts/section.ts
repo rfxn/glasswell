@@ -399,7 +399,7 @@ function refusal(error: unknown): HTMLElement {
       const item = document.createElement("li");
       item.textContent = [failure.pointer, failure.detail ?? failure.code]
         .filter((part): part is string => Boolean(part))
-        .join(" — ");
+        .join(": ");
       list.append(item);
     }
     panel.append(list);

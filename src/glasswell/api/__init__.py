@@ -92,6 +92,10 @@ KEY_QUERY_PARAM = "key"
 # A credential in a query string reaches the access log verbatim and the Referer of every
 # outbound link. All four are refused rather than redacted.
 REFUSED_QUERY_PARAMS = ("key", "password", "new_password", "token")
+# Credential-shaped headers this API never reads. A caller who guesses one is refused, but the
+# edge logs the header before the refusal -- which is how the owner key reached tunnel.log in
+# an X-Api-Key on 2026-09-05 and forced a rotation. Caddy redacts them; nothing here reads them.
+UNREAD_CREDENTIAL_HEADERS = ("Authorization", "Proxy-Authorization", "X-Api-Key")
 ASSET_PREFIX = "/assets/"
 BASEMAP_PREFIX = "/basemap/"
 BASEMAP_MANIFEST = "/basemap/manifest.json"
