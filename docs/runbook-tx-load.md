@@ -204,6 +204,40 @@ Substitute the sha the directory name carries, and run the count first: a direct
 **is** in `lineage.manifests` is a live artifact that derivations resolve to, and removing it
 breaks every handle that reaches it.
 
+### If it ends any other way
+
+The refusal above is the outcome the rule produces on purpose; everything else that can end a
+stage between the fetch commit and the run's own commit is recorded the same way. The unit's
+`MemoryMax=6G` surfacing as a `MemoryError`, a full `/var/lib/postgresql`, a psycopg error, the
+per-year headroom refusal in Step 3's promotion loop — each writes one `staging.load_failed`
+event whose `reason_code` is the exception's own name, rolls back whatever it had staged, and
+leaves `/status` reading **stale** with the same reason. So the check is the same `curl` above,
+and `reason_code` is what tells the two apart:
+
+```bash
+sudo -u postgres psql -d glasswell -Atc \
+  "select payload ->> 'reason_code', payload ->> 'detail' from lineage.audit_events
+    where event_type = 'staging.load_failed' order by occurred_at desc limit 1"
+```
+
+**What is not recorded is a signal death.** `SIGKILL`, or `SIGTERM` with no handler, ends the
+process without unwinding, so nothing writes the event; the fetch is already committed and the
+poll already reads `new`. The manifest is left unstamped and unexplained. For a source that has
+stamped a load before, `/status` still refuses to call it current — an unstamped head on a
+source that keeps the bookkeeping is enough. Texas has stamped none yet, so until the first
+Step 1 completes this is the one case that reads `current` on bytes nothing has parsed. Ask the
+manifest rather than `/status` until then:
+
+```bash
+sudo -u postgres psql -d glasswell -Atc \
+  "select m.manifest_id, m.staging_load_ref is null as unloaded
+     from lineage.manifests m where m.source_id = 'tx_pdq_dsv' order by m.fetched_at"
+```
+
+A row with `unloaded` true and no `staging.load_failed` event against its `manifest_id` is an
+artifact a killed run left behind: re-run Step 1, which reuses the slot and stages from the
+bytes already on disk. The first successful stage closes this permanently for Texas.
+
 ---
 
 ## Step 2 — the plug dates, from bytes already on disk

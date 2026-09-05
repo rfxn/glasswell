@@ -20,6 +20,7 @@ import json
 import os
 import zipfile
 from collections.abc import Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
@@ -649,15 +650,32 @@ def record_census(
     return len(measurements)
 
 
-def _record_parse_refusal(
-    connection: psycopg.Connection, manifest_id: str, refusal: ArchiveFormatError, *, rule_id: str
-) -> None:
-    """The refusal, kept where a poll cannot say it: against the manifest, on its own commit.
+@contextmanager
+def _staging_outcome_recorded(
+    connection: psycopg.Connection, manifest_id: str, *, rule_id: str
+) -> Iterator[None]:
+    """Record what became of the artifact, whatever ends the run between here and its commit.
 
     The fetch is a fact and is already committed, so the poll finalises `new` -- truthfully, the
-    bytes landed. Nothing then says the parse refused, and `/status` would read a refused stage
-    as a current source with a fresh retrieval vintage. Whatever the refusal staged is rolled
-    back first: a half-written member is not a fact about anything.
+    bytes landed. Nothing then says the load did not happen, and `/status` would read the stage
+    as a current source with a fresh retrieval vintage. `KeyboardInterrupt` and `SystemExit` are
+    `BaseException` and stay outside this: an operator's Ctrl-C is not a staging failure.
+    """
+    try:
+        yield
+    except Exception as failure:
+        _record_staging_failure(connection, manifest_id, failure, rule_id=rule_id)
+        raise
+
+
+def _record_staging_failure(
+    connection: psycopg.Connection, manifest_id: str, failure: Exception, *, rule_id: str
+) -> None:
+    """The failure, on its own commit, against the manifest whose artifact was not loaded.
+
+    The reason code is the exception's own name, so this stays truthful for a header refusal, a
+    memory kill or a database error without being told which it was. Whatever the run staged is
+    rolled back first: a half-written member is not a fact about anything.
     """
     connection.rollback()
     session = current_session()
@@ -668,9 +686,9 @@ def _record_parse_refusal(
         subject_id=manifest_id,
         payload={
             "source_id": SOURCE_ID,
-            "reason_code": type(refusal).__name__.lower(),
+            "reason_code": type(failure).__name__.lower(),
             "rule_id": rule_id,
-            "detail": str(refusal),
+            "detail": str(failure),
         },
         correlation_id=session.correlation_id,
         occurred_at=session.clock.now(),
@@ -754,7 +772,9 @@ def load(
                     f"delete from staging.{table} where manifest_id = %s", (manifest.manifest_id,)
                 )
 
-    try:
+    # Everything after the fetch commit is inside this: `_record_staging_load` is stamped in
+    # this same transaction, so a promotion that fails unstamps it as surely as a refusal.
+    with _staging_outcome_recorded(connection, manifest.manifest_id, rule_id=layout.rule_id):
         with zipfile.ZipFile(fetched.payload_path) as archive:
             window = production_window(archive, layout)
             districts = district_labels(archive, layout)
@@ -764,103 +784,100 @@ def load(
             lease_parse_id, lease_rows = stage_lease_cycle(
                 connection, archive, manifest.manifest_id, layout=layout
             )
-    except ArchiveFormatError as refusal:
-        _record_parse_refusal(connection, manifest.manifest_id, refusal, rule_id=layout.rule_id)
-        raise
-    _record_staging_load(connection, manifest.manifest_id, lease_parse_id)
+        _record_staging_load(connection, manifest.manifest_id, lease_parse_id)
 
-    vintage = manifest.fetch_vintage
-    membership_id, membership_rows, measurements = _promote_membership(
-        connection,
-        manifest.manifest_id,
-        parse_derivation_id=parse_id,
-        vintage=vintage,
-        crosswalk_rule=crosswalk_rule,
-        api10_rule=api10_rule,
-    )
-    allowlist = scope_allowlist(
-        connection, manifest.manifest_id, scope_rule.spec["county_codes"]
-    )
-    promotion: dict[str, int] = {}
-    if not stage_only:
-        years = promote_years if promote_years is not None else _staged_years(
-            connection, manifest.manifest_id
+        vintage = manifest.fetch_vintage
+        membership_id, membership_rows, measurements = _promote_membership(
+            connection,
+            manifest.manifest_id,
+            parse_derivation_id=parse_id,
+            vintage=vintage,
+            crosswalk_rule=crosswalk_rule,
+            api10_rule=api10_rule,
         )
-        for year in years:
-            # Per calendar year, with the headroom asserted before each append rather than
-            # discovered inside one: canonical is append-only and a half-promoted vintage is a
-            # state somebody has to reason about.
-            if pgdata is not None:
-                precheck_filesystems(raw_root, needed=0, pgdata=pgdata)
-            _, measured = promote_lease_cycle(
-                connection,
-                manifest.manifest_id,
-                parse_derivation_id=lease_parse_id,
-                vintage=vintage,
-                allowlist=allowlist,
-                scope_rule=scope_rule,
-                liquids_rule=liquids_rule,
-                gas_rule=gas_rule,
-                grain_rule=grain_rule,
-                years=[year],
+        allowlist = scope_allowlist(
+            connection, manifest.manifest_id, scope_rule.spec["county_codes"]
+        )
+        promotion: dict[str, int] = {}
+        if not stage_only:
+            years = promote_years if promote_years is not None else _staged_years(
+                connection, manifest.manifest_id
             )
-            for measure, value in measured.items():
-                promotion[measure] = promotion.get(measure, 0) + value
-            promotion["high_water_year"] = year
+            for year in years:
+                # Per calendar year, with the headroom asserted before each append rather than
+                # discovered inside one: canonical is append-only and a half-promoted vintage is a
+                # state somebody has to reason about.
+                if pgdata is not None:
+                    precheck_filesystems(raw_root, needed=0, pgdata=pgdata)
+                _, measured = promote_lease_cycle(
+                    connection,
+                    manifest.manifest_id,
+                    parse_derivation_id=lease_parse_id,
+                    vintage=vintage,
+                    allowlist=allowlist,
+                    scope_rule=scope_rule,
+                    liquids_rule=liquids_rule,
+                    gas_rule=gas_rule,
+                    grain_rule=grain_rule,
+                    years=[year],
+                )
+                for measure, value in measured.items():
+                    promotion[measure] = promotion.get(measure, 0) + value
+                promotion["high_water_year"] = year
 
-    session = current_session()
-    emit(
-        connection,
-        "staging.scope_excluded",
-        subject_type="manifest",
-        subject_id=manifest.manifest_id,
-        payload={
-            "rows_excluded": 0,
-            "rows_staged": completions + regulatory,
-            "scope_rule": scope_rule.rule_id,
-            "lease_keys_in_scope": len(allowlist),
-            "lease_keys_total": measurements["lease_keys"],
-            "note": (
-                "the crosswalk is staged unfiltered and the scope is applied at promotion,"
-                " because OG_LEASE_CYCLE carries no county"
-            ),
-        },
-        correlation_id=session.correlation_id,
-        occurred_at=session.clock.now(),
-    )
-    record_census(
-        connection,
-        {
-            "crosswalk_api10s": measurements["api10s"],
-            "crosswalk_api10s_with_two_lease_keys": measurements["api10s_with_two_lease_keys"],
-            "crosswalk_lease_keys": measurements["lease_keys"],
-            "crosswalk_lease_keys_in_scope": len(allowlist),
-            "districts_published": len(districts),
-            "lease_months_staged": lease_rows,
-            "lease_rows_promoted": promotion.get("rows_appended", 0),
-        },
-        measured_on=vintage,
-        derivation_id=membership_id,
-    )
-    return CrosswalkLoad(
-        manifest_id=manifest.manifest_id,
-        parse_derivation_id=parse_id,
-        membership_derivation_id=membership_id,
-        staged_completions=completions,
-        staged_regulatory_leases=regulatory,
-        membership_rows=membership_rows,
-        lease_parse_derivation_id=lease_parse_id,
-        lease_rows_staged=lease_rows,
-        lease_promotion=promotion,
-        api10s=measurements["api10s"],
-        api10s_with_two_lease_keys=measurements["api10s_with_two_lease_keys"],
-        lease_keys=measurements["lease_keys"],
-        in_scope_lease_keys=len(allowlist),
-        members=members,
-        window=window,
-        precheck=precheck,
-        unchanged=bool(fetched.unchanged) and not restage,
-    )
+        session = current_session()
+        emit(
+            connection,
+            "staging.scope_excluded",
+            subject_type="manifest",
+            subject_id=manifest.manifest_id,
+            payload={
+                "rows_excluded": 0,
+                "rows_staged": completions + regulatory,
+                "scope_rule": scope_rule.rule_id,
+                "lease_keys_in_scope": len(allowlist),
+                "lease_keys_total": measurements["lease_keys"],
+                "note": (
+                    "the crosswalk is staged unfiltered and the scope is applied at promotion,"
+                    " because OG_LEASE_CYCLE carries no county"
+                ),
+            },
+            correlation_id=session.correlation_id,
+            occurred_at=session.clock.now(),
+        )
+        record_census(
+            connection,
+            {
+                "crosswalk_api10s": measurements["api10s"],
+                "crosswalk_api10s_with_two_lease_keys": measurements["api10s_with_two_lease_keys"],
+                "crosswalk_lease_keys": measurements["lease_keys"],
+                "crosswalk_lease_keys_in_scope": len(allowlist),
+                "districts_published": len(districts),
+                "lease_months_staged": lease_rows,
+                "lease_rows_promoted": promotion.get("rows_appended", 0),
+            },
+            measured_on=vintage,
+            derivation_id=membership_id,
+        )
+        return CrosswalkLoad(
+            manifest_id=manifest.manifest_id,
+            parse_derivation_id=parse_id,
+            membership_derivation_id=membership_id,
+            staged_completions=completions,
+            staged_regulatory_leases=regulatory,
+            membership_rows=membership_rows,
+            lease_parse_derivation_id=lease_parse_id,
+            lease_rows_staged=lease_rows,
+            lease_promotion=promotion,
+            api10s=measurements["api10s"],
+            api10s_with_two_lease_keys=measurements["api10s_with_two_lease_keys"],
+            lease_keys=measurements["lease_keys"],
+            in_scope_lease_keys=len(allowlist),
+            members=members,
+            window=window,
+            precheck=precheck,
+            unchanged=bool(fetched.unchanged) and not restage,
+        )
 
 
 _INSERT_LEASE_CYCLE = (

@@ -24,3 +24,7 @@
       rather than current: a refused stage records the refusal against its
       manifest and leaves staging_load_ref unset, so a fetch that landed and a
       parse that refused are two answers and not one
+- [Fix] Any way a Texas stage can end short of loading the archive is recorded
+      against the manifest, not only a refused header: a memory kill, a database
+      error or the per-year headroom refusal now leave the same staging.load_failed
+      event and the same stale source the header refusal does
