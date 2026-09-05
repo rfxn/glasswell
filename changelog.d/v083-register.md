@@ -21,3 +21,7 @@
 - [New] docs/ci-gate.md states which assertions no workflow can make: a GitHub runner has no
       route to the deployed instance, no owner key and no host filesystem, so `verify.sh` and
       `smoke.sh` own every deployed-instance probe, run per deploy rather than per day
+- [New] Every `(source_id, stage)` the conformance registry declares a policy rule at has its
+      own case: the declaration is still there, it has no executor, and dropping it leaves a
+      load of implemented kinds. The parametrisation is derived from the seed and pinned to
+      the registry, so a declaration at a new pair is covered without an edit
