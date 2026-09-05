@@ -1783,8 +1783,7 @@ describe("the fourth production state: filed by pool, and summed to the well", (
     },
   };
 
-  // One pool's filings, so the section's own body renders rather than erroring: the routes are
-  // matched by prefix and the pools path is a prefix extension of the series path.
+  // One pool's filings, so the section's own body renders rather than erroring into its catch.
   const poolFilings = {
     data: {
       api10: API10,
