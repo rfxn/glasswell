@@ -38,7 +38,22 @@ export function monthLabels(splits: readonly number[]): string[] {
   });
 }
 
-export function chartOptions(chart: ChartSeries, width: number): uPlot.Options {
+// A month either side of a single point. uPlot ranges a zero-width domain by inventing one,
+// which drew a 31-month axis under a one-month record with its only point outside the labels
+// (v0.78 N10). Two points already give it a domain to scale from, so the pin is for one.
+const MONTH_SECONDS = 31 * 24 * 3600;
+
+/** Kept in step with `--gw-band-left`'s fallback in `style.css`, which is what a test gets. */
+const AXIS_SIZE = 68;
+
+function xScale(chart: ChartSeries): uPlot.Scale {
+  const points = chart.data[0] ?? [];
+  if (points.length !== 1) return { time: true };
+  const only = Number(points[0]);
+  return { time: true, range: [only - MONTH_SECONDS, only + MONTH_SECONDS] };
+}
+
+export function chartOptions(chart: ChartSeries, width: number, log = false): uPlot.Options {
   const axisStroke = token("--slate", "#9FB0BC");
   const grid = { stroke: token("--hairline", "#1d2a33") };
   return {
@@ -47,7 +62,12 @@ export function chartOptions(chart: ChartSeries, width: number): uPlot.Options {
     padding: [8, 8, 0, 0],
     legend: { show: false },
     cursor: { drag: { x: false, y: false } },
-    scales: { x: { time: true } },
+    scales: {
+      x: xScale(chart),
+      // uPlot's log distribution, one per unit scale. A zero is already out of the drawn data
+      // by then (chart.ts's `withoutZeros`), because a log scale has no place to put one.
+      ...Object.fromEntries(chart.scales.map((unit) => [unit, log ? { distr: 3 } : {}])),
+    },
     axes: [
       {
         stroke: axisStroke,
@@ -55,16 +75,20 @@ export function chartOptions(chart: ChartSeries, width: number): uPlot.Options {
         ticks: grid,
         values: (_: unknown, splits: number[]) => monthLabels(splits),
       },
-      // uPlot's default axis size (50 px) clips a six-figure monthly volume.
+      // uPlot's default axis size (50 px) clips a six-figure monthly volume. The band's row
+      // names are laid out in the same gutter (`--gw-band-left`), and at 62 the widest of them
+      // needed 61 px in a 58 px column and read `Water · re…`.
       ...chart.scales.map((unit, position) => ({
         scale: unit,
         side: position === 0 ? (3 as const) : (1 as const),
-        size: 62,
+        size: AXIS_SIZE,
         stroke: axisStroke,
         grid,
         ticks: grid,
-        values: (_: unknown, splits: number[]) =>
-          splits.map((split) => formatValue(String(split))),
+        // uPlot's log distribution nulls the splits it draws a minor tick for and does not
+        // label; `String(null)` printed the word down both axes.
+        values: (_: unknown, splits: (number | null)[]) =>
+          splits.map((split) => (split === null ? "" : formatValue(String(split)))),
       })),
     ],
     series: [

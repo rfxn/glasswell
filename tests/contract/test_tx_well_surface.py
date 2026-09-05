@@ -19,8 +19,10 @@ PENDING = "production_pending_allocation"
 # served: lineage.conformance_rules is append-only and an as_of before this train still
 # resolves the sentence the card used to show.
 SUPERSEDED_DISCLOSURE = "cr_tx_allocation_scope_1"
-GRAIN_RULE = "cr_tx_production_grain_1"
 ALLOCATION_RULE = "cr_tx_allocation_v0_1"
+# The successor: the rule that admits a well-level figure, and whose published vintage is the
+# knowledge cut the card's answer turns on.
+GRAIN_RULE = "cr_tx_production_grain_1"
 ERROR_RULE = "cr_alloc_v0_error_bounds_1"
 
 
@@ -364,3 +366,72 @@ def test_an_instance_whose_mart_is_empty_says_so_instead_of_serving_an_empty_ser
     assert ALLOCATION_RULE in warning["detail"]
     assert "cr_tx_production_grain_1" in warning["detail"]
     assert body["links"]["allocation_rule"] == "/v1/conformance/cr_tx_production_grain_1"
+
+
+def test_two_windows_of_the_allocated_series_are_two_derivations(client: TestClient) -> None:
+    """The same class as the normalised arm's: `api.tx_production` is a response derivation
+    whose partition named the well and the streams and not the window, so the second window of
+    one lease-reported well was refused by the store's determinism guard and answered 500."""
+    path = f"/v1/wells/{TX_API10}/production"
+
+    windowed = client.get(path, params={"from": "2024-01", "to": "2024-02"})
+    whole = client.get(path)
+
+    assert windowed.status_code == 200, windowed.text
+    assert whole.status_code == 200, whole.text
+    assert windowed.json()["data"]["series"]["pm"] == ["2024-01", "2024-02"]
+    assert (
+        windowed.json()["data"]["_lineage"]["series.oil_bbl"]
+        != whole.json()["data"]["_lineage"]["series.oil_bbl"]
+    )
+
+
+def _allocated(client: TestClient, **params: str | list[str]) -> tuple[int, dict]:
+    response = client.get(f"/v1/wells/{TX_API10}/production", params=params)
+    return response.status_code, response.json()
+
+
+def test_asking_for_the_streams_the_allocated_series_already_serves_is_one_derivation(
+    client: TestClient,
+) -> None:
+    """The partition named the streams it was *asked* for, and the default asks for a water
+    stream this regulator publishes none of. So the whole series and `?stream=oil&stream=gas`
+    served the same two columns of the same figures under two derivation ids."""
+    whole_status, whole = _allocated(client)
+    named_status, named = _allocated(client, stream=["oil", "gas"])
+
+    assert whole_status == 200, whole
+    assert named_status == 200, named
+    assert named["data"]["streams"] == whole["data"]["streams"] == ["oil", "gas"]
+    assert named["data"]["series"] == whole["data"]["series"]
+    assert named["data"]["_lineage"] == whole["data"]["_lineage"]
+
+
+def test_two_orderings_of_one_allocated_stream_set_are_one_derivation(
+    client: TestClient,
+) -> None:
+    """The order a caller names the streams in changes nothing about what is computed."""
+    forward_status, forward = _allocated(client, stream=["oil", "gas"])
+    reverse_status, reverse = _allocated(client, stream=["gas", "oil"])
+
+    assert forward_status == 200, forward
+    assert reverse_status == 200, reverse
+    assert forward["data"]["series"] == reverse["data"]["series"]
+    assert forward["data"]["_lineage"] == reverse["data"]["_lineage"]
+
+
+def test_a_narrower_allocated_stream_set_is_a_different_derivation(
+    client: TestClient,
+) -> None:
+    """The converse, which is why the term is in the partition at all: fewer served columns is
+    fewer response outputs, and one id carrying both is what the store's guard refuses."""
+    whole_status, whole = _allocated(client)
+    oil_status, oil = _allocated(client, stream=["oil"])
+
+    assert whole_status == 200, whole
+    assert oil_status == 200, oil
+    assert oil["data"]["streams"] == ["oil"]
+    assert (
+        oil["data"]["_lineage"]["series.oil_bbl"]
+        != whole["data"]["_lineage"]["series.oil_bbl"]
+    )

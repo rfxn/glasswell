@@ -213,6 +213,34 @@ def test_the_grain_rule_the_pool_series_links_is_a_registry_row(
     )
 
 
+def test_every_pool_cell_the_card_draws_a_ring_on_resolves(
+    with_new_mexico: TestClient,
+) -> None:
+    """The pool table is the same table the chart draws, so its cells compose the same
+    `<column handle>&pm=<month>` selector. On a pool-grain well this table is the whole
+    record, and a cell whose ⌾ does not resolve is R8's "untraceable equals wrong"."""
+    data = body(with_new_mexico, f"/v1/wells/{NM_API10}/production/pools")["data"]
+
+    checked = 0
+    for index, pool in enumerate(data["pools"]):
+        prefix = f"pools.{index}.series."
+        for column in ("oil_bbl", "gas_mcf", "water_bbl"):
+            values = pool["series"].get(column)
+            if values is None:
+                continue
+            shared = data["_lineage"].get(f"{prefix}{column}")
+            for at, month in enumerate(pool["series"]["pm"]):
+                if values[at] is None:
+                    continue
+                handle = data["_lineage"].get(f"{prefix}{column}.{at}") or shared
+                assert handle is not None, f"{column} {month} is drawn with no handle"
+                point = handle if "&pm=" in handle else f"{handle}&pm={month}"
+                answer = with_new_mexico.get("/v1/explain", params={"h": point, "depth": "1"})
+                assert answer.status_code == 200, f"{column} {month}: {answer.text}"
+                checked += 1
+    assert checked > 0
+
+
 def test_the_liquids_basis_on_a_new_mexico_oil_figure_is_new_mexicos(
     with_new_mexico: TestClient,
 ) -> None:
@@ -481,3 +509,26 @@ def test_the_other_states_still_name_their_own_status_rule(client: TestClient) -
     assert nd["data"]["status_vocabulary_rule"] == "cr_nd_status_vocab_1"
     assert nd["links"]["status_rule"] == "/v1/conformance/cr_nd_status_vocab_1"
     assert tx["data"]["status_vocabulary_rule"] == "cr_tx_status_vocab_1"
+
+
+def test_the_well_response_links_the_pool_filings_where_the_regulator_files_by_pool(
+    with_new_mexico: TestClient,
+) -> None:
+    """M-11: the card's section list is built from the well envelope, so the predicate the
+    production response serves has to be on this one too -- as a link, which is what a
+    section is gated on, rather than as a warning code the client has to recognise."""
+    envelope = body(with_new_mexico, f"/v1/wells/{NM_API10}")
+
+    assert envelope["links"]["pools"] == f"/v1/wells/{NM_API10}/production/pools"
+    assert envelope["links"]["pools_rule"].startswith("/v1/conformance/cr_nm_")
+    codes = {warning["code"] for warning in envelope["meta"]["warnings"]}
+    assert "production_reported_at_pool_grain" in codes
+
+
+def test_a_rolled_up_jurisdiction_serves_no_pools_link(with_new_mexico: TestClient) -> None:
+    from glasswell.api.examples import EXAMPLE_API10
+
+    links = body(with_new_mexico, f"/v1/wells/{EXAMPLE_API10}")["links"]
+
+    assert "pools" not in links
+    assert "pools_rule" not in links

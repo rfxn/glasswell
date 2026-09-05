@@ -13,11 +13,17 @@ from datetime import date
 
 import psycopg
 
+from glasswell.seed.conformance_basin_context import BASIN_CONTEXT
 from glasswell.seed.conformance_co import (
     CLASSED_COUNT,
     CO_STATUS_MAP,
     DOCUMENTED_COUNT,
     PLANNED_SHARE,
+)
+from glasswell.seed.conformance_status_history import (
+    CO_HISTORY_RULE_ID,
+    NM_HISTORY_RULE_ID,
+    STATUS_HISTORY,
 )
 
 # Valid time and knowledge time of the founding registrations. The integrator repoints this
@@ -479,6 +485,23 @@ JURISDICTION_RULES: tuple[dict[str, object], ...] = (
      "rule_id": "cr_nd_length_source_1"},
     {"jurisdiction_code": "TX", "decision": "length_source",
      "rule_id": "cr_tx_length_source_1"},
+    # The polygon answer, one rule per jurisdiction. A new decision rather than a repoint of
+    # basin_scope: that rule decides whether the ingest writes canonical.wells.basin at all and
+    # is still true, and these decide what the published boundaries say about the same well.
+    {"jurisdiction_code": "ND", "decision": BASIN_CONTEXT, "rule_id": "cr_nd_basin_context_1"},
+    {"jurisdiction_code": "TX", "decision": BASIN_CONTEXT, "rule_id": "cr_tx_basin_context_1"},
+    {"jurisdiction_code": "MT", "decision": BASIN_CONTEXT, "rule_id": "cr_mt_basin_context_1"},
+    {"jurisdiction_code": "NM", "decision": BASIN_CONTEXT, "rule_id": "cr_nm_basin_context_1"},
+    {"jurisdiction_code": "CO", "decision": BASIN_CONTEXT, "rule_id": "cr_co_basin_context_1",
+     "effective_from": CO_REGISTERED_ON, "published_at": CO_REGISTERED_ON},
+    # The two jurisdictions whose header effective_from is the regulator's own valid time, and
+    # the whole of what emits links.history. One rule each, under each one's own source, and
+    # registered at each one's own clock: Colorado's registration was founded at its own
+    # instant and jurisdiction_rules carries a composite foreign key onto it, so a row at the
+    # restatement's clock would point at no registration.
+    {"jurisdiction_code": "NM", "decision": STATUS_HISTORY, "rule_id": NM_HISTORY_RULE_ID},
+    {"jurisdiction_code": "CO", "decision": STATUS_HISTORY, "rule_id": CO_HISTORY_RULE_ID,
+     "effective_from": CO_REGISTERED_ON, "published_at": CO_REGISTERED_ON},
     {"jurisdiction_code": "ND", "decision": "neighbors_scope",
      "rule_id": "cr_nd_neighbors_scope_1"},
     {"jurisdiction_code": "MT", "decision": "neighbors_scope",
@@ -492,10 +515,12 @@ JURISDICTION_RULES: tuple[dict[str, object], ...] = (
     *COLORADO_DECISIONS,
 )
 
-# The nine decisions the Texas registration carries after the supersession. Five are carried
-# forward: dropping length_source or basin_scope would silently remove Texas's lateral-length
-# measurement and its basin CRS from the tile mart, which no test would catch because the mart
-# would go on running with a default.
+# The ten decisions the Texas registration carries after the supersession, six of them carried
+# forward from the registration it supersedes. The loader joins decisions to the resolved
+# registration on its exact (code, effective_from, published_at) triple, so a decision left out
+# here is served as no rule at all -- which is what became of basin_context between v0.80 and
+# this train, and what test_marts_basin_context.py now asserts for every registered
+# jurisdiction rather than for North Dakota alone.
 TX_SUPERSEDED_RULES: tuple[dict[str, object], ...] = (
     {"jurisdiction_code": "TX", "decision": "status_vocabulary",
      "rule_id": "cr_tx_status_vocab_1"},
@@ -505,6 +530,8 @@ TX_SUPERSEDED_RULES: tuple[dict[str, object], ...] = (
     {"jurisdiction_code": "TX", "decision": "basin_scope", "rule_id": "cr_tx_basin_scope_1"},
     {"jurisdiction_code": "TX", "decision": "length_source",
      "rule_id": "cr_tx_length_source_1"},
+    {"jurisdiction_code": "TX", "decision": BASIN_CONTEXT,
+     "rule_id": "cr_tx_basin_context_1"},
     {"jurisdiction_code": "TX", "decision": "production_grain",
      "rule_id": "cr_tx_production_grain_1"},
     {"jurisdiction_code": "TX", "decision": "liquids", "rule_id": "cr_tx_liquids_basis_1"},

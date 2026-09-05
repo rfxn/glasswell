@@ -7,6 +7,8 @@ export interface Warning {
   code: string;
   detail?: string;
   pointer?: string;
+  /** Where the decision behind the warning is a registered rule, its id travels beside it. */
+  rule_id?: string;
 }
 
 export interface Meta {

@@ -2,6 +2,9 @@ import "../../card/gw-figure.ts";
 
 import { isFigure } from "../../api/envelope.ts";
 
+/** The absent-value mark, ASCII: an em dash is punctuation and this is a data mark. */
+const ABSENT_MARK = "--";
+
 /**
  * A served figure nested inside a structural value — the publication receipt's acceptance
  * gates and its peer-ladder support distribution — carried its handle in the payload and
@@ -44,7 +47,7 @@ function appendFigures(list: HTMLElement, value: unknown): void {
       appendFigures(nested, item);
       slot.append(nested);
     } else {
-      slot.textContent = item === null ? "—" : String(item);
+      slot.textContent = item === null ? ABSENT_MARK : String(item);
     }
     list.append(key, slot);
   }

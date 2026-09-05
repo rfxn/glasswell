@@ -27,7 +27,7 @@ Measured on the deployed database (VM 111) and host, read-only, 2026-09-02.
 
 ## Shipped baseline per state
 
-All four states are resident. Rows and distinct API-10 differ where a state carries bitemporal
+All five states are resident; Colorado landed 2026-09-05 (run 2, 6 min 55 s on the host runner, every gate exact). Rows and distinct API-10 differ where a state carries bitemporal
 vintages; geometry is distinct API-10 per `geom_type`. Montana is a Williston extension rather
 than a phase; ROADMAP's N3 owns its exit criteria.
 
@@ -37,10 +37,43 @@ than a phase; ROADMAP's N3 owns its exit criteria.
 | **TX** 42 | 359,421 / 359,421 | **none** — `tx_pdq_dsv` is not a registered source; allocation and both validators unbuilt | surface 355,463 · bottomhole 355,545 · lateral 68,331 | 291,235 of 359,421 · `cr_tx_status_vocab_1` | `TOTAL_DEPTH`, `COMPLETION_DATE` · `cr_tx_ewa_measures_1`, the only TX withholding rule. Operator absence is not withholding · `cr_tx_operator_absence_1` |
 | **NM** 30 | 321,510 / 142,000 | 17,597,960 · `nm_ocd_wcproduction`, completion-pool grain | surface 141,778 | **0 of 321,510 promoted, by design** — the column stays null and `cr_nm_wellhistory_status_vocab_2` resolves the class at read time: ten of fourteen OCD codes to canonical classes, `I`/`J`/`Q`/`Z` to a distinct `documented_unmapped` class, `unmapped_action = passthrough`. Tile-grain classes active 54,325 · plugged 50,935 · permitted 18,161 · expired 17,056 (`work-output/nm-status-status.md`, 2026-09-01) | lateral geometry `data-unreachable` · `cr_nm_wellhistory_geometry_scope_1`. No well-level rollup · `cr_nm_wcproduction_pool_rollup_1` |
 | **MT** 25 | 40,626 / 40,626 | 17,547,951 well grain + 4,808,814 PRU lease grain · `mt_bogc_*` | surface 42,026 · lateral 2,835 | 40,626 of 40,626 · `cr_mt_gis_status_vocab_1` | lateral length · `cr_mt_paths_length_scope_1`. No basin tag · `cr_mt_basin_scope_1` |
+| **CO** 05 | 124,392 / 124,392 | 1,261,665 · `co_ecmc_production` rolling file, 244,491 pool + 1,017,174 well grain, 98,226 disclosed `sum_over_pools` | surface 124,392 · bottomhole 39,048 · lateral 39,048 (staged 124,410 / 39,048 / 39,048; 18 `duplicate_row` quarantined) | 124,392 of 124,392 via the resolver (G-3) · `cr_co_wells_status_vocab_1` | 1,172 wells carry a blank `well_type_reported` — F-3, `fix/co-blank-well-type` in flight (the status summary refuses their bbox until it lands) |
+
+### Basin context, measured before it ships
+
+`marts.well_basin_context` is built by this release line and is not on the deployed host yet;
+these are its answers, taken read-only on the spine 2026-09-03 with the mart's own query — one
+containing basin polygon per well, driven off `canonical.wells_latest` and left-joined to the
+surface point in `canonical.well_spatial`.
+
+**One denominator, and it is the well count.** Every share below is over the jurisdiction's own
+wells in `canonical.wells_latest`, which is the population the mart is driven off and therefore
+the figure the card serves with a handle. Wells with no surface point are counted in that
+denominator and answered `no_geometry`.
+
+| State | Wells | Inside a published basin | `outside_published_boundaries` | No geometry | Rule |
+|---|---:|---|---|---:|---|
+| **ND** 33 | 43,817 | 43,424 (99.1 %) | 393 (0.9 %) | 0 | `cr_nd_basin_context_1` |
+| **TX** 42 | 359,421 | 344,611 (95.9 %) | 10,852 (3.0 %) | 3,958 | `cr_tx_basin_context_1` |
+| **NM** 30 | 142,000 | 137,505 (96.8 %) | 4,273 (3.0 %) | 222 | `cr_nm_basin_context_1` |
+| **MT** 25 | 40,626 | 13,062 (32.2 %) | **27,564 (67.8 %)** | 0 | `cr_mt_basin_context_1` |
+
+Asked of the geometry table instead — distinct surface api10s in `canonical.well_spatial`, which
+is the base the spec's §6.2 quotes — the four shares read ND 43,424/43,817 (99.1 %), TX
+344,611/355,463 (96.9 %), NM 137,505/141,778 (97.0 %) and MT 13,623/42,026 (32.4 %). Only
+Montana moves materially, and by exactly the 1,400 surface points that have no well behind them,
+561 of which are inside a basin. **The served figure is the well-base one**, because that is what
+the mart writes and what the card resolves; the geometry-base figures are recorded here so a
+reader comparing this page against the spec finds the difference stated rather than implied.
+
+Two thirds of Montana is `outside_published_boundaries`: a served answer about the EIA boundary
+set, not a gap in the record. Texas files `permian` on all 359,421 rows as an ingest scope label,
+and 10,896 of the 344,611 inside a polygon (3.2 %) are in a different one — 10,030 Fort Worth,
+456 Palo Duro, 410 Marfa — which the card serves beside the label rather than overwriting.
 
 ## Serving surface
 
-**57 operations across 52 paths, 56 under `/v1`**, counted from `tests/contract/openapi_snapshot.json`
+**58 operations across 53 paths, 57 under `/v1`**, counted from `tests/contract/openapi_snapshot.json`
 on 2026-09-02 — the three added on `release/v0.76` are `GET /v1/jurisdictions` and `GET`/`DELETE` on
 the session list. Covered: health, operational status, wells and their facets, ND production, per-well
 cumulatives, vintage cohorts, completion context and promoted completion design, ND physical
@@ -70,7 +103,7 @@ well when the link named no viewport of its own.
 |---|---|---|
 | **P0** Scaffold and contracts | Met | `/v1/audit` is not served, and is not a P0 exit |
 | **P1** ND spine | Met with named deferrals | PDF era 2003-01 → 2015-04 and FracFocus chemistry remain absent by design |
-| **P2** Serving and map | Substantially met | 57 operations, tiles with the allowlist asserted in CI, map/card/drawer/glossary/explorer/Status all shipped. `/v1/spacingunits` unserved; permits, GOR and water-cut remain |
+| **P2** Serving and map | Substantially met | 58 operations, tiles with the allowlist asserted in CI, map/card/drawer/glossary/explorer/Status all shipped. `/v1/spacingunits` unserved; permits, GOR and water-cut remain |
 | **P3** Forecasting and benchmark | Entry gate met; control served; modeling remains | Publication `p3pub_8b434525d8c621762e31b06ca660bfcd` accepted 2026-08-28 and its control served. Quantile-model writer, split-conformal calibration, model-registry writer, persisted analog index and benchmark runner remain. `fv2.0` is a one-feature set |
 | **P4** Dollars and scenarios | Not started | Entire phase |
 | **P5** Intelligence, agents and alerts | Not started | Entire phase |
