@@ -1861,6 +1861,24 @@ describe("a re-land keeps the card the reader has", () => {
     expect(host.querySelector(".gw-card")?.getAttribute("aria-busy")).toBeNull();
   });
 
+  it("takes the whole card when the session is gone, not one section of it", async () => {
+    // The guard keys on what the failure is, not on whether a card is standing: a 403 is not an
+    // answer about the vintage a control asked for, and eight sections of the previous reading
+    // left standing under it read live while the only sign of a lost session sits in the chart
+    // frame.
+    await renderWellCard(host, API10, callbacks);
+    expect(host.querySelectorAll(".gw-section").length).toBeGreaterThan(0);
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(problem(403, "unauthenticated"))));
+
+    window.history.replaceState(null, "", "/?as_of=2026-06-01");
+    await renderWellCard(host, API10, callbacks);
+
+    expect(host.querySelector(".gw-card"), "stale figures left standing under a lost session")
+      .toBeNull();
+    expect(host.querySelector(".gw-production-chart .gw-error")).toBeNull();
+    expect(host.textContent).toContain("no live session");
+  });
+
   it("puts no card-closing dismiss inside a refusal it scoped to one section", async () => {
     // The × reads `Dismiss this error` and is wired to `onClose`, which main.ts binds to
     // `selectWell(null)`. Inside the panel the round scoped to the production section, that is

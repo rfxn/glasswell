@@ -203,7 +203,8 @@ export async function renderWellCard(
     // A refusal of a re-land is the answer to one control the reader pressed, so it costs them
     // that control's own surface and not the card: `Read at …` at a vintage nothing resolves at
     // took every section, every disclosure and the window bar with it.
-    const standingCard = kept ? container.querySelector<HTMLElement>(".gw-card") : null;
+    const standingCard =
+      kept && refusedThisRequest(error) ? container.querySelector<HTMLElement>(".gw-card") : null;
     const chart = standingCard?.querySelector<HTMLElement>(".gw-production-chart .gw-frame-body");
     if (standingCard && chart) {
       chart.replaceChildren(errorPanel(error, { onSignIn: callbacks.onSignIn }));
@@ -943,6 +944,18 @@ async function settled(
   for (const [details, key] of disclosureKeys(card)) if (kept.open.has(key)) details.open = true;
   const body = card.querySelector<HTMLElement>(".gw-panel-body");
   if (body) body.scrollTop = kept.scrollTop;
+}
+
+/**
+ * Whether the server answered about the request this control made. A 4xx problem is that answer
+ * -- a vintage nothing resolves at, a parameter the API will not take -- and belongs to the
+ * section that asked for it. A lost session, a 5xx or a dropped connection is not: it says
+ * nothing about the ask, and a card of the previous reading left standing under it reads live.
+ */
+function refusedThisRequest(error: unknown): boolean {
+  if (!(error instanceof ApiError)) return false;
+  const status = error.problem.status;
+  return status >= 400 && status < 500 && status !== 401 && status !== 403;
 }
 
 /** The one served normalisation arm, named where the control and the request both read it. */

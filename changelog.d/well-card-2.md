@@ -179,7 +179,9 @@
 - [Fix] a re-land the server refuses costs the reader the section that asked and not the
       card: a press of `Read at …` at a vintage that resolves nowhere answered 404 and
       replaced every section, every disclosure and the window bar with the banner, where
-      the refusal now stands in the production section and the card stays up
+      the refusal now stands in the production section, the card stays up and the panel
+      carries no dismiss that would close it; a lost session still takes the whole card,
+      because a card of the previous reading standing under one reads live
 - [Fix] the report-vintages disclosure a reader opened stays open across the chart's own
       redraws: a stream toggle, the log axis, a span press, a drag, clearing it and the
       table view each rebuilt the chart with the disclosure closed, and the summary those
