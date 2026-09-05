@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import date
 
 import psycopg
@@ -79,6 +80,54 @@ def test_the_detail_serves_the_spec_verbatim(client: TestClient) -> None:
     assert data["rule"]
     assert data["evidence_url"].startswith("https://")
     assert data["published_vintage"] == "2026-08-20"
+
+
+def test_the_detail_serves_the_publication_evidence_beside_the_rationale(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """R8 serves the rationale and the effective date. Which release first carried the rule
+    is the same kind of fact and lived only in `lineage.conformance_rule_publications`, so a
+    reader could see when a decision applied but not which shipped code it applied in."""
+    data = client.get(f"/v1/conformance/{EXAMPLE_RULE_ID}").json()["data"]
+    with seeded.cursor() as cursor:
+        cursor.execute(
+            "select evidence_tag, evidence_commit from lineage.conformance_rule_publications"
+            " where rule_id = %s",
+            (EXAMPLE_RULE_ID,),
+        )
+        published = cursor.fetchone()
+
+    assert (data["evidence_tag"], data["evidence_commit"]) == published
+    assert re.fullmatch(r"[0-9a-f]{40}", data["evidence_commit"])
+
+
+def test_every_publication_tag_the_registry_carries_reaches_its_rule(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """One rule would pass on a constant. One rule per distinct tag cannot."""
+    with seeded.cursor() as cursor:
+        cursor.execute(
+            "select distinct on (p.evidence_tag) r.rule_id, p.evidence_tag, p.evidence_commit"
+            "  from lineage.conformance_rule_publications p"
+            "  join lineage.conformance_rules r on r.rule_id = p.rule_id"
+            " where r.published_vintage <= current_date"
+            " order by p.evidence_tag, r.rule_id"
+        )
+        published = cursor.fetchall()
+
+    assert len(published) > 1, "the registry carries one tag; this test cannot fail"
+    for rule_id, tag, commit in published:
+        data = client.get(f"/v1/conformance/{rule_id}").json()["data"]
+        assert (data["evidence_tag"], data["evidence_commit"]) == (tag, commit), rule_id
+
+
+def test_the_collection_leaves_the_evidence_pair_to_the_detail(client: TestClient) -> None:
+    """The page is the mapping policy at a glance; the publication pair is a per-rule fact and
+    stays where a reader asks for one rule. Additive on the detail only (S1 freeze)."""
+    data = client.get("/v1/conformance", params={"limit": 5}).json()["data"]
+
+    assert data
+    assert all("evidence_tag" not in item for item in data)
 
 
 def test_include_applied_by_is_the_reverse_index(client: TestClient) -> None:

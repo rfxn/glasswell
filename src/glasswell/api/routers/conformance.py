@@ -45,6 +45,17 @@ select {_COLUMNS}
  where true
 """
 
+_DETAIL_COLUMNS = ", ".join(f"r.{column.strip()}" for column in _COLUMNS.split(","))
+
+# The publication pair rides the detail rather than the page: it is a per-rule fact, and R8
+# asks that a rule's rationale, its effective date and the evidence behind it read together.
+_RULE_DETAIL = f"""
+select {_DETAIL_COLUMNS}, p.evidence_tag, p.evidence_commit
+  from lineage.conformance_rules r
+  left join lineage.conformance_rule_publications p on p.rule_id = r.rule_id
+ where true
+"""
+
 _APPLIED_BY = """
 select dr.derivation_id, dr.applied_rows, d.operation, d.output_dataset, d.created_vintage
   from lineage.derivation_rules dr
@@ -105,6 +116,12 @@ class AppliedBy(BaseModel):
 
 
 class ConformanceRuleDetail(ConformanceRule):
+    evidence_tag: str | None = Field(
+        description="Release tag whose publication first carried this immutable rule id."
+    )
+    evidence_commit: str | None = Field(
+        description="Commit that release resolves to, as checked against git history."
+    )
     applied_by: list[AppliedBy] | None = Field(
         default=None, description="Present when include=applied_by."
     )
@@ -399,7 +416,7 @@ def get_conformance_rule(
         "as_of": knowledge_at,
     }
     statement = (
-        _RULES
+        _RULE_DETAIL
         + " and r.rule_id = %(rule_id)s"
         + " and r.published_vintage <= %(as_of)s"
     )
