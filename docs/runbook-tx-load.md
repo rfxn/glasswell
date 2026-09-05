@@ -385,7 +385,7 @@ has started — it needs `tx-promote`'s status file to exist — and the runner 
 never a unit's `Result`, which answers `success` for a transient unit however it ended.
 
 ```bash
-sudo /usr/local/sbin/host-runner.sh --job tx-step45 --after-job tx-promote \
+sudo /usr/local/sbin/host-runner.sh --job tx-marts --after-job tx-promote \
   --after-timeout 28800 --detach --memory 2G --timeout 3600 -- \
   allocation   /opt/glasswell/venv/bin/python -m glasswell.marts.tx_allocation \
   -- backtest  /opt/glasswell/venv/bin/python -m glasswell.marts.allocation_backtest \
@@ -393,17 +393,38 @@ sudo /usr/local/sbin/host-runner.sh --job tx-step45 --after-job tx-promote \
 
 # Poll the status file. `waiting` names the job it is behind and the deadline it waits to;
 # a stopped chain names the mart that did not rebuild.
-sudo /usr/local/sbin/host-runner.sh --status tx-step45
+sudo /usr/local/sbin/host-runner.sh --status tx-marts
 ```
 
-`tx-step45` is the name the ad-hoc runner of 2026-09-05 used for this hand-off, which polled
-`systemctl is-active` in a loop; it is kept so the two records read as one story.
+The job is `tx-marts` and not `tx-step45`, which is what the ad-hoc runner of 2026-09-05 called
+this hand-off. That runner has written a status file under its own name, and the deploy defers
+retiring it for exactly as long as it is still going — so a tracked job launched under that name
+would be refused for at least a release. A tracked runbook job never reuses a name an ad-hoc
+runner has written a status under.
 
 **A Step 3 that stopped stops this too, and that is the point.** The follower refuses to start
 behind a job whose status says `stopped` — an OOM-killed batch is a promotion that did not
-happen, and marts rebuilt over it would publish totals for rows that are not there. Relaunch
-this after the resume of Step 3 completes; its own status file will say `stopped` naming
-`tx-promote`, which is the record of why it did not run.
+happen, and marts rebuilt over it would publish totals for rows that are not there. It records
+`stopped` naming `tx-promote`, which is the record of why it did not run.
+
+That record is also what the relaunch has to get past: a job that already stopped is refused a
+second launch. **Resume it, do not force it** — same job name, same status file, and the marts
+numbered as its first steps, because the refusal ran none of them:
+
+```bash
+sudo /usr/local/sbin/host-runner.sh --job tx-marts --resume --after-job tx-promote \
+  --after-timeout 28800 --detach --memory 2G --timeout 3600 -- \
+  allocation   /opt/glasswell/venv/bin/python -m glasswell.marts.tx_allocation \
+  -- backtest  /opt/glasswell/venv/bin/python -m glasswell.marts.allocation_backtest \
+  -- cumulatives /opt/glasswell/venv/bin/python -m glasswell.marts.cumulatives
+
+sudo /usr/local/sbin/host-runner.sh --status tx-marts
+```
+
+`--force` would run it again from step 1 over the top of that status file, and the refusal it
+records is the only evidence the marts were held back from a promotion that had not landed.
+Launch the resume once Step 3's own resume is under way: it arms behind `tx-promote` again, and
+`tx-promote`'s status reads unfinished from the moment its resume starts.
 
 Eight hours is the deadline, not a guess about Step 3: past it the follower stops and says so
 rather than waiting for ever. Raise it if the remaining batches are larger than that.

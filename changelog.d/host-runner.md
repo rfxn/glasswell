@@ -27,7 +27,9 @@
       stops and says so rather than waiting forever. `runbook-tx-load.md` Step 4 arms the
       marts behind the Step 3 promotion this way, replacing a hand-off the operator had to
       watch for; a promotion that stopped stops the marts too, because marts rebuilt over a
-      promotion that did not happen would publish totals for rows that are not there
+      promotion that did not happen would publish totals for rows that are not there, and the
+      runbook states the resume that gets past that record rather than leaving the operator to
+      read `pass --force` off a refusal
 - [New] install.sh places the runner at `/usr/local/sbin/host-runner.sh` and creates
       `/var/lib/glasswell/runs` (root:glasswell 0750, so a step cannot rewrite the verdict on
       its own work) and `/var/log/glasswell`; verify.sh asserts both directories and holds the

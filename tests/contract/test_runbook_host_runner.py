@@ -297,6 +297,25 @@ def test_the_texas_marts_are_armed_behind_the_promotion_they_must_not_precede() 
     )
 
 
+@pytest.mark.parametrize("name", RUNBOOKS)
+def test_every_documented_relaunch_states_how_it_recovers(name: str) -> None:
+    # A job that already has a status file is refused a second launch. A runbook that shows the
+    # same job twice is showing a relaunch, and the second one has to say which recovery it is
+    # — `--resume` where a stopped job continues, `--force` where starting over is the answer —
+    # or the operator reads `pass --force` from the runner at the worst possible moment.
+    launched: list[str] = []
+    silent: list[str] = []
+    for line in joined(name).splitlines():
+        if "host-runner.sh" not in line or "--job" not in line:
+            continue
+        job = JOB.search(line).group(1)
+        if job in launched and "--resume" not in line and "--force" not in line:
+            silent.append(line.strip())
+        launched.append(job)
+
+    assert silent == [], f"{name} relaunches a job with no recovery stated: {silent}"
+
+
 def test_the_texas_resume_is_documented_against_the_job_it_resumes() -> None:
     blocks = fenced("runbook-tx-load.md")
     resumed = set(RESUME_JOB.findall(blocks))
@@ -314,6 +333,83 @@ def test_the_texas_promotion_sizes_its_batches_by_rows() -> None:
     assert "5.23" in text
     assert "6.72" in text
     assert re.search(r"MemoryMax|--memory", text)
+
+
+class TestNoRunbookLaunchesANameAnAdHocRunnerOwns:
+    """A job name an ad-hoc runner has written a status under is a name a runbook cannot use.
+
+    The retirement clears such a name only when the runner that wrote it is finished; while it
+    is live the deferral keeps it, correctly, and a documented launch under that name is refused
+    for as long as that lasts — at least a release. Colorado's `co-load` is the case that works:
+    its runner is done, so the same deploy that defers Texas clears Colorado.
+    """
+
+    # The host's own tx-step45.json, 2026-09-05, shortened at `stamps`.
+    HOST_TX_STEP45 = (
+        '{"job":"tx-step45","started":"2026-09-05T20:06:14Z","step":"wait-step3",'
+        '"step_index":0,"steps_total":3,"unit":"t3-tx-runner","exit":null,"result":"%s",'
+        '"finished":%s,"stamps":["2026-09-05T20:06:14Z waiting on t3-tx-runner"]}'
+    )
+
+    @staticmethod
+    def texas_marts_launch() -> list[str]:
+        found = [
+            arguments
+            for arguments in TestTheDocumentedInvocationsParse.invocations("runbook-tx-load.md")
+            if any("tx_allocation" in token for token in arguments)
+            and "--resume" not in arguments
+        ]
+        assert len(found) == 1, f"the Texas marts are launched {len(found)} times"
+        return found[0]
+
+    def test_the_deploy_that_defers_texas_still_frees_every_name_a_runbook_launches(
+        self, tmp_path: Path
+    ) -> None:
+        runs, sbin = TestALiveRunnerIsNeverArchived.host(tmp_path)
+        retire_adhoc_runs(
+            tmp_path,
+            active={
+                "t3-tx-runner.service": f"{sbin}/tx-step3-resume2-runner.sh",
+                "tx-step45-runner.service": f"{sbin}/tx-step45-runner.sh",
+            },
+        )
+
+        blocked = []
+        for name in LONG_STEP_RUNBOOKS:
+            for arguments in TestTheDocumentedInvocationsParse.invocations(name):
+                if "--resume" in arguments or "--force" in arguments:
+                    continue  # a relaunch says how it recovers; that is the case below
+                job = arguments[arguments.index("--job") + 1]
+                if (runs / f"{job}.json").exists():
+                    blocked.append(f"{name}: --job {job}")
+
+        assert blocked == [], f"launched under a name an ad-hoc runner still owns: {blocked}"
+
+    @pytest.mark.parametrize(
+        ("state", "finished"),
+        [("waiting", "null"), ("complete", '"2026-09-05T23:14:02Z"')],
+    )
+    def test_the_texas_marts_line_runs_against_the_ad_hoc_status_in_either_state(
+        self, tmp_path: Path, state: str, finished: str
+    ) -> None:
+        # Both reachable states of the live runner: waiting tonight, complete when it lands.
+        runs = tmp_path / "runs"
+        runs.mkdir(parents=True)
+        (runs / "tx-step45.json").write_text(self.HOST_TX_STEP45 % (state, finished), "utf-8")
+        environment = stub_environment(tmp_path / "stubs", runs)
+        arguments = self.texas_marts_launch()
+        subprocess.run(
+            [str(RUNNER), "--record", "--job", arguments[arguments.index("--after-job") + 1],
+             "--step", "lead", "--step-index", "1", "--steps-total", "1", "--result", "complete"],
+            env=environment, check=True, capture_output=True,
+        )
+
+        completed = subprocess.run(
+            [str(RUNNER), *arguments], env=environment, capture_output=True, text=True
+        )
+
+        assert completed.returncode != 3, completed.stderr
+        assert "pass --force" not in completed.stderr
 
 
 class TestTheDocumentedInvocationsParse:
