@@ -18,6 +18,11 @@ working rather than a defect. Run the collector against this instance's DSN once
     GLASSWELL_DSN=<the printed dsn> GLASSWELL_STATUS_SNAPSHOT=/tmp/<dir>/status.json \
       .venv/bin/python -m glasswell.status.collector
 
+Set GLASSWELL_STATUS_SNAPSHOT on THIS script too, so uvicorn inherits it. On the collector
+alone the file is written and the API goes on reading DEFAULT_SNAPSHOT, and the page renders
+4 checks and `snapshot_state: unavailable` -- which looks exactly like a real degradation. With
+it on both, 14 checks and `snapshot_state: current`.
+
 And the tiles. This script stands up no tile server, so every wells layer loads nothing and no
 feature is on the canvas to hover or press. The API proxies martin through GLASSWELL_MARTIN_URL
 (`api/deps.py`), the image is on the workstation and `infra/martin/config.yaml` needs two lines

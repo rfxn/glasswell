@@ -184,14 +184,13 @@ def seed_all(connection: psycopg.Connection) -> dict[str, int]:
         "conformance_rules_co": seed_conformance_co(connection),
         "crs_registry": seed_crs(connection),
         "conformance_rules_fracfocus": seed_conformance_fracfocus(connection),
+        # Before the ND seeder because the domain's own rules carry the founding nd_ source id
+        # and the ND count is a registry total over that prefix; and before every seeder whose
+        # rows the domain constrains, which is why it is not simply last.
+        "status_classes": seed_status_classes(connection),
         # Before the ND seeder for the same reason TX is before everything: these rows carry an
         # nd_ source_id, and the count the ND seeder returns is a registry total over that
         # prefix. Seeded after it, the first run's number would differ from the second's.
-        # Before the ND seeder for the reason the three blocks below give: the domain's own
-        # rules carry the founding nd_ source id, and the count the ND seeder returns is a
-        # registry total over that prefix. It also has to precede every seeder whose rows the
-        # domain constrains, which is why it is not simply last.
-        "status_classes": seed_status_classes(connection),
         "conformance_rules_producing": seed_conformance_producing(connection),
         # Before the ND seeder for the reason the producing block gives: these rows carry an
         # nd_ source_id and the ND count is a registry total over that prefix.
