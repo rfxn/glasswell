@@ -71,6 +71,7 @@ printf '%s\n' "$@" > "$STUB_JOURNAL_DIR/$unit.argv"
 if [ -n "${STUB_SNAPSHOT_DIR:-}" ] && [ -f "${STUB_STATUS_FILE:-}" ]; then
     cp "$STUB_STATUS_FILE" "$STUB_SNAPSHOT_DIR/$unit.json"
     stat -c %i "$STUB_STATUS_FILE" >> "$STUB_SNAPSHOT_DIR/inodes"
+    ln "$STUB_STATUS_FILE" "$STUB_SNAPSHOT_DIR/$unit.held"
 fi
 "${command_argv[@]}" > "$STUB_JOURNAL_DIR/$unit.log" 2>&1
 rc=$?
@@ -653,8 +654,10 @@ class TestTheStatusFileIsReplacedNotRewritten:
     """The file is written to `.tmp` and renamed over, so a poller never reads half a document.
 
     A rename gives the name a new inode every time; a direct write truncates the one a reader
-    may have open. Consecutive transitions are compared rather than all of them, because the
-    inode a rename frees is free for the transition after next to be given.
+    may have open. The stub hard-links each document it observes, the way a poller holding the
+    file open would pin it, so a rename can never be handed a freed number back (ext4 on the CI
+    runner recycled it on the very next transition) and equal consecutive inodes can only mean
+    a rewrite in place.
     """
 
     def observed_inodes(self, harness: Harness, job: str) -> list[str]:
