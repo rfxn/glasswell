@@ -7,10 +7,11 @@ from pathlib import Path
 
 import polars as pl
 
+from glasswell.lineage.as_of import read_model_context_snapshot
 from glasswell.modeling.feature_matrix import build_feature_matrix
 from glasswell.modeling.model_dataset import build_model_dataset
 from tests.support.modeling import seed_model_population
-from tests.support.seed import seed_derivation, seed_manifest, seed_production
+from tests.support.seed import seed_derivation, seed_manifest, seed_production, seed_well
 
 AS_OF = date(2026, 8, 26)
 ORIGIN = date(2022, 1, 1)
@@ -144,3 +145,21 @@ def test_model_dataset_registers_artifacts_and_replays_byte_identically(
     assert {item["split_id"] for item in recipe["output"]["splits"]} == {
         item.split.split_id for item in first.splits
     }
+
+
+def test_the_model_context_reads_a_blank_county_as_the_absence_it_is(db) -> None:
+    """gate-cofix M-1: the fifth read of a SOURCE_REPORTED_TEXT_COLUMNS column, and the one the
+    branch's sweep missed. `area` is a control feature, so an empty string there is a category
+    of its own and would split one county's peers into two cohorts. The read is
+    jurisdiction-blind by construction; Colorado is the only filer of blanks and cannot reach
+    this read today, since a blank Api_County fails build_api10 and quarantines as
+    key_incomplete, which is exactly why nothing here was red.
+    """
+    seed_well(db, api10="3305399001", county_code_at_permit="")
+    db.commit()
+
+    snapshot = read_model_context_snapshot(
+        db, api10s=["3305399001"], basin="williston", as_of=AS_OF
+    )
+
+    assert [row["area"] for row in snapshot.rows] == [None]

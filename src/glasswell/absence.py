@@ -11,7 +11,9 @@ appends restatements and never applies them.
 
 So the rule is applied where those rows are read. It lives here rather than at any one call
 site for the reason `status_resolution.py` gives about the class: the tile mart, the well card
-and the status summary must not answer differently about the same well on the same screen.
+and the status summary must not answer differently about the same well on the same screen. The
+model context (`lineage/as_of.py`) reads `area` under it too -- an unserved read, but a blank
+there is a control-feature category of its own rather than the absence it is.
 """
 
 from __future__ import annotations

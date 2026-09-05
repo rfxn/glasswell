@@ -8,3 +8,6 @@
       the wells spine, the well card and /v1/wells/status-summary — cite it in their
       derivations and link it, per jurisdiction, so no Texas or North Dakota response names
       a rule about ECMC's blanks (R8)
+- [Fix] the model context reads its `area` control feature under the same rule; a blank
+      county there is a category of its own and would split one county's peers into two
+      cohorts (gate-cofix M-1)
