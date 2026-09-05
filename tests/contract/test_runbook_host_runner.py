@@ -180,6 +180,17 @@ def test_every_polled_job_is_one_the_runbook_launches(name: str) -> None:
     assert polled <= launched, f"{name} polls a job it does not launch: {polled - launched}"
 
 
+@pytest.mark.parametrize("name", LONG_STEP_RUNBOOKS)
+def test_every_launched_job_is_one_the_runbook_polls(name: str) -> None:
+    # The converse of the rule above, and the one the deliverable is about: a launch with no
+    # `--status` beside it is a job the operator is told to start and never told to read.
+    blocks = fenced(name)
+    launched = set(JOB.findall(blocks))
+    polled = set(STATUS.findall(blocks))
+
+    assert launched <= polled, f"{name} launches a job it never polls: {launched - polled}"
+
+
 def test_the_texas_resume_is_documented_against_the_job_it_resumes() -> None:
     blocks = fenced("runbook-tx-load.md")
     resumed = set(RESUME_JOB.findall(blocks))
