@@ -79,6 +79,7 @@ markers = [
     "unit: pure-function tests; no database, no docker",
     "integration: requires an ephemeral PostGIS container",
     "contract: FastAPI/OpenAPI surface tests",
+    "readonly: nothing this test writes has to outlive it; it shares the worker's database",
 ]
 
 [tool.ruff]

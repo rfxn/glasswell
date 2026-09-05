@@ -384,6 +384,58 @@ def _seed_fixture_rows(connection: psycopg.Connection) -> None:
         )
 
 
+SCOPE_SAVEPOINT = "gw_test_scope"
+
+
+def scoped_transaction(connection: psycopg.Connection) -> Iterator[psycopg.Connection]:
+    """Yield a shared connection whose whole test is one transaction, rolled back at the end.
+
+    `commit` and `rollback` are rebound to a savepoint pair for the duration, so code under
+    test keeps the per-request atomicity it was written against while nothing it writes
+    outlives the test. A test whose writes must be visible to a second connection -- anything
+    that reconnects, forks a client, or asserts on another session -- needs `db` instead.
+    """
+    committed, rolled_back = connection.commit, connection.rollback
+    connection.execute(f"savepoint {SCOPE_SAVEPOINT}")
+    connection.commit = lambda: _restart_scope(connection, release=True)
+    connection.rollback = lambda: _restart_scope(connection, release=False)
+    try:
+        yield connection
+    finally:
+        connection.commit, connection.rollback = committed, rolled_back
+        connection.rollback()
+
+
+def _restart_scope(connection: psycopg.Connection, *, release: bool) -> None:
+    verb = "release" if release else "rollback to"
+    connection.execute(f"{verb} savepoint {SCOPE_SAVEPOINT}")
+    connection.execute(f"savepoint {SCOPE_SAVEPOINT}")
+
+
+@pytest.fixture(scope="session")
+def shared_database(migrated_template: str) -> Iterator[psycopg.Connection]:
+    """One migrated database, and one connection to it, for the whole worker."""
+    name = worker_scoped("gw_shared")
+    connection = psycopg.connect(
+        create_database(migrated_template, name, template=worker_scoped(TEMPLATE_DATABASE))
+    )
+    try:
+        yield connection
+    finally:
+        connection.close()
+        drop_database(migrated_template, name)
+
+
+@pytest.fixture
+def db_ro(shared_database: psycopg.Connection) -> Iterator[psycopg.Connection]:
+    """The worker's shared database, inside a transaction this test cannot commit.
+
+    1.1 ms against the 145 ms a clone costs (A-timing.md 2). For read-only tests: the writes a
+    test makes to set itself up are visible to it and to nothing else, ever.
+    """
+    yield from scoped_transaction(shared_database)
+
+
 @pytest.fixture
 def db(migrated_template: str) -> Iterator[psycopg.Connection]:
     """A migrated database of its own, per test."""

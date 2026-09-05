@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import subprocess
 
+import psycopg
 import pytest
 
 from tests.conftest import DATA_DIRECTORY, TEST_LABEL, daemon_address, docker_environment
@@ -89,3 +90,25 @@ def test_the_client_dsn_and_the_container_dsn_agree_about_locality(
         assert client_host == bridge_host
     else:
         assert client_host == remote != bridge_host
+
+
+def test_a_write_through_db_ro_never_reaches_the_database(
+    db_ro: psycopg.Connection, postgres_server: str
+) -> None:
+    """`db_ro` trades a database per test for a transaction per test, so its commits cannot be
+    real ones: every test after it reads the shared database the fixture handed the first."""
+    db_ro.execute(
+        "insert into lineage.environments (env_id, python_version, threads)"
+        " values ('env_db_ro_probe', '3.12.10', 1)"
+    )
+    db_ro.commit()
+
+    with psycopg.connect(postgres_server.format(database=db_ro.info.dbname)) as observer:
+        landed = observer.execute(
+            "select count(*) from lineage.environments where env_id = 'env_db_ro_probe'"
+        ).fetchone()[0]
+
+    assert landed == 0, "a db_ro write outlived its transaction, so the tier is order-dependent"
+    assert db_ro.execute(
+        "select count(*) from lineage.environments where env_id = 'env_db_ro_probe'"
+    ).fetchone()[0] == 1, "the test cannot read its own write, so db_ro is unusable"

@@ -303,8 +303,18 @@ def _csrf_headers(caller: TestClient, method: str, path: str) -> dict[str, str]:
     return {CSRF_HEADER: challenge(caller)}
 
 
+# A safe method writes nothing the row after it may read, so the 576 items on one share the
+# worker's database inside a transaction rolled back per item instead of cloning 576 of them.
+# The 99 mutating items mint keys, create users and delete sessions: they keep a database each,
+# because a shared one would make the matrix order-dependent, which is worse than slow.
+MATRIX_CASES = [
+    pytest.param(case, marks=pytest.mark.readonly) if case.method in SAFE_METHODS else case
+    for case in CASES
+]
+
+
 @pytest.mark.parametrize(
-    "case", CASES, ids=lambda case: f"{case.method}-{case.path}-{case.access}"
+    "case", MATRIX_CASES, ids=lambda case: f"{case.method}-{case.path}-{case.access}"
 )
 @pytest.mark.parametrize("principal", PRINCIPALS)
 def test_the_auth_matrix_holds(
