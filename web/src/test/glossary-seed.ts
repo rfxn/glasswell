@@ -6,10 +6,19 @@
  * because every field it needs is one line; `seedIsFlowStyle` is the guard that keeps that true.
  */
 import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import type { GlossaryIndexPayload } from "../glossary/index.ts";
 
-export const SEED_PATH = "../src/glasswell/seed/data/glossary_seed.yml";
+// Resolved from this module, not from the process CWD: the readers are gates, and a gate that
+// only finds its input under `npm --prefix web run test` reports green from anywhere else.
+// `fileURLToPath` is handed the string, not a `new URL(...)`: happy-dom replaces the global
+// `URL`, and Node rejects the foreign object with "the URL must be of scheme file".
+export const SEED_PATH = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  "../../../src/glasswell/seed/data/glossary_seed.yml",
+);
 
 export interface SeedTerm {
   term_id: string;
