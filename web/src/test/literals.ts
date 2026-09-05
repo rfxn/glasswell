@@ -81,6 +81,14 @@ function readLiteral(source: string, start: number): number {
 }
 
 /** Every single- or double-quoted literal in one module, comments already removed. */
+// A literal spelled as "\\u2014" renders the same character as one spelled with it, so the gates
+// must see the character; the generic unescape below would have turned it into "u2014".
+export function decodeUnicodeEscapes(raw: string): string {
+  return raw.replace(/\\u\{([0-9a-fA-F]+)\}|\\u([0-9a-fA-F]{4})/g, (_m, braced: string | undefined, plain: string | undefined) =>
+    String.fromCodePoint(parseInt((braced ?? plain) as string, 16)),
+  );
+}
+
 export function literalsIn(file: string, source: string): ShippedLiteral[] {
   const stripped = stripComments(source);
   const found: ShippedLiteral[] = [];
@@ -96,7 +104,7 @@ export function literalsIn(file: string, source: string): ShippedLiteral[] {
     if (char === '"' || char === "'") {
       const end = readLiteral(stripped, index);
       const raw = stripped.slice(index + 1, end - 1);
-      found.push({ file, line, value: raw.replace(/\\(.)/g, "$1") });
+      found.push({ file, line, value: decodeUnicodeEscapes(raw).replace(/\\(.)/g, "$1") });
       line += stripped.slice(index, end).split("\n").length - 1;
       index = end;
       continue;

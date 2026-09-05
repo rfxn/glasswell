@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { decodeUnicodeEscapes } from "../test/literals";
 import { dirname, join, normalize } from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -284,7 +285,9 @@ const RENDERED = sources("src", [".ts", ".css"]).map((path) => ({
 
 function literalsOf(path: string, source: string): string[] {
   const dialect = path.endsWith(".css") ? "css" : "ts";
-  return [...withoutComments(source, dialect).matchAll(LITERAL)].map(([literal]) => literal);
+  return [...withoutComments(source, dialect).matchAll(LITERAL)].map(([literal]) =>
+    decodeUnicodeEscapes(literal),
+  );
 }
 
 function outOfRange(path: string, source: string): { point: number; character: string }[] {
