@@ -883,16 +883,19 @@ interface Standing {
 }
 
 /**
- * A `<details>` has no id, so it is addressed by where it sits: its section, its summary, and
- * which of the identical ones it is. Two `Column spans derivations` notes under one heading
- * are a real shape, and opening the first must not open the second.
+ * A `<details>` has no id, so it is addressed by where it sits and *what it is* — never by what
+ * it says. The chart's vintages disclosure writes its summary from the served figures ("Report
+ * vintages · 2, 2026-06-01 to 2026-08-01"), which `Read at …` and `Widen` are exactly the
+ * controls that change, so a key built from the text missed the one disclosure the re-land
+ * affects. `data-code` is the warning's own identity, already stamped by `warningNotes`; the
+ * class carries the rest. The ordinal is the tiebreak for two of a kind under one heading.
  */
 function disclosureKeys(card: HTMLElement): Map<HTMLDetailsElement, string> {
   const seen = new Map<string, number>();
   const keys = new Map<HTMLDetailsElement, string>();
   for (const details of card.querySelectorAll<HTMLDetailsElement>("details")) {
     const section = details.closest<HTMLElement>(".gw-section")?.dataset["section"] ?? "";
-    const base = `${section}/${details.querySelector("summary")?.textContent ?? ""}`;
+    const base = `${section}/${details.dataset["code"] ?? details.className}`;
     const nth = (seen.get(base) ?? 0) + 1;
     seen.set(base, nth);
     keys.set(details, `${base}#${nth}`);
@@ -1652,7 +1655,14 @@ export function errorPanel(
   const heading = document.createElement("h3");
   const body = document.createElement("p");
   if (error instanceof ApiError) {
-    heading.textContent = `${error.problem.title} (${error.code})`;
+    // RFC 7807's `about:blank` is "no further information", which the client fills in when the
+    // API named no type — a 500 from an unhandled exception serves plain text. It is not a
+    // problem code: printing it as one and linking `/v1/errors/about:blank` sent the reader to
+    // a page that does not exist, over the one failure they most need to report accurately.
+    const named = error.problem.type !== BLANK_PROBLEM;
+    heading.textContent = named
+      ? `${error.problem.title} (${error.code})`
+      : `${error.problem.title} (HTTP ${error.problem.status})`;
     body.textContent = error.problem.detail ?? "";
     if (error.problem.status === 403) {
       body.textContent = "This browser has no live session, so the API served nothing.";
@@ -1669,7 +1679,10 @@ export function errorPanel(
     } else {
       element.append(heading, body);
     }
-    element.appendChild(errorLink(error.code));
+    // The request it failed on, where the API served one: with no type to look up, the path is
+    // what makes the failure reportable.
+    if (named) element.appendChild(errorLink(error.code));
+    else if (error.problem.instance) element.appendChild(failedRequest(error.problem.instance));
   } else {
     heading.textContent = "Request failed";
     body.textContent = String(error);
@@ -1683,6 +1696,17 @@ export function errorPanel(
   close.addEventListener("click", callbacks.onClose);
   element.appendChild(close);
   return element;
+}
+
+/** RFC 7807's "no further information" type, which the client fills in for a typeless body. */
+const BLANK_PROBLEM = "about:blank";
+
+function failedRequest(instance: string): HTMLElement {
+  const line = document.createElement("p");
+  line.className = "gw-error-instance";
+  line.setAttribute("data-no-glossary", "");
+  line.textContent = `The request that failed: ${instance}`;
+  return line;
 }
 
 /**

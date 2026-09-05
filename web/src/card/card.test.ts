@@ -870,6 +870,49 @@ describe("well card", () => {
     expect(link.textContent).toContain("not_found");
     expect(link.textContent).not.toContain("https://");
   });
+
+  it("invents no problem type where the API named none", async () => {
+    // A 500 from an unhandled exception is `Internal Server Error` as plain text, so the client
+    // fills RFC 7807's `about:blank` — which names no problem. The banner read
+    // `Internal Server Error (about:blank) · What does about:blank mean?` and linked
+    // `/v1/errors/about:blank`, a page that does not exist, over the one failure a reader most
+    // needs to report accurately (visual delta, the determinism 500).
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Promise.resolve(new Response("Internal Server Error", { status: 500 }))),
+    );
+
+    await renderWellCard(host, API10, callbacks);
+
+    expect(host.textContent).not.toContain("about:blank");
+    expect(host.querySelector(".gw-error a")).toBeNull();
+    expect(host.querySelector(".gw-error h3")?.textContent).toContain("500");
+  });
+
+  it("names the request the API failed on when it served one", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              title: "Internal Server Error",
+              status: 500,
+              instance: `/v1/wells/${API10}/production`,
+            }),
+            { status: 500, headers: { "content-type": "application/problem+json" } },
+          ),
+        ),
+      ),
+    );
+
+    await renderWellCard(host, API10, callbacks);
+
+    expect(host.querySelector(".gw-error-instance")?.textContent).toContain(
+      `/v1/wells/${API10}/production`,
+    );
+    expect(host.textContent).not.toContain("about:blank");
+  });
 });
 
 describe("completion and formation context", () => {
@@ -1782,6 +1825,36 @@ describe("a re-land keeps the card the reader has", () => {
 
     expect(host.querySelector(".gw-card")?.getAttribute("aria-busy")).toBeNull();
     expect(readFileSync("src/card/card.css", "utf8")).toContain('.gw-card[aria-busy="true"]');
+  });
+
+  it("moves the reader's focus nowhere, because they are already reading this card", async () => {
+    // `land`'s `if (kept) return` — the one H-30 property with no red behind it (H-35).
+    // Without it `focusPanel(container)` runs on every press of a server-answered control and
+    // lands focus on the card heading, which is the same theft the re-land exists to stop.
+    await renderWellCard(host, API10, callbacks);
+
+    await reland();
+
+    expect(host.contains(document.activeElement)).toBe(false);
+    expect(document.activeElement?.tagName).not.toBe("H2");
+  });
+
+  it("does not re-scroll or re-focus the section a deep link named", async () => {
+    // The other arm of the same guard: `applySection` scrolls its section into view and focuses
+    // its disclosure, which is right for a link somebody opened and wrong for a control the
+    // reader pressed while looking at it.
+    window.history.replaceState(null, "", "/?section=completions");
+    await renderWellCard(host, API10, callbacks);
+    await sectionsSettled();
+
+    window.history.replaceState(null, "", "/?section=completions&normalization=per_lateral_ft");
+    await renderWellCard(host, API10, callbacks);
+    await sectionsSettled();
+
+    expect(document.activeElement).not.toBe(
+      host.querySelector("#gw-section-completions .gw-section-toggle"),
+    );
+    expect(host.contains(document.activeElement)).toBe(false);
   });
 
   it("still starts from a placeholder for a well the container is not already showing", async () => {
