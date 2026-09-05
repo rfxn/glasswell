@@ -37,14 +37,15 @@
       unit is active, or whose job reads `running` or `waiting`, keeps its script, status and
       stamps and is retired by the next deploy instead, because a deploy lands during a load
       and a poll path that disappears mid-run is worse than a retirement that waits
-- [Change] of the nineteen `systemd-run` sites in the tree, the thirteen that were
-         invocations are jobs on the runner — twelve across six runbooks, each launched
-         detached and followed by the command that polls its status file, and `deploy.sh`'s
-         documented mart refresh; Colorado's Steps 1-5 are one six-unit chain. The other six
-         were prose about systemd, three of which still are. No fenced block in any runbook,
-         or in `infra/README.md`, starts a unit any more: step 4's tile-function reinstall
-         was the last `--pipe --wait`, and an operator reading output inline is an operator
-         whose job dies with the session
+- [Change] every long host step an operator is told to run is a job on the runner, and no
+         fenced block in any runbook — or in `infra/README.md` — starts a unit: the loads and
+         promotions of `runbook-basin-load.md`, `runbook-mt-load.md`, `runbook-nm-promotion.md`,
+         `runbook-nm-tier2.md`, `runbook-tx-load.md` and `runbook-scheduler.md`, Colorado's
+         Steps 1-5 as one six-unit chain, the mart refresh `deploy.sh` documents, and
+         `infra/README.md`'s step 4 tile-function reinstall, which was the last `--pipe --wait`
+         — an operator reading output inline is an operator whose job dies with the session.
+         Each is launched detached and followed by the command that polls its status file; the
+         prose that discusses systemd still does
 - [Change] Texas Step 3 sizes its promotion batches by expected rows rather than by a count
          of years: the 2011-2016 batch was OOM-killed at `MemoryMax=6G` on 2026-09-05 after
          batches of 5.23 M, 5.72 M and 6.72 M rows had landed under the same ceiling, so the
