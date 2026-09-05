@@ -263,6 +263,19 @@ from the raw zone by replaying recipes.
 Inventory batch runs are the only new load introduced at v0.5, and they run in
 seconds at township scale.
 
+### Operations — work that outlives the session that started it
+
+Any job longer than one controller turn — a load, a promotion, a mart refresh, a
+multi-step runbook, a deploy — runs as a unit on the host it acts on rather than in the
+shell that launched it, and publishes its own progress to a file on that host. That is
+what `infra/bin/host-runner.sh` is: one transient unit per step, `systemd-run --wait`
+inside the runner and nowhere else, a log at `/var/log/glasswell/<job>.log` and a status
+document at `/var/lib/glasswell/runs/<job>.json` rewritten whole after every transition,
+carrying the step, its unit, its exit, its untruncated summary line and a stamp per
+transition. Everything downstream polls that file — the runbooks, `scripts/deploy.sh`,
+one job waiting on another — because an ssh exit says what the client saw and the file
+says what the host did.
+
 ---
 
 > Copyright (C) 2026 Ryan MacDonald &lt;ryan@rfxn.com&gt; &#183; All rights reserved
