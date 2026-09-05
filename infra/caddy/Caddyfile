@@ -58,6 +58,12 @@ http://:8080 {
 				request>headers>X-Glasswell-Key delete
 				request>headers>Cookie delete
 				request>headers>X-Glasswell-CSRF delete
+				# The API reads none of these three and refuses the request, but the log line is
+				# written before the refusal: a probe sent the owner key in X-Api-Key on
+				# 2026-09-05, took its 403, and left the key here (REG-V3).
+				request>headers>Authorization delete
+				request>headers>Proxy-Authorization delete
+				request>headers>X-Api-Key delete
 				request>uri query {
 					delete key
 					delete password
@@ -145,6 +151,11 @@ glasswell.lab.rpx.sh {
 				request>headers>X-Glasswell-Key delete
 				request>headers>Cookie delete
 				request>headers>X-Glasswell-CSRF delete
+				# Unread by the API, and redacted anyway: the log line is written before the
+				# refusal, so a key guessed into one of these is logged in full (REG-V3).
+				request>headers>Authorization delete
+				request>headers>Proxy-Authorization delete
+				request>headers>X-Api-Key delete
 				# The API refuses ?key= with a 422, but an edge logs the URI verbatim —
 				# which is how a key reached a log here once before and had to be rotated.
 				request>uri query {
