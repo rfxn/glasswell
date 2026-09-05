@@ -173,6 +173,8 @@
 - [Fix] the card's error banner invents no problem type where the API named none: a
       typeless failure read `Internal Server Error (about:blank)` and linked
       `/v1/errors/about:blank`, a page that does not exist, instead of naming the status
-      and the request that failed
+      and the request that failed; and it says a request failed and names the status
+      over HTTP/2, which carries no reason phrase for it to print, where the heading
+      read ` (HTTP 500)` on the deployment's own transport
 - [Fix] the capture band's row names fit at every width, the vintage control uses the
       text-safe cyan, and the widening control no longer abuts the sentence it follows

@@ -889,6 +889,20 @@ describe("well card", () => {
     expect(host.querySelector(".gw-error h3")?.textContent).toContain("500");
   });
 
+  it("names the status in words where the transport carries no reason phrase", async () => {
+    // HTTP/2 has no reason phrase, so `statusText` is "" in a browser for every response the
+    // Tunnel serves — and the typeless arm is the one that reads it. The heading was
+    // ` (HTTP 500)`: a leading space, then a parenthetical, over an empty body.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Promise.resolve(new Response("Internal Server Error", { status: 500 }))),
+    );
+
+    await renderWellCard(host, API10, callbacks);
+
+    expect(host.querySelector(".gw-error h3")?.textContent).toBe("Request failed (HTTP 500)");
+  });
+
   it("names the request the API failed on when it served one", async () => {
     vi.stubGlobal(
       "fetch",
