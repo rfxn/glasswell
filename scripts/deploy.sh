@@ -400,7 +400,9 @@ printf '  smoke.sh  exit %d\n' "$smoke_status"
 if (( recording )) && (( dry_run == 0 )); then
     ship_status="$(remote "$HOST_RUNNER --status $deploy_job")"
     ship_result="$(printf '%s' "$ship_status" | sed -n 's/.*,"result":"\([^"]*\)".*/\1/p')"
-    ship_step="$(printf '%s' "$ship_status" | sed -n 's/.*,"step":"\([^"]*\)".*/\1/p')"
+    # Anchored on the top level: every steps[] record carries a "step" of its own.
+    ship_step="$(printf '%s' "$ship_status" \
+        | sed -n 's/^{"job":"[^"]*","started":"[^"]*","updated":"[^"]*","step":"\([^"]*\)".*/\1/p')"
     printf '  status    %s says %s at %s\n' "$deploy_job" "${ship_result:-unreadable}" \
         "${ship_step:-no step}"
     [[ $ship_result == complete ]] || exit 1

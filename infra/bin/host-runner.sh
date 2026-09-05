@@ -248,7 +248,9 @@ status_field() {
         started) sed -n 's/^{"job":"[^"]*","started":"\([^"]*\)".*/\1/p' "$1" ;;
         result) sed -n 's/.*,"result":"\([^"]*\)".*/\1/p' "$1" ;;
         finished) sed -n 's/.*,"finished":"\([^"]*\)".*/\1/p' "$1" ;;
-        step) sed -n 's/.*,"step":"\([^"]*\)".*/\1/p' "$1" ;;
+        # Anchored, because every steps[] record carries a "step" too and a greedy match
+        # answers with the last of them rather than with the job's own.
+        step) sed -n 's/^{"job":"[^"]*","started":"[^"]*","updated":"[^"]*","step":"\([^"]*\)".*/\1/p' "$1" ;;
         updated) sed -n 's/.*,"updated":"\([^"]*\)".*/\1/p' "$1" ;;
     esac
 }

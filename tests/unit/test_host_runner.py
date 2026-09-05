@@ -1121,6 +1121,56 @@ class TestAKilledRunnerLeavesAReadableFile:
         assert body.count('>> "$steps_record"') == 1
 
 
+class TestStatusFieldReadsTheTopLevel:
+    """The fields the runner reads back out of its own document, and the one a step can answer.
+
+    Every `steps[]` record carries a `"step"` key too, so a pattern that is not anchored takes
+    the last one. A `--keep-going` chain is where they differ for real: the top level names the
+    step that stopped the job, and the last record is whatever ran after it.
+    """
+
+    @staticmethod
+    def read(tmp_path: Path, status_path: Path, field: str) -> str:
+        source = RUNNER.read_text(encoding="utf-8")
+        opening = "status_field() {"
+        body = opening + source.split(opening, 1)[1].split("\n}\n", 1)[0] + "\n}\n"
+        harness = tmp_path / "field.sh"
+        harness.write_text(
+            "\n".join(
+                ["#!/bin/bash", "set -uo pipefail", body, f'status_field "{status_path}" {field}']
+            ),
+            encoding="utf-8",
+        )
+        completed = subprocess.run(
+            ["/bin/bash", str(harness)], capture_output=True, text=True, check=False
+        )
+        assert completed.returncode == 0, completed.stderr
+        return completed.stdout.strip()
+
+    def test_the_step_is_the_job_s_own_not_the_last_record_s(
+        self, harness: Harness, tmp_path: Path
+    ) -> None:
+        harness.run(
+            "--job", "kept", "--keep-going", "--",
+            "one", "/bin/sh", "-c", "echo broke; exit 3",
+            "--", "two", "/bin/echo", '{"ran": 1}',
+        )
+        status = harness.runs / "kept.json"
+        assert json.loads(status.read_text(encoding="utf-8"))["step"] == "one"
+
+        assert self.read(tmp_path, status, "step") == "one"
+
+    def test_the_other_fields_answer_from_the_top_level_too(
+        self, harness: Harness, tmp_path: Path
+    ) -> None:
+        harness.run(*two_steps("plain"))
+        status = harness.runs / "plain.json"
+        document = json.loads(status.read_text(encoding="utf-8"))
+
+        for field in ("started", "updated", "finished", "result", "step"):
+            assert self.read(tmp_path, status, field) == document[field], field
+
+
 class TestRecordMode:
     def test_records_assemble_into_the_same_grammar(self, harness: Harness) -> None:
         common = ("--record", "--job", "deploy-v0.83", "--steps-total", "2")
