@@ -121,6 +121,11 @@ class Series(Frozen):
     `point_handles` is the §9.1(b) exception the ND MPR forces: one workbook per month means
     one promote derivation per point, and a single column handle would resolve to a file that
     does not contain most of the column. Set it only when the points genuinely disagree.
+
+    `point_overrides` is the weaker case: one derivation does cover the column, so the column
+    handle stands, but a point of it needs a longer selector than `column + month` to name one
+    row -- a month the promotion filed twice. Those points get their own entry; the rest read
+    the column's.
     """
 
     values: Sequence[Any]
@@ -133,6 +138,7 @@ class Series(Frozen):
     # scalar figure: the versioned artifact that produced the number is part of the number.
     allocation_model_id: str | None = None
     point_handles: Sequence[str | None] | None = None
+    point_overrides: Mapping[int, str] | None = None
 
     @property
     def handle(self) -> str:
@@ -141,7 +147,7 @@ class Series(Frozen):
     @property
     def handles(self) -> list[str]:
         if self.point_handles is None:
-            return [self.handle]
+            return [self.handle, *(self.point_overrides or {}).values()]
         return [handle for handle in self.point_handles if handle]
 
 
@@ -228,6 +234,7 @@ def series(
     basis: str | None = None,
     allocation_model_id: str | None = None,
     point_handles: Sequence[str | None] | None = None,
+    point_overrides: Mapping[int, str] | None = None,
 ) -> Series:
     """A dense series: one handle for the column, per-point vintages ride alongside it."""
     _validate(unit, granularity, basis, allocation_model_id)
@@ -239,6 +246,13 @@ def series(
         for handle in point_handles:
             if handle is not None:
                 parse_handle(handle)
+    if point_overrides is not None:
+        if point_handles is not None:
+            raise ValueError("a series carries point handles or point overrides, never both")
+        for index, handle in point_overrides.items():
+            if not 0 <= index < len(values):
+                raise ValueError(f"point override {index} is outside the series")
+            parse_handle(handle)
     return Series(
         values=list(values),
         unit=unit,
@@ -248,6 +262,7 @@ def series(
         basis=basis,
         allocation_model_id=allocation_model_id,
         point_handles=None if point_handles is None else list(point_handles),
+        point_overrides=None if point_overrides is None else dict(point_overrides),
     )
 
 
@@ -260,6 +275,8 @@ class _Sidecars:
     def record(self, path: str, node: Series) -> None:
         if node.point_handles is None:
             self.lineage[path] = node.handle
+            for index, handle in (node.point_overrides or {}).items():
+                self.lineage[f"{path}.{index}"] = handle
         else:
             for index, handle in enumerate(node.point_handles):
                 if handle is not None:

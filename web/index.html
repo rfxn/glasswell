@@ -179,6 +179,29 @@
       </header>
       <main id="gw-main">
         <div id="gw-map" aria-label="Map of well laterals and surface locations"></div>
+        <!-- The rail's own chrome, a sibling of the card because the card replaces every child
+             of #gw-card on each render. Declared here rather than built in JS so it costs the
+             entry chunk nothing; main.ts names and wires it, card/sheet.ts drives the slider. -->
+        <div id="gw-rail-chrome" hidden>
+          <button id="gw-rail-toggle" type="button" aria-expanded="true" aria-controls="gw-card">
+            <span class="gw-rail-glyph" aria-hidden="true"></span>
+            <span id="gw-rail-strip-name" class="gw-rail-strip-name" aria-hidden="true"></span>
+          </button>
+          <button id="gw-rail-locate" type="button" hidden>
+            <span aria-hidden="true">◎</span>
+          </button>
+          <div
+            id="gw-rail-grab"
+            role="slider"
+            tabindex="0"
+            aria-label="Well card size"
+            aria-valuemin="1"
+            aria-valuemax="3"
+            aria-valuenow="3"
+            aria-valuetext="full"
+            hidden
+          ></div>
+        </div>
         <aside id="gw-card" aria-label="Well card" hidden></aside>
         <aside id="gw-drawer" aria-label="Lineage" hidden></aside>
         <div id="gw-explore" aria-label="Data explorer" hidden></div>

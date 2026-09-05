@@ -16,6 +16,10 @@ export interface AppState {
   ds: string | null;
   row: string | null;
   slug: string | null;
+  /** The card's own section id. Opaque here on purpose: which sections exist depends on the
+   *  well's jurisdiction, and this module knows nothing about wells. The card validates it
+   *  against the list its own response made knowable. */
+  section: string | null;
   extra: Record<string, string[]>;
 }
 
@@ -29,10 +33,11 @@ export const DEFAULT_STATE: AppState = {
   ds: null,
   row: null,
   slug: null,
+  section: null,
   extra: {},
 };
 
-const KNOWN = new Set(["map", "well", "explain", "view", "tab", "ds", "row", "slug"]);
+const KNOWN = new Set(["map", "well", "explain", "view", "tab", "ds", "row", "slug", "section"]);
 const VIEWS: ViewMode[] = ["map", "explore", "status"];
 const TABS: ExploreTab[] = ["datasets", "query", "learn"];
 
@@ -56,6 +61,7 @@ export function parseState(search: string): AppState {
     ds: params.get("ds"),
     row: params.get("row"),
     slug: params.get("slug"),
+    section: params.get("section"),
     extra,
   };
 }
@@ -76,6 +82,7 @@ export function serializeState(state: AppState): string {
   if (state.ds) params.set("ds", state.ds);
   if (state.row) params.set("row", state.row);
   if (state.slug) params.set("slug", state.slug);
+  if (state.section) params.set("section", state.section);
   for (const [key, values] of Object.entries(state.extra)) {
     for (const value of values) params.append(key, value);
   }

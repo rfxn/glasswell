@@ -54,6 +54,7 @@ def test_every_served_api10_path_declares_that_grammar_rather_than_one_of_its_ow
         "GET /v1/wells/{api10}",
         "GET /v1/wells/{api10}/completions",
         "GET /v1/wells/{api10}/cumulatives",
+        "GET /v1/wells/{api10}/history",
         "GET /v1/wells/{api10}/neighbors",
         "GET /v1/wells/{api10}/production",
         "GET /v1/wells/{api10}/production/pools",

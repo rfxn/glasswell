@@ -225,7 +225,7 @@ jobs:
           exit 0
 
   map-chrome:
-    name: UI chrome — map fold and Status geometry
+    name: UI chrome — map fold, the table's pinned edge, and Status geometry
     runs-on: ubuntu-latest
     # Map rows come from the static registry and Status receives a mocked valid envelope, so
     # their geometry is a bundle property. This job needs no database, key, or deployed
@@ -273,5 +273,6 @@ jobs:
           done
           curl -sf "$GLASSWELL_BASE_URL/" >/dev/null || { echo "static server never came up"; exit 1; }
           node tests/e2e/chrome-fold.mjs
+          node tests/e2e/table-edge.mjs
           node tests/e2e/status-surface.mjs
           node tests/e2e/hidden-display.mjs

@@ -190,6 +190,10 @@ function plotted(value: string | null, state: string): number | null {
 
 /** The handle that explains one plotted point: the point's own if the wire carried one. */
 export function handleAt(column: SeriesColumn, index: number, month: string): string | null {
+  // A month nobody measured has no promoted row to resolve to, and the column handle of a
+  // per-point column is its *first* point's: either fallback opened a different month's chain
+  // under this month's number, or resolved to nothing at all (visual M5).
+  if (column.values[index] === null || column.values[index] === undefined) return null;
   const handle = column.handles[index] ?? column.handle;
   return handle === null ? null : pointHandle(handle, month);
 }

@@ -108,6 +108,9 @@ const WELLS_SNAPSHOTS: Readonly<Record<string, string>> = {
   nd_wells_refresh: ND_SNAPSHOT.refresh,
 };
 
+/** The disposal ring's slot, named because the wells rows are split around it. */
+const DISPOSAL_DRAW_ORDER = 41;
+
 /**
  * One `Wells` row per registration, built from it. Four object literals stood here carrying
  * seven facts each — the layer id, the style layers it toggles, the draw order, the first-paint
@@ -122,9 +125,6 @@ const WELLS_SNAPSHOTS: Readonly<Record<string, string>> = {
  * carries `COUNT_SLOT` and names the jurisdiction whose served measurement fills it, so a
  * reader can put the number beside the date it was measured on.
  */
-/** The disposal ring's slot, named because the wells rows are split around it. */
-const DISPOSAL_DRAW_ORDER = 41;
-
 function wellsRows(): LayerDef[] {
   return [...JURISDICTION_LIST]
     .sort((a, b) => a.wellsDrawOrder - b.wellsDrawOrder)

@@ -29,6 +29,7 @@ COMPLETION_ANCHOR_PROFILE = "completion_anchor"
 COMPLETION_DESIGN_PROFILE = "completion_design"
 WELL_PROFILE = "well"
 WELL_CUMULATIVE_PROFILE = "well_cumulative"
+BASIN_CONTEXT_PROFILE = "basin_context"
 NEIGHBOR_PROFILE = "nd_neighbor"
 RESPONSE_PROFILE = "response_output"
 TX_ALLOCATED_PROFILE = "tx_allocated_series"
@@ -74,6 +75,23 @@ _NEIGHBOR_COVERAGE_METRICS = frozenset(
 )
 _PRODUCTION_COLUMNS = {"oil_bbl": "oil", "gas_mcf": "gas", "water_bbl": "water"}
 _WELL_COLUMNS = frozenset({"total_depth_ft"})
+# Every column of the basin block the card renders as a line of its own. The classes are here
+# with the values they class: `outside_published_boundaries` is an answer, and an answer a
+# reader cannot resolve to the run that produced it is the naked number rule's own case.
+_BASIN_CONTEXT_COLUMNS = frozenset(
+    {
+        "basin_name",
+        "basin_class",
+        "play_name",
+        "play_class",
+        "basin_label_filed",
+        "label_class",
+        "label_agrees",
+        "boundary_vintage",
+        "geometry_basis",
+        "basin_overlap",
+    }
+)
 _COMPLETION_DESIGN_COLUMNS = frozenset({"base_water_volume"})
 # `allocated_share` and `allocated_months` are addressable for the same reason `cum_volume` is:
 # the card serves them beside the total, and a figure a handle cannot resolve is a naked number.
@@ -96,6 +114,7 @@ _KNOWN_PROFILES = frozenset(
         COMPLETION_DESIGN_PROFILE,
         WELL_PROFILE,
         WELL_CUMULATIVE_PROFILE,
+        BASIN_CONTEXT_PROFILE,
         NEIGHBOR_PROFILE,
         RESPONSE_PROFILE,
         TX_ALLOCATED_PROFILE,
@@ -151,6 +170,8 @@ def validate_selector(
         _validate_production(connection, derivation, terms, handle=handle)
     elif profile == WELL_PROFILE:
         _validate_well(connection, derivation, terms, handle=handle)
+    elif profile == BASIN_CONTEXT_PROFILE:
+        _validate_basin_context(connection, derivation, terms, handle=handle)
     else:
         _validate_response_output(connection, derivation, pairs, outputs=response_outputs)
 
@@ -194,7 +215,7 @@ def _profile_matches(profile: str, terms: Mapping[str, str]) -> bool:
         return "bed" in keys and "model_id" in keys
     if profile == PRODUCTION_PROFILE:
         return bool(keys & {"api10", "api10_b64", "entity_key", "entity_key_b64"})
-    if profile == WELL_PROFILE:
+    if profile in (WELL_PROFILE, BASIN_CONTEXT_PROFILE):
         return "api10" in keys or "api10_b64" in keys
     return profile == RESPONSE_PROFILE
 
@@ -500,9 +521,10 @@ def _validate_production(
     if (api10 is None) == (entity_key is None):
         raise InvalidSelector("production selectors require exactly one entity identity")
     production_month = terms.pop("pm", None)
+    report_vintage = terms.pop("rv", None)
     if terms:
         raise InvalidSelector(
-            "production selectors require one entity identity, col, and optional pm"
+            "production selectors require one entity identity, col, and optional pm and rv"
         )
 
     statement = (
@@ -510,6 +532,17 @@ def _validate_production(
         " where derivation_id = %s and stream = %s"
     )
     parameters: list[object] = [derivation["derivation_id"], stream]
+    if report_vintage is not None:
+        # A restatement is a second row, never an edit, so the month is not the last of this
+        # table's key: one promotion that filed a month twice answers `pm` with two rows.
+        try:
+            parsed_vintage = date.fromisoformat(report_vintage)
+        except ValueError:
+            raise InvalidSelector("rv must be YYYY-MM-DD") from None
+        if parsed_vintage.isoformat() != report_vintage:
+            raise InvalidSelector("rv must be YYYY-MM-DD")
+        statement += " and report_vintage = %s"
+        parameters.append(parsed_vintage)
     if api10 is not None:
         if re.fullmatch(r"[0-9]{10}", api10) is None:
             raise InvalidSelector("api10 must be exactly ten digits")
@@ -567,6 +600,29 @@ def _validate_well(
         " where derivation_id = %s and api10 = %s and effective_from = %s"
         " and total_depth_ft is not null",
         (derivation["derivation_id"], api10, parsed_effective),
+        derivation=derivation,
+        handle=handle,
+    )
+
+
+def _validate_basin_context(
+    connection: psycopg.Connection,
+    derivation: Mapping[str, Any],
+    terms: dict[str, str],
+    *,
+    handle: str,
+) -> None:
+    column = terms.pop("col", None)
+    if column not in _BASIN_CONTEXT_COLUMNS:
+        raise InvalidSelector(f"{column!r} is not a selectable basin-context column")
+    api10 = _identity(terms, "api10")
+    if re.fullmatch(r"[0-9]{10}", api10) is None or terms:
+        raise InvalidSelector("basin-context selectors require api10 and col")
+    _require_one(
+        connection,
+        "select count(*) from marts.well_basin_context"
+        " where derivation_id = %s and api10 = %s",
+        (derivation["derivation_id"], api10),
         derivation=derivation,
         handle=handle,
     )

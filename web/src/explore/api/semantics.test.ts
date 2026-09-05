@@ -119,9 +119,9 @@ describe("WHAT, WHY, SO and SEE each have one source, and none of them is the cl
     expect([...api10.querySelectorAll(".gw-api-field")].map((f) => (f as HTMLElement).dataset["field"])).toEqual([
       "WHAT",
     ]);
-    // v0.22 added explain/explain_depth (annotated) to this operation; api10 stays the
-    // deliberately-unreached parameter this test exists to count.
-    expect(host.querySelector(".gw-api-coverage")?.textContent).toContain("Annotated: 6/7 (86%)");
+    // v0.22 added explain/explain_depth and the v0.81 card added `normalization`, all
+    // annotated; api10 stays the deliberately-unreached parameter this test exists to count.
+    expect(host.querySelector(".gw-api-coverage")?.textContent).toContain("Annotated: 7/8 (88%)");
   });
 
   it("counts the parameters A-8 has not reached rather than hiding them", () => {
@@ -129,7 +129,7 @@ describe("WHAT, WHY, SO and SEE each have one source, and none of them is the cl
     const quarantine = coverageOf(parametersOf("list_quarantine"));
     const record = coverageOf(parametersOf("get_quarantine_row"));
 
-    expect(production).toEqual({ annotated: 6, total: 7, percent: 86 });
+    expect(production).toEqual({ annotated: 7, total: 8, percent: 88 });
     expect(quarantine).toEqual({ annotated: 7, total: 7, percent: 100 });
     // A detail operation carries no A-8 entry at all, which is the whole-operation degradation.
     expect(record).toEqual({ annotated: 0, total: 1, percent: 0 });

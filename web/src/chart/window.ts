@@ -131,10 +131,18 @@ function firstKept(months: readonly string[], span: number): number {
 
 /**
  * R6 applied to the axis itself: a chart drawing 60 of 131 months while implying it draws the
- * record is a naked number wearing a time series. The range, the count and the population it
- * is a count of are a label beside the span control, not two lines of prose above it — the
- * control itself is the "way back to the rest" the sentence used to spell out.
+ * record is a naked number wearing a time series. R-20, the reloaded link: the months on hand
+ * are the ones a narrowed request returned, so "all" is all of what is shown and the sentence
+ * says so rather than describing a record it cannot see. The way back to the record is the
+ * span control beside it, not this sentence.
  */
+export function describeShown(window: SeriesWindow): string {
+  if (window.total === 0 || window.from === null || window.to === null) {
+    return "No months on record";
+  }
+  return `All of the months shown · ${formatMonth(window.from)} – ${formatMonth(window.to)} · ${window.total} mo`;
+}
+
 export function describeWindow(window: SeriesWindow, served = false): string {
   if (window.total === 0 || window.from === null || window.to === null) {
     return "No months on record";

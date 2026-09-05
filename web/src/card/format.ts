@@ -1,5 +1,12 @@
 import type { Figure } from "../api/envelope.ts";
 
+/**
+ * What stands where a value is not served, in ASCII. The shipped-literal lint the release
+ * schedules refuses an em-dash, and three surfaces each spelled their own; the state beside it
+ * is what says which absence it is, and this only holds the column open.
+ */
+export const ABSENT_MARK = "--";
+
 export interface NullSemanticsMark {
   label: string;
   className: string;
@@ -108,6 +115,52 @@ const ALLOCATION_MARKS: Record<string, AllocationMark> = {
   },
 };
 
+export interface RestatementMark {
+  label: string;
+  className: string;
+  title: string;
+}
+
+/**
+ * The third vocabulary, with the third record, the third lookup and the third CSS prefix.
+ *
+ * `gw-state-*` is the null semantics, `gw-alloc-*` is the allocation class, and this is
+ * whether the month was restated. Not merged into either: one string-keyed record for two
+ * vocabularies collides on the first shared token. And not `gw-vintage-*`, which the chart
+ * already ships for the disclosure and its list in the same subtree.
+ */
+const RESTATEMENT_MARKS: Record<string, RestatementMark> = {
+  latest_capture: {
+    label: "latest capture",
+    className: "gw-restate-latest",
+    title: "Read at the newest report vintage in this window.",
+  },
+  earlier_capture: {
+    label: "earlier capture",
+    className: "gw-restate-earlier",
+    title:
+      "Read at an older report vintage than the rest of this window: the later pulls did not" +
+      " re-report this month. It says which capture the number came from, and not that the" +
+      " operator re-filed it -- the wire carries one vintage per drawn point, so a restatement" +
+      " nobody captured is a claim this mark must not make.",
+  },
+};
+
+/**
+ * Which capture a month was read at. Deliberately not "restated": the served point carries one
+ * report vintage, so a month filed twice and a month pulled twice are the same shape on the
+ * wire, and a mark that called either one a restatement would be asserting what it cannot see.
+ */
+export function restatement(state: string): RestatementMark {
+  return (
+    RESTATEMENT_MARKS[state] ?? {
+      label: state,
+      className: "gw-restate-unknown",
+      title: state,
+    }
+  );
+}
+
 /** The six classes the allocation serves, in the order the legend lists them. */
 export const ALLOCATION_CLASSES = [
   "observed_gas_well",
@@ -192,6 +245,23 @@ export function roundTo(value: string, digits: number): string {
   return sign + carried.slice(0, split) + (digits ? `.${carried.slice(split)}` : "");
 }
 
+/** The exact sum of decimal strings, scaled through BigInt: a three-decimal series summed as floats prints a float's tail. */
+export function sumDecimal(values: readonly (string | null)[]): string {
+  const parts = values.flatMap((value) => {
+    const match = value === null ? null : /^(-?)(\d+)(?:\.(\d+))?$/.exec(value.trim());
+    return match ? [[match[1] ?? "", match[2] ?? "0", match[3] ?? ""] as const] : [];
+  });
+  const digits = Math.max(0, ...parts.map(([, , fraction]) => fraction.length));
+  let total = 0n;
+  for (const [sign, whole, fraction] of parts) {
+    const scaled = BigInt(whole + fraction.padEnd(digits, "0"));
+    total += sign === "-" ? -scaled : scaled;
+  }
+  const text = (total < 0n ? -total : total).toString().padStart(digits + 1, "0");
+  const split = text.length - digits;
+  return (total < 0n ? "-" : "") + text.slice(0, split) + (digits ? `.${text.slice(split)}` : "");
+}
+
 /** `digits` rounds the figure to at most that many decimals, never zero-padded; omitted, it renders as served. */
 export function formatFigure(figure: Figure, digits?: number): string {
   if (!figure.unit) {
@@ -242,7 +312,7 @@ export function formatVolume(value: string): string {
 }
 
 export function formatVintage(vintage: string | null): string {
-  return vintage ?? "—";
+  return vintage ?? ABSENT_MARK;
 }
 
 /**

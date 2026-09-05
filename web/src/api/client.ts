@@ -129,16 +129,32 @@ export async function getEnvelope<T>(
 async function problemOf(response: Response): Promise<Problem> {
   try {
     const body = (await response.json()) as Partial<Problem>;
+    // The spread first, and the three fields the panel cannot render without after it: served
+    // last, every fallback below was minted and then discarded by a key that was present and
+    // empty. The API serves no such body; something else answering on its behalf can.
     return {
-      type: body.type ?? "about:blank",
-      title: body.title ?? response.statusText,
-      status: body.status ?? response.status,
       ...body,
+      type: body.type ?? "about:blank",
+      title: problemTitle(response, body.title),
+      // A number, not whatever was served: the card's arms compare the status strictly, and a
+      // served `"403"` string passes a range test while failing every equality.
+      status: Number(body.status ?? response.status) || response.status,
     } as Problem;
   } catch {
     // A non-JSON body (a proxy error page, say) still has to render as a problem.
-    return { type: "about:blank", title: response.statusText, status: response.status };
+    return { type: "about:blank", title: problemTitle(response), status: response.status };
   }
+}
+
+/**
+ * HTTP/2 carries no reason phrase, so `statusText` is empty in a browser for every response the
+ * deployment serves over its Tunnel, and a banner titled from it read " (HTTP 500)" — a leading
+ * space over the status. The client names no reason the transport did not carry: it says what
+ * happened, in the words the panel already uses for a failure it cannot type, and the status
+ * code beside it is what a reader reports.
+ */
+function problemTitle(response: Response, served?: string): string {
+  return served || response.statusText || "Request failed";
 }
 
 export async function getChallenge(): Promise<Challenge> {
