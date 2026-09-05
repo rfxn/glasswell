@@ -176,5 +176,9 @@
       and the request that failed; and it says a request failed and names the status
       over HTTP/2, which carries no reason phrase for it to print, where the heading
       read ` (HTTP 500)` on the deployment's own transport
+- [Fix] the report-vintages disclosure a reader opened stays open across the chart's own
+      redraws: a stream toggle, the log axis, a span press, a drag, clearing it and the
+      table view each rebuilt the chart with the disclosure closed, and the summary those
+      controls rewrite is the one they were closing
 - [Fix] the capture band's row names fit at every width, the vintage control uses the
       text-safe cyan, and the widening control no longer abuts the sentence it follows

@@ -110,3 +110,85 @@ describe("the disclosure whose summary the figures write", () => {
     expect(host.querySelector<HTMLDetailsElement>(".gw-card-notes details")?.open).toBe(true);
   });
 });
+
+describe("the same disclosure across the chart's own redraws", () => {
+  /** Long enough that the chart offers a span control at all (`spanChoices` needs two). */
+  function longRecord(months: number): unknown {
+    const body = structuredClone(productionEnvelope) as {
+      data: { series: Record<string, unknown> };
+    };
+    const series = body.data.series;
+    const pm = Array.from({ length: months }, (_, index) => {
+      const month = index % 12;
+      return `${2018 + Math.floor(index / 12)}-${String(month + 1).padStart(2, "0")}`;
+    });
+    for (const [key, value] of Object.entries(series)) {
+      if (Array.isArray(value)) series[key] = pm.map((_, index) => value[index % value.length]);
+    }
+    series["pm"] = pm;
+    return body;
+  }
+
+  async function opened(production: unknown = productionEnvelope): Promise<HTMLDetailsElement> {
+    serve(production);
+    await renderWellCard(host, API10, callbacks);
+    const details = vintages();
+    expect(details, "the chart rendered no vintages disclosure").not.toBeNull();
+    details!.open = true;
+    return details!;
+  }
+
+  const press = (selector: string): void =>
+    host.querySelector<HTMLButtonElement>(selector)!.click();
+
+  it("survives a stream toggle", async () => {
+    await opened();
+
+    press(".gw-stream-toggle");
+
+    expect(vintages()?.open, "hiding a stream closed the disclosure").toBe(true);
+  });
+
+  it("survives the log axis, on and off", async () => {
+    await opened();
+
+    press(".gw-scale-toggle");
+    expect(vintages()?.open, "switching to a log axis closed the disclosure").toBe(true);
+    press(".gw-scale-toggle");
+    expect(vintages()?.open, "switching back closed the disclosure").toBe(true);
+  });
+
+  it("survives a span press", async () => {
+    await opened(longRecord(40));
+    const spans = host.querySelectorAll<HTMLButtonElement>(".gw-window-span");
+    expect(spans.length, "the chart offered no span control").toBeGreaterThan(1);
+
+    spans[0]!.click();
+
+    expect(vintages()?.open, "narrowing the span closed the disclosure").toBe(true);
+  });
+
+  it("survives a brush and the clearing of it", async () => {
+    await opened();
+    // The band's own cells: the legend and the key carry the same class without an index.
+    const cells = host.querySelectorAll<HTMLElement>(".gw-state-strip .gw-state-mark[data-index]");
+    cells[0]!.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    cells[cells.length - 1]!.dispatchEvent(new Event("pointerup", { bubbles: true }));
+
+    expect(vintages()?.open, "dragging a range closed the disclosure").toBe(true);
+    press(".gw-window-clear");
+    expect(vintages()?.open, "clearing the selection closed the disclosure").toBe(true);
+  });
+
+  it("survives the table view, and is back open when the plot returns", async () => {
+    await opened();
+
+    press(".gw-table-toggle");
+    await vi.waitFor(() => expect(host.querySelector(".gw-series-table")).not.toBeNull());
+    press(".gw-table-toggle");
+
+    await vi.waitFor(() =>
+      expect(vintages()?.open, "the plot came back with the disclosure closed").toBe(true),
+    );
+  });
+});

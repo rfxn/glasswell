@@ -104,6 +104,8 @@ export function renderChart(
   // rather than carried by every reader who lands on Explore: the chart chunk is on that route.
   let table: typeof import("../card/table.ts").seriesTable | null = null;
   let brush: { from: string; to: string } | null = null;
+  // Which disclosures the reader has open, across the redraws every control below performs.
+  const opened = new Set<string>();
   const setBrush = (next: { from: string; to: string } | null): void => {
     brush = next;
     callbacks.onBrush?.(next?.from ?? null, next?.to ?? null);
@@ -113,7 +115,7 @@ export function renderChart(
   // reading March must not silently end up reading some month five years earlier.
   let month = chart.months[chart.months.length - 1] ?? null;
 
-  const draw = (): void => {
+  const build = (): void => {
     repaint?.abort();
     repaint = new AbortController();
     const signal = repaint.signal;
@@ -265,6 +267,20 @@ export function renderChart(
       seek(surface, () => instance.over, visible, paint, signal);
     }
     paint(months.indexOf(month as string));
+  };
+
+  // `build` opens by tearing the container down, so every chart-local control rebuilt the
+  // reader's disclosures closed -- the cost `card.ts` removed on its own re-land, on the path
+  // the chart owns. Keyed on what each one is, as there, never on the text the figures write.
+  const draw = (): void => {
+    for (const item of container.querySelectorAll<HTMLDetailsElement>("details")) {
+      if (item.open) opened.add(item.className);
+      else opened.delete(item.className);
+    }
+    build();
+    for (const item of container.querySelectorAll<HTMLDetailsElement>("details")) {
+      item.open ||= opened.has(item.className);
+    }
   };
 
   document.addEventListener(THEME_EVENT, draw, { signal: outer.signal });
