@@ -12,6 +12,7 @@ import json
 import os
 import re
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -478,6 +479,130 @@ class TestRefusals:
         assert harness.run("--", "one", "/bin/echo", "hi").returncode == 2
 
 
+class TestResume:
+    def test_it_continues_a_stopped_job_where_it_stopped(self, harness: Harness) -> None:
+        harness.run(
+            "--job", "tx-step3", "--",
+            "batch-a", "/bin/echo", "staged 5230000",
+            "--", "batch-b", "/bin/sh", "-c", "echo Killed; exit 137",
+            "--", "batch-c", "/bin/echo", "never",
+        )
+        stopped = harness.status("tx-step3")
+
+        resumed = harness.run(
+            "--job", "tx-step3", "--resume", "--",
+            "batch-b1", "/bin/echo", "appended 2600000",
+            "--", "batch-b2", "/bin/echo", "appended 2610000",
+        )
+
+        assert resumed.returncode == 0, resumed.stderr
+        status = harness.status("tx-step3")
+        assert status["result"] == "complete"
+        assert status["started"] == stopped["started"]
+        assert [step["index"] for step in status["steps"]] == [1, 2, 3, 4]
+        # The OOM-killed batch keeps its own record: the history is the job's, not the run's.
+        assert status["steps"][1]["step"] == "batch-b"
+        assert status["steps"][1]["exit"] == 137
+        assert status["steps"][2]["step"] == "batch-b1"
+        assert status["steps"][2]["unit"] == "tx-step3-3-batch-b1"
+        assert status["steps_total"] == 4
+        assert status["step_index"] == 4
+
+    def test_the_log_and_the_stamps_are_appended_not_replaced(self, harness: Harness) -> None:
+        harness.run("--job", "tx-step3", "--", "batch-a", "/bin/sh", "-c", "echo first; exit 9")
+
+        harness.run("--job", "tx-step3", "--resume", "--", "batch-b", "/bin/echo", "second")
+
+        log = harness.log("tx-step3")
+        assert "first" in log
+        assert "second" in log
+        stamps = harness.status("tx-step3")["stamps"]
+        assert any("batch-a start" in stamp for stamp in stamps)
+        assert any("resumed" in stamp for stamp in stamps)
+
+    def test_a_complete_job_has_nothing_to_resume(self, harness: Harness) -> None:
+        harness.run(*two_steps())
+
+        resumed = harness.run("--job", "demo", "--resume", "--", "again", "/bin/echo", "hi")
+
+        assert resumed.returncode == 3
+        assert "complete" in resumed.stderr
+
+    def test_a_job_that_never_ran_has_nothing_to_resume(self, harness: Harness) -> None:
+        resumed = harness.run("--job", "ghost", "--resume", "--", "one", "/bin/echo", "hi")
+
+        assert resumed.returncode == 3
+        assert "ghost" in resumed.stderr
+
+
+class TestAfterJob:
+    def test_it_runs_once_the_job_it_follows_has_completed(self, harness: Harness) -> None:
+        harness.run("--job", "first", "--", "one", "/bin/echo", "done")
+
+        second = harness.run(
+            "--job", "second", "--after-job", "first", "--", "two", "/bin/echo", "ran"
+        )
+
+        assert second.returncode == 0, second.stderr
+        assert harness.status("second")["result"] == "complete"
+
+    def test_it_refuses_to_start_behind_a_job_that_stopped(self, harness: Harness) -> None:
+        harness.run("--job", "first", "--", "one", "/bin/sh", "-c", "exit 7")
+
+        second = harness.run(
+            "--job", "second", "--after-job", "first", "--", "two", "/bin/echo", "never"
+        )
+
+        assert second.returncode == 1
+        status = harness.status("second")
+        assert status["result"] == "stopped"
+        assert "first" in status["step"]
+        assert status["steps"] == []
+        assert not any("second-1-two" in line for line in harness.launches())
+
+    def test_a_job_that_never_ran_cannot_be_followed(self, harness: Harness) -> None:
+        second = harness.run(
+            "--job", "second", "--after-job", "ghost", "--", "two", "/bin/echo", "never"
+        )
+
+        assert second.returncode == 2
+
+    def test_while_it_waits_the_status_says_so(self, harness: Harness) -> None:
+        harness.run("--record", "--job", "first", "--steps-total", "1", "--step", "one",
+                    "--step-index", "1", "--result", "running")
+
+        waiting = subprocess.Popen(
+            [str(RUNNER), "--job", "second", "--after-job", "first", "--",
+             "two", "/bin/echo", "ran"],
+            env={**harness.env, "GLASSWELL_WAIT_INTERVAL": "1"},
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        try:
+            observed = None
+            for _ in range(100):
+                path = harness.runs / "second.json"
+                if path.exists():
+                    observed = json.loads(path.read_text(encoding="utf-8"))
+                    if observed["result"] == "waiting":
+                        break
+                time.sleep(0.1)
+            assert observed is not None, "the waiting job never wrote a status file"
+            assert observed["result"] == "waiting", observed
+            assert observed["step_index"] == 0
+            assert observed["unit"] == "first"
+
+            harness.run("--record", "--job", "first", "--steps-total", "1", "--step", "one",
+                        "--step-index", "1", "--result", "complete")
+            assert waiting.wait(timeout=30) == 0
+        finally:
+            if waiting.poll() is None:
+                waiting.kill()
+
+        assert harness.status("second")["result"] == "complete"
+
+
 class TestStatusFlag:
     def test_it_prints_the_json_for_a_job(self, harness: Harness) -> None:
         harness.run(*two_steps())
@@ -701,3 +826,12 @@ class TestDetach:
         launched = harness.launches()
         assert any("--unit=backgrounded-runner" in line for line in launched)
         assert not any("--detach" in line for line in launched)
+
+    def test_a_failed_runner_unit_is_cleared_before_the_next_launch(
+        self, harness: Harness
+    ) -> None:
+        # A resume reuses the job name, and a corpse under that name would refuse it.
+        harness.run("--job", "backgrounded", "--detach", "--", "load", "/bin/echo", "hi")
+
+        systemctl = (harness.root / "systemctl.log").read_text(encoding="utf-8")
+        assert "reset-failed backgrounded-runner" in systemctl

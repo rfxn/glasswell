@@ -10,6 +10,7 @@ CODE_ENV_FILE="${GLASSWELL_CODE_ENV_FILE:-/etc/glasswell/code-version.env}"
 SOCKET_DSN="${GLASSWELL_DSN:-postgresql:///glasswell?host=/var/run/postgresql}"
 RAW_ROOT="${GLASSWELL_RAW_ROOT:-/data/raw}"
 PGDATA_DIR="${GLASSWELL_PGDATA:-/var/lib/postgresql}"
+WAIT_INTERVAL="${GLASSWELL_WAIT_INTERVAL:-30}"
 
 DEFAULT_MEMORY=6G
 DEFAULT_TIMEOUT=3600
@@ -32,7 +33,11 @@ options:
   --job <name>          names the log, the status file and the units      (required)
   --steps-file <path>   one step per line, `#` comments; a line is not shell-quoted
   --detach              hand the chain to a transient unit and return the poll command
-  --force               run a job whose status file says it already ran
+  --force               run a job whose status file says it already ran, from step 1
+  --resume              continue a stopped job: same status file, same log, same job name,
+                        the earlier steps kept and the new ones numbered after them
+  --after-job <job>     wait for another job's status file to finish, and refuse to start
+                        behind one that stopped
   --stop-on-fail        stop at the first failing step (the default)
   --keep-going          run every step even after one fails; the job still reports `stopped`
   --user/--group <n>    the unit's User=/Group= (default glasswell)
@@ -45,7 +50,8 @@ options:
 step options, before the command: --unit, --memory, --timeout, --user, --group, --setenv.
 
 exit: 0 the chain completed, the failing step's status when it did not, 2 a usage refusal,
-      3 a refusal to re-run a job that already has a status file.
+      3 a refusal to re-run a job that already has a status file, or to resume one that
+        did not stop.
 USAGE
 }
 
@@ -78,7 +84,9 @@ steps_file=""
 status_query=""
 mode=chain
 force=0
+resume=0
 detach=0
+after_job=""
 stop_on_fail=1
 default_user=glasswell
 default_group=glasswell
@@ -96,7 +104,7 @@ original_argv=("$@")
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --job|--steps-file|--status|--step|--step-index|--steps-total|--result|--exit|--unit|--summary|--user|--group|--memory|--timeout|--setenv)
+        --job|--steps-file|--status|--step|--step-index|--steps-total|--result|--exit|--unit|--summary|--user|--group|--memory|--timeout|--setenv|--after-job)
             [[ $# -ge 2 ]] || fail_usage "$1 needs a value"
             ;;
     esac
@@ -114,6 +122,8 @@ while [[ $# -gt 0 ]]; do
         --summary) record_summary=$2; shift 2 ;;
         --detach) detach=1; shift ;;
         --force) force=1; shift ;;
+        --resume) resume=1; shift ;;
+        --after-job) after_job=$2; shift 2 ;;
         --stop-on-fail) stop_on_fail=1; shift ;;
         --keep-going) stop_on_fail=0; shift ;;
         --user) default_user=$2; shift 2 ;;
@@ -234,8 +244,8 @@ if [[ $mode == record ]]; then
     [[ $record_index =~ $INTEGER_PATTERN ]] || fail_usage "--step-index must be a number"
     [[ $record_total =~ $INTEGER_PATTERN ]] || fail_usage "--steps-total must be a number"
     case "$record_result" in
-        starting|running|step-ok|stopped|complete) ;;
-        *) fail_usage "--result must be one of starting, running, step-ok, stopped, complete" ;;
+        starting|waiting|running|step-ok|stopped|complete) ;;
+        *) fail_usage "--result is one of starting, waiting, running, step-ok, stopped, complete" ;;
     esac
     [[ -z $record_exit || $record_exit =~ $INTEGER_PATTERN ]] || fail_usage "--exit must be a number"
 
@@ -276,8 +286,8 @@ if [[ $mode == record ]]; then
 
     open_index=$(open_record_index)
     case "$record_result" in
-        starting)
-            write_status starting "$record_name" "$record_index" "$record_unit" null null
+        starting|waiting)
+            write_status "$record_result" "$record_name" "$record_index" "$record_unit" null null
             ;;
         running)
             if [[ -n $open_index && $open_index != "$record_index" ]]; then
@@ -308,6 +318,45 @@ if [[ $mode == record ]]; then
     exit 0
 fi
 
+if [[ -n $after_job ]]; then
+    [[ $after_job =~ $NAME_PATTERN ]] || fail_usage "job name '$after_job' is not a name"
+    [[ -f "$RUNS_DIR/$after_job.json" ]] \
+        || fail_usage "no status for job $after_job — a job that never ran cannot be followed"
+fi
+
+index_offset=0
+started=""
+if [[ -f $status_file ]]; then
+    prior_result=$(status_field "$status_file" result)
+    prior_finished=$(status_field "$status_file" finished)
+    if (( resume )); then
+        if [[ $prior_result != stopped ]]; then
+            printf 'host-runner.sh: job %s is %s, not stopped — --resume continues a job that stopped\n' \
+                "$job" "$prior_result" >&2
+            exit 3
+        fi
+        # The steps already recorded stay and the new ones are numbered after them: the
+        # history the status file carries is the job's, not this run's.
+        collect_records
+        index_offset=$highest_index
+        started=$(status_field "$status_file" started)
+    elif (( force == 0 )); then
+        if [[ -n $prior_finished ]]; then
+            printf 'host-runner.sh: job %s already finished (%s) at %s — pass --force to run it again\n' \
+                "$job" "$prior_result" "$prior_finished" >&2
+        else
+            printf 'host-runner.sh: job %s has a run in progress (step %s, updated %s) — pass --force to run it again\n' \
+                "$job" "$(status_field "$status_file" step)" "$(status_field "$status_file" updated)" >&2
+        fi
+        exit 3
+    fi
+elif (( resume )); then
+    printf 'host-runner.sh: no status for job %s at %s — there is nothing to resume\n' \
+        "$job" "$status_file" >&2
+    exit 3
+fi
+[[ -n $started ]] || started=$(now)
+
 step_names=()
 step_units=()
 step_memory=()
@@ -320,7 +369,7 @@ step_command_offset=()
 step_command_count=()
 setenv_flat=()
 command_flat=()
-steps_total=0
+steps_total=$index_offset
 
 parse_steps() {
     local name unit memory timeout user group
@@ -390,20 +439,7 @@ else
     parse_steps "$@"
 fi
 
-(( steps_total > 0 )) || fail_usage "no steps"
-
-if [[ -f $status_file && $force -eq 0 ]]; then
-    prior_finished=$(status_field "$status_file" finished)
-    prior_result=$(status_field "$status_file" result)
-    if [[ -n $prior_finished ]]; then
-        printf 'host-runner.sh: job %s already finished (%s) at %s — pass --force to run it again\n' \
-            "$job" "$prior_result" "$prior_finished" >&2
-    else
-        printf 'host-runner.sh: job %s has a run in progress (step %s, updated %s) — pass --force to run it again\n' \
-            "$job" "$(status_field "$status_file" step)" "$(status_field "$status_file" updated)" >&2
-    fi
-    exit 3
-fi
+(( steps_total > index_offset )) || fail_usage "no steps"
 
 self_path="$(cd -- "$(dirname -- "$0")" && pwd)/$(basename -- "$0")" || {
     printf 'host-runner.sh: cannot resolve my own path\n' >&2
@@ -411,6 +447,8 @@ self_path="$(cd -- "$(dirname -- "$0")" && pwd)/$(basename -- "$0")" || {
 }
 
 if (( detach )); then
+    # A resume reuses the job name, and a failed unit still loaded under it would refuse.
+    systemctl reset-failed "$job-runner" >/dev/null 2>&1  # not-loaded is the goal, not an error
     detach_argv=()
     for argument in ${original_argv[@]+"${original_argv[@]}"}; do
         [[ $argument == --detach ]] && continue
@@ -429,9 +467,10 @@ if (( detach )); then
     exit 0
 fi
 
-started=$(now)
-: > "$steps_record"
-: > "$stamps_file"
+if (( resume == 0 )); then
+    : > "$steps_record"
+    : > "$stamps_file"
+fi
 
 printf 'job %s: %s steps; log %s\n' "$job" "$steps_total" "$log_file" >&2
 printf 'poll: %s --status %s\n' "$self_path" "$job" >&2
@@ -459,6 +498,27 @@ step_summary() {
         case "$line" in \{*) last_json=$line ;; esac
     done <<< "$text"
     if [[ -n $last_json ]]; then printf '%s' "$last_json"; else printf '%s' "$last_line"; fi
+}
+
+# The job this one follows is read from its status file, never from a unit's Result: a
+# transient unit that has been collected answers `success` however it ended.
+wait_for_job() {
+    local awaited="$RUNS_DIR/$after_job.json" finished_at result_word
+    printf '== waiting for job %s (%s)\n' "$after_job" "$awaited"
+    while :; do
+        finished_at=$(status_field "$awaited" finished)
+        [[ -n $finished_at ]] && break
+        write_status waiting "after $after_job" 0 "$after_job" null null
+        sleep "$WAIT_INTERVAL"
+    done
+    result_word=$(status_field "$awaited" result)
+    if [[ $result_word != complete ]]; then
+        printf 'STOP: job %s is %s at %s — this job does not start behind it\n' \
+            "$after_job" "$result_word" "$finished_at"
+        write_status stopped "after $after_job" 0 "$after_job" 1 "$(json_string "$(now)")"
+        exit 1
+    fi
+    printf '== job %s completed at %s\n' "$after_job" "$finished_at"
 }
 
 run_step() {
@@ -520,13 +580,19 @@ run_step() {
     return 0
 }
 
-write_status starting "" 0 "" null null
+if (( resume )); then
+    stamp "resumed at step $(( index_offset + 1 ))"
+    printf '== job %s resumed %s at step %s of %s\n' \
+        "$job" "$(now)" "$(( index_offset + 1 ))" "$steps_total"
+fi
+write_status starting "" "$index_offset" "" null null
+if [[ -n $after_job ]]; then wait_for_job; fi
 printf '== job %s start=%s steps=%s code=%s\n' "$job" "$started" "$steps_total" \
     "$(sed -n 's/^GLASSWELL_CODE_VERSION=//p' "$CODE_ENV_FILE" 2>/dev/null)"  # absent off-host, and empty is the right answer
 
 failed_index=0
 failed_exit=0
-for (( step_position = 1; step_position <= steps_total; step_position++ )); do
+for (( step_position = index_offset + 1; step_position <= steps_total; step_position++ )); do
     run_step "$step_position"
     step_status=$?
     if (( step_status != 0 )); then
