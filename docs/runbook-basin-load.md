@@ -107,11 +107,14 @@ you are re-running (use `--restage`) or recovering.
 
 ### B — `GLASSWELL_RAW_ROOT` is not set in your shell
 
-`DEFAULT_RAW_ROOT` is the **relative** path `data/raw`. A manual ingest without the variable
-writes the raw zone into whatever directory you happened to be in, and the sealed bytes end up
-outside `/data/raw` with no manifest sidecar where anyone will look for it. The
-`glasswell-ingest` unit supplies it; a hand-run command does not. Every Step 1 command below
-sets it explicitly — do not drop it.
+There is no default any more: `lineage/fetch.py` refuses with `RawRootUnset` when neither
+`--raw-root` nor the variable names a raw zone. It used to fall back to the **relative** path
+`data/raw`, which resolved against whatever directory you happened to be in — `/` under
+`systemd-run`, your home directory by hand — so the sealed bytes landed outside `/data/raw`
+with no manifest sidecar where anyone would look for it, and `.incoming`'s same-device
+precheck passed for the wrong device. The `glasswell-ingest` unit supplies the variable; a
+hand-run command does not. Every Step 1 command below sets it explicitly — do not drop it, and
+if you do, the refusal names it.
 
 ### C — no competing writer
 
@@ -154,7 +157,8 @@ rows permanently — derivations are never rewritten.
 Module form, if the console script is not yet deployed:
 
 ```
-/opt/glasswell/venv/bin/python -m glasswell.ingest.eia_boundaries --layer all
+GLASSWELL_RAW_ROOT=/data/raw \
+  /opt/glasswell/venv/bin/python -m glasswell.ingest.eia_boundaries --layer all
 ```
 
 It prints one JSON line per layer. **Expected, measured, exact:**

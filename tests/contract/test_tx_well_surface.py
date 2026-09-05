@@ -8,6 +8,8 @@ not represent (N-1).
 
 from __future__ import annotations
 
+from datetime import date, timedelta
+
 from fastapi.testclient import TestClient
 
 from tests.contract.conftest import TX_API10
@@ -17,6 +19,7 @@ PENDING = "production_pending_allocation"
 # served: lineage.conformance_rules is append-only and an as_of before this train still
 # resolves the sentence the card used to show.
 SUPERSEDED_DISCLOSURE = "cr_tx_allocation_scope_1"
+GRAIN_RULE = "cr_tx_production_grain_1"
 ALLOCATION_RULE = "cr_tx_allocation_v0_1"
 ERROR_RULE = "cr_alloc_v0_error_bounds_1"
 
@@ -234,15 +237,22 @@ def test_the_card_said_pending_until_the_day_the_allocation_was_published(
 ) -> None:
     """The two clocks, on the real supersession rather than a planted one.
 
-    `cr_tx_production_grain_1` supersedes the disclosure with an effective date and a published
-    vintage of 2026-09-02. A knowledge cut before that resolves the disclosure and the card
-    says production is pending; a cut at or after it resolves the successor and the card draws
-    a chart. Nothing about the answer changes retroactively, which is the whole point of
-    publishing a rule separately from dating it.
+    `cr_tx_production_grain_1` supersedes the disclosure. A knowledge cut before its published
+    vintage resolves the disclosure and the card says production is pending; a cut at or after
+    it resolves the successor and the card draws a chart. Nothing about the answer changes
+    retroactively, which is the whole point of publishing a rule separately from dating it.
+
+    The vintage is asked of the rule rather than written down here. The merge train repoints it
+    to the day the tag is cut, and a date typed into this file goes stale the moment it does --
+    which is exactly what v0.80 did, moving it from 2026-09-02 to 2026-09-04 and leaving this
+    gate asserting that a rule resolved two days before it was published.
     """
+    published = date.fromisoformat(
+        envelope(client, f"/v1/conformance/{GRAIN_RULE}")["data"]["published_vintage"]
+    )
     path = f"/v1/wells/{TX_API10}"
-    before = envelope(client, path, as_of="2026-08-28")
-    after = envelope(client, path, as_of="2026-09-02")
+    before = envelope(client, path, as_of=(published - timedelta(days=1)).isoformat())
+    after = envelope(client, path, as_of=published.isoformat())
 
     assert PENDING in {warning["code"] for warning in before["meta"]["warnings"]}
     assert before["links"]["reporting_rule"] == f"/v1/conformance/{SUPERSEDED_DISCLOSURE}"

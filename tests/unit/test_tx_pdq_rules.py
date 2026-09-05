@@ -8,6 +8,8 @@ decisions they claim to carry.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from glasswell.seed.conformance_tx import (
@@ -15,6 +17,8 @@ from glasswell.seed.conformance_tx import (
     ALLOCATION_RULES,
     EFFECTIVE_FROM,
     PDQ_EFFECTIVE_FROM,
+    PDQ_FORMAT_MEASURED_ON,
+    PDQ_MEMBER_LAYOUT,
     TX_RULES,
 )
 
@@ -175,6 +179,83 @@ def test_the_parse_refuses_a_header_change_rather_than_quarantining_a_row() -> N
     assert spec["member_selection"] == "by_name"
     assert len(spec["members_read"]) == 6
     assert "OG_COUNTY_LEASE_CYCLE_DATA_TABLE.dsv" in spec["members_excluded"]
+
+
+def test_the_layout_the_founding_row_left_in_code_is_a_row_of_its_own() -> None:
+    """R8. cr_tx_pdq_format_1 named the members and the refuse policy and carried no column
+    list, so the header the parse was judged against lived only in the parser. The restatement
+    carries it, and _1 is superseded rather than edited."""
+    founding = BY_ID["cr_tx_pdq_format_1"]
+    restated = BY_ID["cr_tx_pdq_format_2"]
+
+    assert "members" not in founding["spec"]
+    assert restated["supersedes_rule_id"] == "cr_tx_pdq_format_1"
+    assert restated["effective_from"] == PDQ_FORMAT_MEASURED_ON > founding["effective_from"]
+    assert sorted(restated["spec"]["members"]) == sorted(founding["spec"]["members_read"])
+
+
+def test_the_completion_member_carries_the_sixteen_columns_that_were_measured() -> None:
+    """The transcribed 13 were three short. All 13 the parser consumes are present; the three
+    it never read sit at positions 8, 9 and 10, which is why a width check was the only thing
+    between a sixteen-column row and thirteen columns of it."""
+    member = BY_ID["cr_tx_pdq_format_2"]["spec"]["members"][
+        "OG_WELL_COMPLETION_DATA_TABLE.dsv"
+    ]
+
+    assert member["header"] == [
+        "OIL_GAS_CODE", "DISTRICT_NO", "LEASE_NO", "WELL_NO", "API_COUNTY_CODE",
+        "API_UNIQUE_NO", "ONSHORE_ASSC_CNTY", "DISTRICT_NAME", "COUNTY_NAME",
+        "OIL_WELL_UNIT_NO", "WELL_ROOT_NO", "WELLBORE_SHUTIN_DT", "WELL_SHUTIN_DT",
+        "WELL_14B2_STATUS_CODE", "WELL_SUBJECT_14B2_FLAG", "WELLBORE_LOCATION_CODE",
+    ]
+    assert len(member["consumed"]) == 13
+    unread = [column for column in member["header"] if column not in member["consumed"]]
+    assert unread == ["DISTRICT_NAME", "COUNTY_NAME", "OIL_WELL_UNIT_NO"]
+
+
+@pytest.mark.parametrize("member", sorted(PDQ_MEMBER_LAYOUT))
+def test_every_consumed_column_is_a_column_of_that_member_s_own_header(member: str) -> None:
+    """A consumed column that is not in the header is a mapping to a field that does not exist,
+    and the parse would read it as a KeyError rather than as a refusal naming the rule."""
+    layout = BY_ID["cr_tx_pdq_format_2"]["spec"]["members"][member]
+
+    assert [column for column in layout["consumed"] if column not in layout["header"]] == []
+    assert layout["consumed"] == [
+        column for column in layout["header"] if column in layout["consumed"]
+    ]
+
+
+def test_the_county_member_is_listed_read_and_consumed_by_nobody() -> None:
+    """cr_tx_pdq_format_1 lists six members read and the parse opens five. The sixth is carried
+    with an empty consumed set rather than dropped, because the county allowlist is
+    cr_tx_pdq_scope_1's own row and a second copy of it here would be the R8 defect again."""
+    members = BY_ID["cr_tx_pdq_format_2"]["spec"]["members"]
+
+    assert members["GP_COUNTY_DATA_TABLE.dsv"]["consumed"] == []
+    assert [
+        member for member, layout in members.items() if not layout["consumed"]
+    ] == ["GP_COUNTY_DATA_TABLE.dsv"]
+
+
+def test_the_restatement_states_the_measurement_that_produced_it() -> None:
+    """A restatement whose rationale does not say what was measured is a second assertion, not
+    a correction: the byte count, the sha and the row count are how a reader checks it."""
+    rationale = str(BY_ID["cr_tx_pdq_format_2"]["rationale"])
+
+    for measured in ("2026-09-04", "3,652,221,981", "add29ef717e430e0", "820,718"):
+        assert measured in rationale
+
+
+def test_the_restatement_is_published_before_it_is_seeded() -> None:
+    """049's trigger refuses a conformance rule whose publication is not registered, so the row
+    and its evidence ship in one commit or the seeder raises on a fresh database."""
+    migrations = Path(__file__).resolve().parents[2] / "src/glasswell/db/migrations"
+    published = [
+        path.name for path in sorted(migrations.glob("*.sql"))
+        if "'cr_tx_pdq_format_2'" in path.read_text(encoding="utf-8")
+    ]
+
+    assert published == ["081_tx_pdq_format.sql"]
 
 
 def test_the_county_scope_is_applied_at_promotion_and_counted_not_quarantined() -> None:

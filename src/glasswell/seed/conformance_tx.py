@@ -31,6 +31,10 @@ EFFECTIVE_FROM = date(2026, 8, 20)
 # supersedes a rule the slice published and a successor at the same instant would not resolve.
 PDQ_EFFECTIVE_FROM = date(2026, 9, 2)
 
+# The day the archive was fetched whole and its members measured, which is the day the format
+# restatement became true. Later than the train that published the transcribed layout.
+PDQ_FORMAT_MEASURED_ON = date(2026, 9, 4)
+
 PDQ_LINK = "https://mft.rrc.texas.gov/link/1f5ddb8d-329a-4459-b7f8-177b4f5ee60d"
 W10_LINK = "https://mft.rrc.texas.gov/link/af355cae-e78b-4337-aba8-7ce57073dba3"
 G10_LINK = "https://mft.rrc.texas.gov/link/1363c373-fe71-4044-aa23-3c90cd162ff9"
@@ -60,6 +64,78 @@ PERMIAN_COUNTY_CODES: tuple[str, ...] = (
     "371", "377", "383", "389", "399", "413", "415", "431", "435", "443", "445", "451", "461",
     "475", "495", "501",
 )
+
+# Every PDQ member this deployment reads, with the header measured on the archive itself and
+# the subset each parse consumes. Published by cr_tx_pdq_format_2, whose rationale carries the
+# measurement; cr_tx_pdq_format_1 carried no layout at all and the 13 columns transcribed into
+# the parser from the manual were three short of the file.
+PDQ_MEMBER_LAYOUT: dict[str, dict[str, tuple[str, ...]]] = {
+    "GP_COUNTY_DATA_TABLE.dsv": {
+        "header": (
+            "COUNTY_NO", "COUNTY_FIPS_CODE", "COUNTY_NAME", "DISTRICT_NO", "DISTRICT_NAME",
+            "ON_SHORE_FLAG", "ONSHORE_ASSC_CNTY_FLAG",
+        ),
+        # Nothing reads this member: the county allowlist is cr_tx_pdq_scope_1's own row, which
+        # is the decision, and the member would only be a second copy of it.
+        "consumed": (),
+    },
+    "GP_DATE_RANGE_CYCLE_DATA_TABLE.dsv": {
+        "header": (
+            "OLDEST_PROD_CYCLE_YEAR_MONTH", "NEWEST_PROD_CYCLE_YEAR_MONTH",
+            "NEWEST_SCHED_CYCLE_YEAR_MONTH", "GAS_EXTRACT_DATE", "OIL_EXTRACT_DATE",
+        ),
+        "consumed": ("OLDEST_PROD_CYCLE_YEAR_MONTH", "NEWEST_PROD_CYCLE_YEAR_MONTH"),
+    },
+    "GP_DISTRICT_DATA_TABLE.dsv": {
+        "header": ("DISTRICT_NO", "DISTRICT_NAME", "OFFICE_PHONE_NO", "OFFICE_LOCATION"),
+        "consumed": ("DISTRICT_NO", "DISTRICT_NAME"),
+    },
+    "OG_LEASE_CYCLE_DATA_TABLE.dsv": {
+        "header": (
+            "OIL_GAS_CODE", "DISTRICT_NO", "LEASE_NO", "CYCLE_YEAR", "CYCLE_MONTH",
+            "CYCLE_YEAR_MONTH", "LEASE_NO_DISTRICT_NO", "OPERATOR_NO", "FIELD_NO", "FIELD_TYPE",
+            "GAS_WELL_NO", "PROD_REPORT_FILED_FLAG", "LEASE_OIL_PROD_VOL", "LEASE_OIL_ALLOW",
+            "LEASE_OIL_ENDING_BAL", "LEASE_GAS_PROD_VOL", "LEASE_GAS_ALLOW",
+            "LEASE_GAS_LIFT_INJ_VOL", "LEASE_COND_PROD_VOL", "LEASE_COND_LIMIT",
+            "LEASE_COND_ENDING_BAL", "LEASE_CSGD_PROD_VOL", "LEASE_CSGD_LIMIT",
+            "LEASE_CSGD_GAS_LIFT", "LEASE_OIL_TOT_DISP", "LEASE_GAS_TOT_DISP",
+            "LEASE_COND_TOT_DISP", "LEASE_CSGD_TOT_DISP", "DISTRICT_NAME", "LEASE_NAME",
+            "OPERATOR_NAME", "FIELD_NAME",
+        ),
+        "consumed": (
+            "OIL_GAS_CODE", "DISTRICT_NO", "LEASE_NO", "CYCLE_YEAR_MONTH", "OPERATOR_NO",
+            "FIELD_NO", "FIELD_TYPE", "GAS_WELL_NO", "PROD_REPORT_FILED_FLAG",
+            "LEASE_OIL_PROD_VOL", "LEASE_GAS_PROD_VOL", "LEASE_COND_PROD_VOL",
+            "LEASE_CSGD_PROD_VOL", "LEASE_NAME", "OPERATOR_NAME", "FIELD_NAME",
+        ),
+    },
+    "OG_WELL_COMPLETION_DATA_TABLE.dsv": {
+        "header": (
+            "OIL_GAS_CODE", "DISTRICT_NO", "LEASE_NO", "WELL_NO", "API_COUNTY_CODE",
+            "API_UNIQUE_NO", "ONSHORE_ASSC_CNTY", "DISTRICT_NAME", "COUNTY_NAME",
+            "OIL_WELL_UNIT_NO", "WELL_ROOT_NO", "WELLBORE_SHUTIN_DT", "WELL_SHUTIN_DT",
+            "WELL_14B2_STATUS_CODE", "WELL_SUBJECT_14B2_FLAG", "WELLBORE_LOCATION_CODE",
+        ),
+        "consumed": (
+            "OIL_GAS_CODE", "DISTRICT_NO", "LEASE_NO", "WELL_NO", "API_COUNTY_CODE",
+            "API_UNIQUE_NO", "ONSHORE_ASSC_CNTY", "WELL_ROOT_NO", "WELLBORE_SHUTIN_DT",
+            "WELL_SHUTIN_DT", "WELL_14B2_STATUS_CODE", "WELL_SUBJECT_14B2_FLAG",
+            "WELLBORE_LOCATION_CODE",
+        ),
+    },
+    "OG_REGULATORY_LEASE_DW_DATA_TABLE.dsv": {
+        "header": (
+            "OIL_GAS_CODE", "DISTRICT_NO", "LEASE_NO", "DISTRICT_NAME", "LEASE_NAME",
+            "OPERATOR_NO", "OPERATOR_NAME", "FIELD_NO", "FIELD_NAME", "WELL_NO",
+            "LEASE_OFF_SCHED_FLAG", "LEASE_SEVERANCE_FLAG",
+        ),
+        "consumed": (
+            "OIL_GAS_CODE", "DISTRICT_NO", "LEASE_NO", "DISTRICT_NAME", "LEASE_NAME",
+            "OPERATOR_NO", "OPERATOR_NAME", "FIELD_NO", "FIELD_NAME", "WELL_NO",
+            "LEASE_OFF_SCHED_FLAG", "LEASE_SEVERANCE_FLAG",
+        ),
+    },
+}
 
 # `+grids=` takes an absolute path so the transform reads the manifested artifact rather than
 # whatever the host's PROJ happens to carry. `{grid_path}` is substituted from the grid's own
@@ -921,6 +997,66 @@ TX_RULES: tuple[dict[str, object], ...] = (
         ),
         "evidence_url": PDQ_MANUAL,
         "effective_from": PDQ_EFFECTIVE_FROM,
+    },
+    {
+        "rule_id": "cr_tx_pdq_format_2",
+        "supersedes_rule_id": "cr_tx_pdq_format_1",
+        "source_id": "tx_pdq_dsv",
+        "stage": "parse",
+        "rule_kind": "parse_directive",
+        "applies_to_fields": ["all"],
+        "spec": {
+            "delimiter": "}",
+            "header_row": 1,
+            "enclosure": None,
+            "archive_format": "zip64_deflate",
+            "member_selection": "by_name",
+            "members_read": sorted(PDQ_MEMBER_LAYOUT),
+            "members_excluded": [
+                "OG_COUNTY_CYCLE_DATA_TABLE.dsv",
+                "OG_COUNTY_LEASE_CYCLE_DATA_TABLE.dsv",
+            ],
+            "members": {
+                member: {
+                    "header": list(layout["header"]),
+                    "consumed": list(layout["consumed"]),
+                }
+                for member, layout in sorted(PDQ_MEMBER_LAYOUT.items())
+            },
+            "on_header_change": "refuse",
+            "header_comparison": "name_and_position",
+            "unlisted_column": "refuse",
+            "listed_column_not_consumed": "accept",
+            "passes": 2,
+            "manual_url": PDQ_MANUAL,
+            "downloads_page": DOWNLOADS_PAGE,
+        },
+        "rule": (
+            "The dump is a `}`-delimited text archive with one header row and no enclosure, and"
+            " this row carries the header of every member read, verbatim, beside the subset the"
+            " parse consumes. A member whose header does not match the one listed here, column"
+            " for column and in order, refuses the parse naming the columns and this rule; a"
+            " column listed here that the parse does not consume is carried and read by nobody."
+        ),
+        "rationale": (
+            "The restatement cr_tx_pdq_format_1 asked for. That row named the members and the"
+            " refuse policy and carried no column list, so the layout existed only in the"
+            " parser, where the completion member had been transcribed from the manual as 13"
+            " columns and never measured. The archive was fetched whole on 2026-09-04 -"
+            " 3,652,221,981 bytes, sha256 add29ef717e430e0..., sixteen members stamped"
+            " 2026-08-26, 820,718 completion rows - and OG_WELL_COMPLETION_DATA_TABLE.dsv has"
+            " 16 columns. All 13 the parser consumes are present; the three it never read are"
+            " DISTRICT_NAME, COUNTY_NAME and OIL_WELL_UNIT_NO, positions 8, 9 and 10. The"
+            " refuse policy did its job: the stage stopped on the width rather than staging"
+            " thirteen columns of a sixteen-column row, which is why the correction is a header"
+            " and not a re-promotion. Comparing names and positions rather than widths is what"
+            " makes a rename and a reorder as loud as an addition, and the three unconsumed"
+            " columns are listed rather than dropped so a reader can see that the parse read"
+            " past them on purpose. GP_COUNTY_DATA_TABLE.dsv is listed with an empty consumed"
+            " set because nothing reads it: the county allowlist is cr_tx_pdq_scope_1's own row."
+        ),
+        "evidence_url": PDQ_MANUAL,
+        "effective_from": PDQ_FORMAT_MEASURED_ON,
     },
     {
         "rule_id": "cr_tx_pdq_scope_1",

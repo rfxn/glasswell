@@ -29,7 +29,14 @@ PRODUCTION_ROWS = 400
 DIRECTIONAL_ROWS = 60
 
 
-def _reader(archive: Path) -> tuple[shapefile.Reader, bytes]:
+def _reader(archive: Path) -> tuple[shapefile.Reader, bytes, str]:
+    """The layer, its projection, and the stem ECMC named the members with.
+
+    The stem is carried out because it used to be dropped here and typed in again at the write:
+    the cut wrote `DirectionalBottomholeLocations` while the archive ships
+    `Directional_Bottomhole_Locations`, so the fixtures asserted a name this repository had
+    invented and the suite was green on a selector that matched nothing live.
+    """
     members = zipfile.ZipFile(archive)
     by_extension = {name.rsplit(".", 1)[-1].lower(): name for name in members.namelist()}
     reader = shapefile.Reader(
@@ -37,7 +44,8 @@ def _reader(archive: Path) -> tuple[shapefile.Reader, bytes]:
         dbf=io.BytesIO(members.read(by_extension["dbf"])),
         shx=io.BytesIO(members.read(by_extension["shx"])),
     )
-    return reader, members.read(by_extension["prj"])
+    stem = by_extension["shp"].rpartition(".")[0]
+    return reader, members.read(by_extension["prj"]), stem
 
 
 def _write(target: Path, reader: shapefile.Reader, prj: bytes, keep: list[int], stem: str) -> None:
@@ -81,7 +89,7 @@ def cut_production(scratch: Path) -> set[str]:
 
 
 def cut_headers(scratch: Path, api10s: set[str]) -> None:
-    reader, prj = _reader(scratch / HEADER_ARCHIVE)
+    reader, prj, stem = _reader(scratch / HEADER_ARCHIVE)
     fields = [field[0] for field in reader.fields[1:]]
     keep: list[int] = []
     by_status: Counter[str] = Counter()
@@ -111,11 +119,11 @@ def cut_headers(scratch: Path, api10s: set[str]) -> None:
         by_status[status] += 1
         by_qualifier[qualifier] += 1
     keep = sorted(set(keep) | set(duplicates))
-    _write(HERE / "Wells_sample.zip", reader, prj, keep, "Wells")
+    _write(HERE / "Wells_sample.zip", reader, prj, keep, stem)
 
 
-def cut_directional(scratch: Path, archive: str, stem: str, target: str) -> None:
-    reader, prj = _reader(scratch / archive)
+def cut_directional(scratch: Path, archive: str, target: str) -> None:
+    reader, prj, stem = _reader(scratch / archive)
     fields = [field[0] for field in reader.fields[1:]]
     by_well: Counter[str] = Counter()
     kept_wells: Counter[str] = Counter()
@@ -138,9 +146,8 @@ def main() -> int:
     scratch = Path(sys.argv[1])
     api10s = cut_production(scratch)
     cut_headers(scratch, api10s)
-    cut_directional(scratch, BOTTOMHOLE_ARCHIVE, "DirectionalBottomholeLocations",
-                    "DirectionalBottomholeLocations_sample.zip")
-    cut_directional(scratch, LINES_ARCHIVE, "DirectionalLines", "DirectionalLines_sample.zip")
+    cut_directional(scratch, BOTTOMHOLE_ARCHIVE, "DirectionalBottomholeLocations_sample.zip")
+    cut_directional(scratch, LINES_ARCHIVE, "DirectionalLines_sample.zip")
     return 0
 
 

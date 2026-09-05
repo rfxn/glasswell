@@ -31,7 +31,16 @@ class IngestRun:
     connection: psycopg.Connection
     session: LineageSession
     as_of: date
-    raw_root: Path
+    declared_raw_root: Path | str | None = None
+
+    @property
+    def raw_root(self) -> Path:
+        """The raw zone, resolved where it is reached rather than where the run opens.
+
+        A promotion reads staging and writes canonical and never touches the raw zone, so
+        requiring it to declare one would refuse over a resource it does not use.
+        """
+        return resolve_raw_root(self.declared_raw_root)
 
 
 def _code_version() -> str:
@@ -149,5 +158,5 @@ def open_ingest_run(
             connection=connection,
             session=session,
             as_of=session.vintage,
-            raw_root=resolve_raw_root(raw_root),
+            declared_raw_root=raw_root,
         )

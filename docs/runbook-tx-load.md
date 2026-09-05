@@ -53,11 +53,19 @@ reconstructed from any of these four regulators.
 is asserted before the fetch and again before each calendar year's promotion, because canonical
 is append-only and a half-promoted vintage is a state somebody has to reason about.
 
-**`GLASSWELL_RAW_ROOT` and its `.incoming` must be one device.** `lineage/fetch.py` writes to
-`<root>/.incoming` and then `os.replace`s into place; a rename cannot cross a device. Had the
-temporary file been on `/tmp` — the 145 GB root disk on this host — a 3.65 GB fetch would fill
-the root volume and then fail the rename, having already spent the download. The precheck
-refuses rather than discovering it at the end.
+**`GLASSWELL_RAW_ROOT` must be declared, and it and its `.incoming` must be one device.**
+`lineage/fetch.py` writes to `<root>/.incoming` and then `os.replace`s into place; a rename
+cannot cross a device. Had the temporary file been on `/tmp` — the 145 GB root disk on this
+host — a 3.65 GB fetch would fill the root volume and then fail the rename, having already
+spent the download. The precheck refuses rather than discovering it at the end.
+
+There is no longer a fallback for the root itself: an undeclared raw zone refuses with
+`RawRootUnset` instead of resolving the relative `data/raw` against whatever directory the
+process was started in. Every unit below that **reaches** the raw zone therefore passes it
+explicitly, and so must any hand-run ingest. Step 4's mart units do not, and that is correct:
+a mart reads canonical and writes a mart, and `IngestRun.raw_root` is resolved where it is
+reached rather than where a run opens, so a step that never touches the zone never asks for
+one.
 
 ```bash
 grep GLASSWELL_RAW_ROOT /etc/glasswell/app.env      # expect /data/raw
@@ -71,17 +79,40 @@ grep GLASSWELL_RAW_ROOT /etc/glasswell/app.env      # expect /data/raw
 fetch.**
 
 ```bash
-sudo systemd-run --unit=t1-tx-pdq-stage --collect \
+sudo systemd-run --unit=t1-tx-pdq-stage --wait \
   --property=User=glasswell --property=Group=glasswell \
   --property=Environment=GLASSWELL_DSN=postgresql:///glasswell?host=/var/run/postgresql \
-  --property=TimeoutStartSec=21600 --property=MemoryMax=6G \
+  --property=Environment=GLASSWELL_RAW_ROOT=/data/raw \
   --property=EnvironmentFile=-/etc/glasswell/code-version.env \
+  --property=TimeoutStartSec=600 --property=RuntimeMaxSec=21600 \
+  --property=MemoryMax=6G \
   /opt/glasswell/venv/bin/python -m glasswell.ingest.tx_pdq \
     --stage-only --pgdata /var/lib/postgresql
 
-journalctl -u t1-tx-pdq-stage -f
-systemctl show t1-tx-pdq-stage -p Result -p ExecMainStatus   # after it exits
+# --wait returns the real exit status to this shell. If the SSH session drops, the unit keeps
+# running: re-attach with `journalctl -u t1-tx-pdq-stage -f`.
+journalctl -u t1-tx-pdq-stage --no-pager -o cat | tail -n 20
+systemctl reset-failed t1-tx-pdq-stage    # only after reading it; this is what unloads the unit
 ```
+
+**Three properties, and what each of them bounds.**
+
+- `--wait`, not `--collect`. `--collect` unloads the unit the moment it exits, and
+  `systemctl show <unit> -p Result -p ExecMainStatus` on an unloaded unit answers
+  `Result=success ExecMainStatus=0` — measured on the **failed** unit at 2026-09-04 19:42:51Z,
+  with `LoadState=not-found`, and documented as exactly this trap in
+  `scheduler/runner.py:35-38`. A step whose success check cannot see a failure is not a check.
+  With `--wait` the shell gets the status and a failed unit stays loaded for `systemctl status`.
+- `RuntimeMaxSec` is the runtime budget. `TimeoutStartSec` is **not**: on a `Type=simple`
+  transient unit the service is "started" as soon as the process is forked, so the start
+  timeout has nothing left to bound. Measured on a workstation 2026-09-04 20:40Z —
+  `systemd-run --wait -p TimeoutStartSec=1 sleep 4` exited 0 after four seconds, and the same
+  command with `-p RuntimeMaxSec=1` was killed after one.
+- `GLASSWELL_RAW_ROOT` is now mandatory: `lineage/fetch.py` refuses with `RawRootUnset` rather
+  than falling back to a relative `data/raw`. It used to resolve against the unit's working
+  directory, which under `systemd-run` is `/` — so this step wrote to `/data/raw` by accident
+  rather than by declaration, and the same command run by hand from a home directory would
+  have written the raw zone there instead.
 
 `--stage-only` stages every member and promotes no lease row, so the expensive, irreversible
 half is a separate decision from the unrepeatable one. What lands: one manifest with the
@@ -95,6 +126,118 @@ itself. If the in-scope lease population is materially larger than the envelope 
 the county scope before promoting: a county-scoped load stays explainable and a truncated
 history does not (R-5).
 
+### If it refuses: `ArchiveFormatError` on a member's header
+
+```
+OG_WELL_COMPLETION_DATA_TABLE.dsv: the header carries FOO, which the rule does not list
+(cr_tx_pdq_format_2)
+```
+
+**This is the rule working, not the load failing.** `cr_tx_pdq_format_2` carries the measured
+header of every member read, and a member that gained, lost, renamed or reordered a column is
+no longer the member the rule describes: the row mapping is invalid, so nothing failed to parse
+and there is nothing to quarantine. Read it as a change at the RRC, not as a bug here.
+
+What to do: open `/conformance/cr_tx_pdq_format_2`, compare its `members` entry for the named
+member against the archive's own first line, and restate the rule as `cr_tx_pdq_format_3` with
+the new header and a rationale that says what was measured and when. Never widen the check to
+get the load through — the refusal is what stops thirteen columns of a sixteen-column row being
+staged as if they were the row.
+
+**The fetch is kept.** The manifest is committed the moment the bytes are placed, so a refusal
+here leaves a recorded artifact rather than an orphan: the archive stays sealed under
+`/data/raw/tx_pdq_dsv/pdq-dsv-zip/`, `lineage.manifests` holds its sha256 and byte count, and
+`lineage.fetch_attempts` records the poll that produced it. Nothing was promoted and staging is
+empty, because the parse rolled back and the fetch did not.
+
+**What `/status` says afterwards, and why it is not "current".** The poll finalises `new`, and
+that is true — the bytes landed. It is *not* the whole answer, so the refusal is recorded as a
+`staging.load_failed` audit event against the manifest and the manifest's `staging_load_ref` is
+left null, and `/v1/status` reads the source as **stale**:
+
+> The poll succeeded but the artifact it registered was never loaded into staging; a fetch is
+> not a parse, and freshness is refused until one reads the artifact through.
+
+Colorado answers the same way for the same class of refusal, by a different route — its
+`MalformedArchive` rolls the manifest back, so its latest key poll is `failed` with
+`malformedarchive`. Two different facts, one served state. Check it after a refusal, and again
+after the re-run:
+
+```bash
+curl -s "$GLASSWELL_BASE_URL/v1/status" -H "X-Glasswell-Key: $KEY" \
+  | jq '.data.sources[] | select(.source_id=="tx_pdq_dsv") | {state, freshness_reason}'
+```
+
+The source returns to `current` when — and only when — a stage reads the archive through and
+stamps `staging_load_ref` on its manifest. A re-run that refuses again leaves it stale.
+
+**The re-run.** There is no resume — the portal ignores `Range` — so re-running Step 1 after
+the rule is restated spends the whole fetch again, 1–5 hours. What it does **not** do is place
+a second 3.65 GB copy: identical bytes resolve to the slot the first fetch already registered
+(`lineage/fetch.py` `stage_payload` → `owning_slot`), and the run reports `unchanged`. Check
+before re-running that exactly one directory exists for the sha:
+
+```bash
+ls -1 /data/raw/tx_pdq_dsv/pdq-dsv-zip/
+sudo -u postgres psql -d glasswell -Atc \
+  "select manifest_id, sha256, size_bytes, storage_uri from lineage.manifests
+    where source_id = 'tx_pdq_dsv' order by fetched_at"
+```
+
+**The one artifact this does not cover.** The 2026-09-04 19:39Z fetch predates the commit that
+made the manifest durable, so its bytes at
+`/data/raw/tx_pdq_dsv/pdq-dsv-zip/2026-09-04T193918Z-add29ef717e4/payload.zip` are 3.65 GB with
+no `lineage.manifests` row, and no re-run can adopt them: `owning_slot` reads that table, and
+there is no supported path that registers an artifact already on disk. Reconcile it by hand
+before the next Step 1 — it is an unindexed copy, not a retained vintage, and the raw zone's
+accretion policy is about vintages that have a manifest:
+
+```bash
+sudo -u postgres psql -d glasswell -Atc \
+  "select count(*) from lineage.manifests
+    where sha256 = 'add29ef717e430e0...'"      # must be 0 before removing anything
+sudo chmod -R u+w /data/raw/tx_pdq_dsv/pdq-dsv-zip/2026-09-04T193918Z-add29ef717e4
+sudo rm -rf     /data/raw/tx_pdq_dsv/pdq-dsv-zip/2026-09-04T193918Z-add29ef717e4
+```
+
+Substitute the sha the directory name carries, and run the count first: a directory whose sha
+**is** in `lineage.manifests` is a live artifact that derivations resolve to, and removing it
+breaks every handle that reaches it.
+
+### If it ends any other way
+
+The refusal above is the outcome the rule produces on purpose; everything else that can end a
+stage between the fetch commit and the run's own commit is recorded the same way. The unit's
+`MemoryMax=6G` surfacing as a `MemoryError`, a full `/var/lib/postgresql`, a psycopg error, the
+per-year headroom refusal in Step 3's promotion loop — each writes one `staging.load_failed`
+event whose `reason_code` is the exception's own name, rolls back whatever it had staged, and
+leaves `/status` reading **stale** with the same reason. So the check is the same `curl` above,
+and `reason_code` is what tells the two apart:
+
+```bash
+sudo -u postgres psql -d glasswell -Atc \
+  "select payload ->> 'reason_code', payload ->> 'detail' from lineage.audit_events
+    where event_type = 'staging.load_failed' order by occurred_at desc limit 1"
+```
+
+**What is not recorded is a signal death.** `SIGKILL`, or `SIGTERM` with no handler, ends the
+process without unwinding, so nothing writes the event; the fetch is already committed and the
+poll already reads `new`. The manifest is left unstamped and unexplained. For a source that has
+stamped a load before, `/status` still refuses to call it current — an unstamped head on a
+source that keeps the bookkeeping is enough. Texas has stamped none yet, so until the first
+Step 1 completes this is the one case that reads `current` on bytes nothing has parsed. Ask the
+manifest rather than `/status` until then:
+
+```bash
+sudo -u postgres psql -d glasswell -Atc \
+  "select m.manifest_id, m.staging_load_ref is null as unloaded
+     from lineage.manifests m where m.source_id = 'tx_pdq_dsv' order by m.fetched_at"
+```
+
+A row with `unloaded` true and no `staging.load_failed` event against its `manifest_id` is an
+artifact a killed run left behind: re-run Step 1, which reuses the slot and stages from the
+bytes already on disk. The first successful stage closes this permanently for Texas.
+
 ---
 
 ## Step 2 — the plug dates, from bytes already on disk
@@ -107,12 +250,18 @@ takes an equal share every month to the present while the same card serves
 `status_canonical = plugged`.
 
 ```bash
-sudo systemd-run --unit=t2-tx-plug-dates --collect \
+sudo systemd-run --unit=t2-tx-plug-dates --wait \
   --property=User=glasswell --property=Group=glasswell \
   --property=Environment=GLASSWELL_DSN=postgresql:///glasswell?host=/var/run/postgresql \
-  --property=TimeoutStartSec=3600 --property=MemoryMax=6G \
+  --property=Environment=GLASSWELL_RAW_ROOT=/data/raw \
+  --property=EnvironmentFile=-/etc/glasswell/code-version.env \
+  --property=TimeoutStartSec=600 --property=RuntimeMaxSec=3600 \
+  --property=MemoryMax=6G \
   /opt/glasswell/venv/bin/python -m glasswell.ingest.tx_wellbore \
     --repromote-plug-dates
+
+journalctl -u t2-tx-plug-dates --no-pager -o cat | tail -n 10
+systemctl reset-failed t2-tx-plug-dates
 ```
 
 It reads `staging.tx_wellbore_ewa` and never re-fetches the 1.3 M-record export. It appends a
@@ -129,11 +278,25 @@ a track about production is a thing to be told about rather than to discover.
 **Production write, irreversible. Runtime: 30–90 minutes.**
 
 ```bash
-export GLASSWELL_DSN=postgresql:///glasswell?host=/var/run/postgresql
-sudo --preserve-env=GLASSWELL_DSN -u glasswell \
+sudo systemd-run --unit=t3-tx-promote-1993 --wait \
+  --property=User=glasswell --property=Group=glasswell \
+  --property=Environment=GLASSWELL_DSN=postgresql:///glasswell?host=/var/run/postgresql \
+  --property=Environment=GLASSWELL_RAW_ROOT=/data/raw \
+  --property=EnvironmentFile=-/etc/glasswell/code-version.env \
+  --property=TimeoutStartSec=600 --property=RuntimeMaxSec=7200 \
+  --property=MemoryMax=6G \
   /opt/glasswell/venv/bin/python -m glasswell.ingest.tx_pdq \
     --pgdata /var/lib/postgresql --year 1993 --year 1994
+
+journalctl -u t3-tx-promote-1993 --no-pager -o cat | tail -n 10
+systemctl reset-failed t3-tx-promote-1993
 ```
+
+A transient unit rather than `sudo -u glasswell`, for the same reason Step 1 is one: the
+code-version file has to be in the environment or `ingest/base.py:37-44` falls back to
+`pkg:<version>` and every derivation this step writes is stamped `pkg:0.80` instead of
+`v0.80+<commit>` — a build identity that names a package version rather than the tree that
+produced it. Give each year-batch its own unit name; `systemctl reset-failed` after reading it.
 
 The `--year` flag is repeatable and the promotion asserts the PGDATA gate before each year, so
 a stop lands on a year boundary with a recorded high-water year rather than in the middle of
@@ -152,13 +315,23 @@ number, not the estimate, that goes in `STATUS.md`.
 **Production write, rebuilt rather than appended. Runtime: 20–60 minutes.**
 
 ```bash
-sudo --preserve-env=GLASSWELL_DSN -u glasswell \
-  /opt/glasswell/venv/bin/python -m glasswell.marts.tx_allocation
-sudo --preserve-env=GLASSWELL_DSN -u glasswell \
-  /opt/glasswell/venv/bin/python -m glasswell.marts.allocation_backtest
-sudo --preserve-env=GLASSWELL_DSN -u glasswell \
-  /opt/glasswell/venv/bin/python -m glasswell.marts.cumulatives
+for mart in tx_allocation allocation_backtest cumulatives; do
+  sudo systemd-run --unit="t4-tx-$mart" --wait \
+    --property=User=glasswell --property=Group=glasswell \
+    --property=Environment=GLASSWELL_DSN=postgresql:///glasswell?host=/var/run/postgresql \
+    --property=EnvironmentFile=-/etc/glasswell/code-version.env \
+    --property=TimeoutStartSec=600 --property=RuntimeMaxSec=3600 \
+    --property=MemoryMax=2G \
+    "/opt/glasswell/venv/bin/python" -m "glasswell.marts.$mart" || break
+  journalctl -u "t4-tx-$mart" --no-pager -o cat | tail -n 5
+  systemctl reset-failed "t4-tx-$mart"
+done
 ```
+
+`|| break` because the three are ordered: the cumulative refresh reads the allocated mart, so
+running it after a failed allocation would publish a total over a mart that did not rebuild.
+The units carry the code-version file for the same reason Step 3's does — a mart derivation
+stamped `pkg:0.80` cannot be traced to the tree that computed it.
 
 **The allocation refuses rather than publishing when conservation fails.** The split is exact by
 construction, so a non-zero difference on an allocated lease-month is a defect in the module and

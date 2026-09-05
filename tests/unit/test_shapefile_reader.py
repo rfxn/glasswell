@@ -9,7 +9,7 @@ import shapefile
 from shapely import wkb
 
 from glasswell.ingest.nd_gis import api10_from_linekey, parse_linekey
-from glasswell.ingest.shapefile import UnknownProjection, ZippedShapefile
+from glasswell.ingest.shapefile import MalformedArchive, UnknownProjection, ZippedShapefile
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "nd_gis"
 WELLS = FIXTURES / "OGD_Wells_300.zip"
@@ -77,6 +77,58 @@ def test_an_undeclared_encoding_keeps_the_strict_utf8_default(tmp_path: Path):
     archive = write_encoded_zip(tmp_path / "undeclared.zip", name="Blasé 15-10", encoding="cp1252")
     with pytest.raises(shapefile.ShapefileException), ZippedShapefile(archive) as layer:
         list(layer)
+
+
+def write_named_zip(destination: Path, *stems: str) -> Path:
+    """One point layer per stem, named exactly as given -- separators and all."""
+    with zipfile.ZipFile(destination, "w") as bundle:
+        for stem in stems:
+            buffers = {extension: io.BytesIO() for extension in ("shp", "shx", "dbf")}
+            writer = shapefile.Writer(**buffers)
+            writer.field("name", "C", 40)
+            writer.record(stem)
+            writer.point(-104.5, 40.1)
+            writer.close()
+            for extension, buffer in buffers.items():
+                bundle.writestr(f"{stem}.{extension}", buffer.getvalue())
+            bundle.writestr(f"{stem}.prj", ND_PRJ)
+    return destination
+
+
+def test_the_member_ecmc_actually_ships_is_selected_through_its_separators(tmp_path: Path):
+    """Measured 2026-09-04 20:06Z on VM 111: DIRECTIONAL_BOTTOMHOLE_LOCATIONS_SHP.ZIP carries
+    `Directional_Bottomhole_Locations.{dbf,prj,shp,shx}` and the layer is registered as
+    `directionalbottomholelocations`, so an endswith over the raw stem matched nothing and the
+    staging raised MalformedArchive after the wells layer had already been staged and recorded.
+
+    The suffix is a name, not a spelling: the regulator's punctuation is not a decision anybody
+    made here, so both sides are compared with case and separators removed.
+    """
+    archive = write_named_zip(tmp_path / "bh.zip", "Directional_Bottomhole_Locations")
+
+    with ZippedShapefile(archive, layer_suffix="directionalbottomholelocations") as layer:
+        assert [record.attributes["name"] for record in layer] == [
+            "Directional_Bottomhole_Locations"
+        ]
+
+
+def test_the_normalised_match_still_tells_two_twinned_layers_apart(tmp_path: Path):
+    """The looser match must not make every layer match every suffix: MT ships a geographic
+    layer and a StatePlane twin under one zip and the suffix is the only thing between them."""
+    archive = write_named_zip(tmp_path / "twins.zip", "WellPaths", "WellPaths_P")
+
+    with ZippedShapefile(archive, layer_suffix="WellPaths") as layer:
+        assert [record.attributes["name"] for record in layer] == ["WellPaths"]
+    with ZippedShapefile(archive, layer_suffix="wellpaths_p") as twin:
+        assert [record.attributes["name"] for record in twin] == ["WellPaths_P"]
+
+
+def test_a_member_that_is_absent_is_still_a_refusal_naming_the_selector(tmp_path: Path):
+    """Normalising is not the same as guessing: a suffix that names no member still refuses."""
+    archive = write_named_zip(tmp_path / "absent.zip", "Directional_Lines")
+
+    with pytest.raises(MalformedArchive, match="matching 'surfaceholelocations'"):
+        ZippedShapefile(archive, layer_suffix="surfaceholelocations")
 
 
 def test_a_layer_suffix_selects_one_of_two_twinned_layers(tmp_path: Path):
@@ -192,3 +244,45 @@ def test_the_spacing_unit_fixture_reads_polygons():
     assert len(records) == 300
     assert records[0].geometry.geom_type in {"Polygon", "MultiPolygon"}
     assert records[0].attributes["mapsymbol"] == "1280SPC"
+
+
+def test_a_suffix_that_names_two_layers_refuses_instead_of_taking_the_first(tmp_path: Path):
+    """H-4. `endswith` over a normalised stem admits a decoy, and ZIP order decided which one
+    won. The Colorado rows name one exact member, so a second candidate is a source that grew a
+    layer -- something to read, not a tie to break."""
+    archive = write_named_zip(
+        tmp_path / "decoy.zip", "Directional_Lines", "Historic_Directional-Lines"
+    )
+
+    with pytest.raises(MalformedArchive) as refusal:
+        ZippedShapefile(archive, layer_suffix="directionallines")
+
+    message = str(refusal.value)
+    assert "2 members matching 'directionallines'" in message
+    assert "Directional_Lines" in message
+    assert "Historic_Directional-Lines" in message
+
+
+def test_the_ambiguity_refusal_states_the_requirement_instead_of_citing_a_rule(tmp_path: Path):
+    """H-16. `layer_suffix` is also how nd_gis, mt_gis, tx_gis and eia_boundaries pick a member,
+    and no conformance row names one for any of them, so "the rule names one" sent an operator
+    looking for a row that does not exist. The requirement is the reader's, and it says so."""
+    archive = write_named_zip(tmp_path / "nd.zip", "Wells", "Historic_Wells")
+
+    with pytest.raises(MalformedArchive) as refusal:
+        ZippedShapefile(archive, layer_suffix="wells")
+
+    message = str(refusal.value)
+    assert "a suffix must select exactly one" in message
+    assert "rule" not in message
+
+
+def test_one_matching_layer_beside_others_that_do_not_match_still_reads(tmp_path: Path):
+    """The refusal is about ambiguity, not about company: an archive shipping several layers
+    reads the one its suffix names."""
+    archive = write_named_zip(
+        tmp_path / "many.zip", "Directional_Lines", "Directional_Bottomhole_Locations", "Wells"
+    )
+
+    with ZippedShapefile(archive, layer_suffix="directionallines") as layer:
+        assert [record.attributes["name"] for record in layer] == ["Directional_Lines"]

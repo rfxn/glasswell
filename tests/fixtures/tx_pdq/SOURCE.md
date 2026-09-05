@@ -17,6 +17,7 @@ rows chosen to exercise the cases `cr_tx_allocation_v0_1` decides.
 | Manual reachable, `content-length: 488959`, `last-modified: Tue, 02 Jun 2026 17:35:19 GMT`, `HTTP/2 200` | `curl -sSI https://www.rrc.texas.gov/media/50ypu2cg/pdq-dump-user-manual.pdf` | 2026-09-03T00:24:07Z |
 | `sha256(pdq-dump-user-manual.pdf) = a24a6b5e5daf9863b82b579924b485de573b94e0d2da439695b72e8b04fbf4d2` | `curl -o` then `sha256sum` | 2026-09-03T00:24Z |
 | Every column name, order, nullability and width below | `pdftotext -layout`, the manual's Column Definition and Data Dictionary sections | 2026-09-03 |
+| The header of all six members read, verbatim first lines of the live archive | `python -m glasswell.ingest.tx_pdq --stage-only` on VM 111; archive 3,652,221,981 B, sha256 `add29ef717e430e0…`, sixteen members stamped 2026-08-26 | 2026-09-04 |
 | The dump's own address, size and cadence | not re-measured here; P2 measures it live at its start | — |
 
 **The `OG_LEASE_CYCLE` grain question (N-31) is answered from the regulator's own dictionary,
@@ -36,8 +37,8 @@ migration rather than as an edit to an applied one.
 
 | Archive | Bytes | sha256 |
 |---|---|---|
-| `PDQ_DSV_sample.zip` | 61924 | `f2e8f964fdbdf8ae5179d2b12a0542a5122c12936debfdcac29cdef9e69dd941` |
-| `PDQ_DSV_sample_restated.zip` | 61925 | `0e4b2ae5c8b9c5233cefb894f5de84f0491583f9cc8a28013ba1c9efcf77a0f2` |
+| `PDQ_DSV_sample.zip` | 68073 | `1c8bbc676e2c8d5220137a8a9b2fe640ab1efd50a3232a8077f08fedf713853e` |
+| `PDQ_DSV_sample_restated.zip` | 68077 | `d4ff473314a39dffa091afe4a2a0db125c9fe65df7433404abab573c6476318a` |
 
 Two vintages, because a restatement is two dumps: PDQ is a full monthly re-publication, so the
 proof that a revised volume appends rather than edits needs the same lease-month filed twice.
@@ -51,9 +52,36 @@ Six members each, `}`-delimited, one header row, no enclosure, deflate:
 | `GP_COUNTY_DATA_TABLE.dsv` | 3 | Two in-scope Permian counties and one outside them |
 | `GP_DATE_RANGE_CYCLE_DATA_TABLE.dsv` | 1 | The window and the extract dates, in the five-column shape the manual declares |
 | `GP_DISTRICT_DATA_TABLE.dsv` | 15 | The district trap: `07}6E`, `08}7B`, `09}7C`, `10}08`, `11}8A`, `13}09`, `14}10`, `20}State Wide` — two vocabularies in one file |
-| `OG_LEASE_CYCLE_DATA_TABLE.dsv` | 12,120 over **1,000 leases** | The production grain |
-| `OG_WELL_COMPLETION_DATA_TABLE.dsv` | 1,000 | The in-dump crosswalk |
+| `OG_LEASE_CYCLE_DATA_TABLE.dsv` | 12,120 over **1,000 leases**, 32 columns | The production grain |
+| `OG_WELL_COMPLETION_DATA_TABLE.dsv` | 1,004 wells over 999 leases, 16 columns | The in-dump crosswalk. More rows than leases because four leases carry more than one well — `O-08-000101` three, `O-08-000404`, `O-08-000505` and `O-08-000606` two each — and one lease (`O-08-000707`) has no well at all |
 | `OG_REGULATORY_LEASE_DW_DATA_TABLE.dsv` | 1,000 | The lease dimension |
+
+## The headers, and why they are not the manual's
+
+Until 2026-09-04 these archives were built to the manual's transcription, and for
+`OG_WELL_COMPLETION_DATA_TABLE.dsv` that transcription was **three columns short**: the file
+carries 16, the manual's reading of it had 13, and the missing `DISTRICT_NAME`, `COUNTY_NAME`
+and `OIL_WELL_UNIT_NO` sit at positions 8, 9 and 10 — inside the run, not appended to it. The
+Texas stage refused on that width on 2026-09-04, which is the refusal working; the defect was
+that nothing had ever measured the member.
+
+Every header here is now the member's own first line as measured on that fetch, and
+`cr_tx_pdq_format_2` publishes the same six headers as a conformance row, so the parse is
+judged against the registry rather than against the file it is reading.
+`test_tx_pdq_parse.py` writes them out verbatim a third time and holds all three to each other:
+a fixture that agreed with the parser by construction would prove nothing about either.
+
+Three fields carry constructed values, and they are called out because a fixture is not
+evidence about content it invented:
+
+- `DISTRICT_NAME` is `7B`, the name district `08` carries in this fixture's own
+  `GP_DISTRICT_DATA_TABLE.dsv`, and `COUNTY_NAME` is the name the county code carries in its
+  own `GP_COUNTY_DATA_TABLE.dsv`. Both are internally consistent rather than measured.
+- `OIL_WELL_UNIT_NO` is empty everywhere. Nothing in this repository has measured what it
+  holds, and an invented value would read as one that was.
+- `LEASE_GAS_LIFT_INJ_VOL` and `LEASE_CSGD_GAS_LIFT` carry `999999`, a value no production
+  column in these files carries. They are the two `cr_tx_gas_basis_1` forbids summing, so a
+  parse that ever reached them would say so in a total.
 
 ## The cases the rows carry
 

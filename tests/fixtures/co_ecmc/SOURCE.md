@@ -17,6 +17,40 @@ cover.
 The three GIS archives ship `NAD_1983_UTM_Zone_13N` in their `.prj`, and the cut copies that
 file verbatim, so `epsg_from_prj` resolves the fixtures exactly as it resolves the originals.
 
+## The member names, and the one thing these fixtures used to get wrong
+
+**Corrected 2026-09-04.** Until that date the two directional fixtures carried members named
+`DirectionalBottomholeLocations.*` and `DirectionalLines.*`, and neither name was ECMC's.
+`cut_fixtures.py` read each source archive **by extension only** — it never recorded the stem —
+and then wrote the cut under a stem passed in as a literal argument, so the names were invented
+here rather than measured. ECMC ships `Directional_Bottomhole_Locations.*` and
+`Directional_Lines.*`, measured on VM 111 at 2026-09-04 20:06:30Z from
+`DIRECTIONAL_BOTTOMHOLE_LOCATIONS_SHP.ZIP` (1,901,641 B, sha256 `cb294d5bf6fc…`, members dated
+2026-09-03 07:56). The wells archive matched by luck: its member is `Wells.*` and the layer is
+selected as `wells`, a single word with nothing to separate.
+
+The consequence was a suite green on a claim about this repository rather than about the
+regulator: `co_ecmc_gis --layer all` staged 124,410 wells on the host and then raised
+`MalformedArchive: payload.ZIP has no .shp, .shx, .dbf member matching
+'directionalbottomholelocations'`, a half-loaded vintage.
+
+The cutter now carries each archive's own stem from the read to the write, and the three names
+are conformance rows — `cr_co_wells_shp_member_1`, `cr_co_directional_bh_member_1`,
+`cr_co_directional_lines_member_1` — so the name a layer is selected by is a decision with a
+rationale rather than a constant. `shapefile.py` compares both sides with case and separators
+removed, so the regulator's punctuation is no longer something a fixture can get wrong.
+
+| Fixture | Bytes | sha256 |
+|---|---|---|
+| `Wells_sample.zip` | 15862 | `1d386f559370d7821f042d06c202fce8a7843e6c6a966243eb021a9dc4e8d1c7` |
+| `DirectionalBottomholeLocations_sample.zip` | 4267 | `853ae2d3c734a464d1f7adfa90ad3d2995584b52be68dbd0ed3c1bd998a799b7` |
+| `DirectionalLines_sample.zip` | 4146 | `9f5e38979af890c336b5d08c3163f27b16227788c74aa7e155cedc23bf2f81b6` |
+
+The two directional archives were rewritten in place with the measured member names and
+otherwise byte-identical payloads, which is exactly what a re-cut produces: `_write` varies
+nothing but the stem. The filenames of the fixture archives themselves are unchanged — they are
+this repository's names for its own files, not ECMC's for theirs.
+
 Re-cut with:
 
     python tests/fixtures/co_ecmc/cut_fixtures.py /path/to/scratch

@@ -20,6 +20,7 @@ import json
 import os
 import zipfile
 from collections.abc import Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
@@ -47,9 +48,11 @@ from glasswell.lineage import (
     quarantine,
 )
 from glasswell.lineage.audit import emit
+from glasswell.lineage.conformance import rule_for_family
 from glasswell.lineage.fetch import resolve_raw_root
 from glasswell.lineage.fetch_attempts import durable_fetch_attempts
 from glasswell.lineage.serialization import hash_payload
+from glasswell.seed.conformance_tx import PDQ_MEMBER_LAYOUT
 
 SOURCE_ID = "tx_pdq_dsv"
 SOURCE_KEY = "PDQ_DSV.zip"
@@ -58,14 +61,16 @@ PDQ_LINK = "https://mft.rrc.texas.gov/link/1f5ddb8d-329a-4459-b7f8-177b4f5ee60d"
 W10_SOURCE_ID = "tx_w10_wlf607"
 G10_SOURCE_ID = "tx_g10_gse10"
 
-FORMAT_RULE = "cr_tx_pdq_format_1"
-ARCHIVE_RULE = "cr_tx_well_status_archive_1"
-SCOPE_RULE = "cr_tx_pdq_scope_1"
-CROSSWALK_RULE = "cr_tx_pdq_crosswalk_1"
-LIQUIDS_RULE = "cr_tx_liquids_basis_1"
-GAS_RULE = "cr_tx_gas_basis_1"
-GRAIN_RULE = "cr_tx_production_grain_1"
-API10_RULE = "cr_tx_api10_build_1"
+# Families, never versions: a restatement changes the id, and cr_tx_pdq_format_2 is what
+# retires cr_tx_pdq_format_1 the moment it seeds.
+FORMAT_FAMILY = "cr_tx_pdq_format"
+ARCHIVE_FAMILY = "cr_tx_well_status_archive"
+SCOPE_FAMILY = "cr_tx_pdq_scope"
+CROSSWALK_FAMILY = "cr_tx_pdq_crosswalk"
+LIQUIDS_FAMILY = "cr_tx_liquids_basis"
+GAS_FAMILY = "cr_tx_gas_basis"
+GRAIN_FAMILY = "cr_tx_production_grain"
+API10_FAMILY = "cr_tx_api10_build"
 
 COUNTY_MEMBER = "GP_COUNTY_DATA_TABLE.dsv"
 DATE_RANGE_MEMBER = "GP_DATE_RANGE_CYCLE_DATA_TABLE.dsv"
@@ -92,22 +97,17 @@ STREAM_COLUMNS: tuple[tuple[str, str, str, str], ...] = (
     ("lease_csgd_prod_vol", "gas", "mcf", "O"),
 )
 
-LEASE_CYCLE_COLUMNS = (
-    "oil_gas_code", "district_no", "lease_no", "cycle_year_month", "operator_no", "field_no",
-    "field_type", "gas_well_no", "prod_report_filed_flag", "lease_oil_prod_vol",
-    "lease_gas_prod_vol", "lease_cond_prod_vol", "lease_csgd_prod_vol", "lease_name",
-    "operator_name", "field_name",
-)
-COMPLETION_COLUMNS = (
-    "oil_gas_code", "district_no", "lease_no", "well_no", "api_county_code", "api_unique_no",
-    "onshore_assc_cnty", "well_root_no", "wellbore_shutin_dt", "well_shutin_dt",
-    "well_14b2_status_code", "well_subject_14b2_flag", "wellbore_location_code",
-)
-REGULATORY_COLUMNS = (
-    "oil_gas_code", "district_no", "lease_no", "district_name", "lease_name", "operator_no",
-    "operator_name", "field_no", "field_name", "well_no", "lease_off_sched_flag",
-    "lease_severance_flag",
-)
+
+def _staging_columns(member: str) -> tuple[str, ...]:
+    """The staging columns of a member: the subset cr_tx_pdq_format_2 lists as consumed, cased
+    as the tables spell it. Read from the registry rather than typed here, because a column
+    list typed twice is what left the completion member three columns short of the file."""
+    return tuple(name.lower() for name in PDQ_MEMBER_LAYOUT[member]["consumed"])
+
+
+LEASE_CYCLE_COLUMNS = _staging_columns(LEASE_CYCLE_MEMBER)
+COMPLETION_COLUMNS = _staging_columns(WELL_COMPLETION_MEMBER)
+REGULATORY_COLUMNS = _staging_columns(REGULATORY_LEASE_MEMBER)
 
 # The runbook's own gate, restated where the code that would fill the disk can read it.
 PGDATA_GATE_BYTES = 40 * 1024**3
@@ -124,6 +124,55 @@ class ArchiveFormatError(RuntimeError):
 
 class FilesystemPrecheckError(RuntimeError):
     """The raw zone cannot take the artifact, or its staging area is on another device."""
+
+
+@dataclass(frozen=True, slots=True)
+class MemberLayout:
+    """The header the rule in force describes for each member, and the rule that describes it.
+
+    Built from the registry, never from the archive: a layout read out of the file it is meant
+    to judge would agree with every file.
+    """
+
+    rule_id: str
+    members: Mapping[str, Mapping[str, Sequence[str]]]
+
+    def header_for(self, member: str) -> tuple[str, ...]:
+        described = self.members.get(member)
+        if described is None:
+            raise ArchiveFormatError(
+                f"{member}: {self.rule_id} describes no layout for this member"
+            )
+        return tuple(str(column) for column in described["header"])
+
+
+def member_layout(format_rule: ConformanceRule) -> MemberLayout:
+    """The layout the rule in force publishes, held to the one this tree consumes.
+
+    Two clocks reach a header -- the rule row a database was seeded with, and the registry this
+    module projects its staging columns from. A database seeded by an older tree would judge
+    the header against one and read the row against the other, and the disagreement would
+    surface as a KeyError on a column nobody named.
+    """
+    published = format_rule.spec.get("members")
+    if not published:
+        raise ArchiveFormatError(
+            f"{format_rule.rule_id} publishes no member layout; the database's rules predate"
+            " the layout restatement and nothing here may be parsed against them"
+        )
+    registered = {
+        member: {"header": list(layout["header"]), "consumed": list(layout["consumed"])}
+        for member, layout in PDQ_MEMBER_LAYOUT.items()
+    }
+    if published != registered:
+        moved = sorted(set(published) ^ set(registered)) or sorted(
+            member for member in registered if published.get(member) != registered[member]
+        )
+        raise ArchiveFormatError(
+            f"{format_rule.rule_id} describes a layout this tree does not register, at"
+            f" {', '.join(moved)}: seed the rules this code was written against before loading"
+        )
+    return MemberLayout(format_rule.rule_id, published)
 
 
 @dataclass(frozen=True, slots=True)
@@ -180,12 +229,10 @@ class CrosswalkLoad:
         }
 
 
-def rule(connection: psycopg.Connection, rule_id: str, source_id: str = SOURCE_ID
+def rule(connection: psycopg.Connection, family: str, source_id: str = SOURCE_ID
          ) -> ConformanceRule:
-    for candidate in load_rules(connection, source_id=source_id):
-        if candidate.rule_id == rule_id:
-            return candidate
-    raise LookupError(f"rule {rule_id} is not seeded for {source_id}")
+    """The rule in force for a family. Pinning an id would miss its own restatement."""
+    return rule_for_family(load_rules(connection, source_id=source_id), family)
 
 
 def precheck_filesystems(
@@ -258,13 +305,42 @@ def member_inventory(path: Path) -> tuple[MemberInventory, ...]:
         )
 
 
-def _member_rows(
-    archive: zipfile.ZipFile, member: str, expected: Sequence[str] | None = None
-) -> Iterator[dict[str, str]]:
-    """One dict per data row, keyed by the member's own header.
+def _refuse_unless_described(member: str, header: Sequence[str], layout: MemberLayout) -> None:
+    """A header that is not the one the rule describes, refused by name and never by width.
 
-    A header that has gained or lost a column refuses: a schema change invalidates the row
-    mapping rather than one row, so nothing failed to parse and there is nothing to quarantine.
+    Names, because a width check passes a renamed column and a reorder, and both re-map every
+    row while nothing failed to parse. Positions too: the rule states an order it measured, and
+    a member that reordered is no longer the member it describes even where the read survives.
+    """
+    described = layout.header_for(member)
+    if tuple(header) == described:
+        return
+    absent = [column for column in described if column not in header]
+    unlisted = [column for column in header if column not in described]
+    faults = []
+    if absent:
+        faults.append(f"does not carry {', '.join(absent)}")
+    if unlisted:
+        faults.append(f"carries {', '.join(unlisted)}, which the rule does not list")
+    if not faults and len(header) != len(described):
+        faults.append(f"repeats a column across {len(header)} against the rule's {len(described)}")
+    if not faults:
+        faults.append("reorders " + ", ".join(
+            f"{found} where the rule has {wanted}"
+            for found, wanted in zip(header, described, strict=True)
+            if found != wanted
+        ))
+    raise ArchiveFormatError(f"{member}: the header {' and '.join(faults)} ({layout.rule_id})")
+
+
+def _member_rows(
+    archive: zipfile.ZipFile, member: str, layout: MemberLayout
+) -> Iterator[dict[str, str]]:
+    """One dict per data row, keyed by the member's own header, judged against the rule's.
+
+    A header that is not the one the rule describes refuses: a schema change invalidates the
+    row mapping rather than one row, so nothing failed to parse and there is nothing to
+    quarantine. A column the rule lists and the parse does not consume is read past on purpose.
     """
     with archive.open(member) as handle:
         header: list[str] | None = None
@@ -272,10 +348,7 @@ def _member_rows(
             line = raw.decode("utf-8", errors="replace").rstrip("\r\n")
             if header is None:
                 header = line.split(DELIMITER)
-                if expected is not None and len(header) != len(expected):
-                    raise ArchiveFormatError(
-                        f"{member}: {len(header)} columns, the rule describes {len(expected)}"
-                    )
+                _refuse_unless_described(member, header, layout)
                 continue
             if not line:
                 continue
@@ -306,9 +379,11 @@ def api10_from(county_code: str, unique_no: str, *, state_code: str = "42") -> s
     return f"{state_code}{county.zfill(3)}{unique.zfill(5)}"
 
 
-def production_window(archive: zipfile.ZipFile) -> tuple[str, str] | None:
+def production_window(
+    archive: zipfile.ZipFile, layout: MemberLayout
+) -> tuple[str, str] | None:
     """The dump's own statement of what it covers, read rather than assumed."""
-    for row in _member_rows(archive, DATE_RANGE_MEMBER):
+    for row in _member_rows(archive, DATE_RANGE_MEMBER, layout):
         return (
             row["OLDEST_PROD_CYCLE_YEAR_MONTH"].strip(),
             row["NEWEST_PROD_CYCLE_YEAR_MONTH"].strip(),
@@ -316,7 +391,7 @@ def production_window(archive: zipfile.ZipFile) -> tuple[str, str] | None:
     return None
 
 
-def district_labels(archive: zipfile.ZipFile) -> dict[str, str]:
+def district_labels(archive: zipfile.ZipFile, layout: MemberLayout) -> dict[str, str]:
     """`DISTRICT_NO` to `DISTRICT_NAME`, which are two vocabularies and not one.
 
     District 10 is named 08 and district 08 is named 7B, so a join on the name silently crosses
@@ -324,7 +399,7 @@ def district_labels(archive: zipfile.ZipFile) -> dict[str, str]:
     """
     return {
         row["DISTRICT_NO"].strip(): row["DISTRICT_NAME"].strip()
-        for row in _member_rows(archive, DISTRICT_MEMBER)
+        for row in _member_rows(archive, DISTRICT_MEMBER, layout)
     }
 
 
@@ -372,7 +447,7 @@ def _stage_members(
     archive: zipfile.ZipFile,
     manifest_id: str,
     *,
-    format_rule: ConformanceRule,
+    layout: MemberLayout,
 ) -> tuple[str, int, int]:
     """Pass one's writes: the crosswalk and the lease dimension, column-projected and unfiltered.
 
@@ -384,7 +459,7 @@ def _stage_members(
     with connection.cursor() as cursor:
         batch: list[dict[str, Any]] = []
         for ordinal, row in enumerate(
-            _member_rows(archive, WELL_COMPLETION_MEMBER, COMPLETION_COLUMNS)
+            _member_rows(archive, WELL_COMPLETION_MEMBER, layout)
         ):
             batch.append(
                 {
@@ -403,7 +478,7 @@ def _stage_members(
 
         batch = []
         for ordinal, row in enumerate(
-            _member_rows(archive, REGULATORY_LEASE_MEMBER, REGULATORY_COLUMNS)
+            _member_rows(archive, REGULATORY_LEASE_MEMBER, layout)
         ):
             batch.append(
                 {
@@ -428,12 +503,12 @@ def _stage_members(
             partition={"manifest_id": manifest_id},
         ),
         params={
-            "format_rule": format_rule.rule_id,
+            "format_rule": layout.rule_id,
             "members": [WELL_COMPLETION_MEMBER, REGULATORY_LEASE_MEMBER],
             "pass": 1,
         },
         inputs=[InputRef(kind="manifest", ref_id=manifest_id)],
-        rules=[format_rule.rule_id],
+        rules=[layout.rule_id],
     ) as context:
         context.set_rows(staged_completions + staged_regulatory)
         context.set_output_hash(
@@ -575,6 +650,69 @@ def record_census(
     return len(measurements)
 
 
+@contextmanager
+def _staging_outcome_recorded(
+    connection: psycopg.Connection, manifest_id: str, *, rule_id: str
+) -> Iterator[None]:
+    """Record what became of the artifact, whatever ends the run between here and its commit.
+
+    The fetch is a fact and is already committed, so the poll finalises `new` -- truthfully, the
+    bytes landed. Nothing then says the load did not happen, and `/status` would read the stage
+    as a current source with a fresh retrieval vintage. `KeyboardInterrupt` and `SystemExit` are
+    `BaseException` and stay outside this: an operator's Ctrl-C is not a staging failure.
+    """
+    try:
+        yield
+    except Exception as failure:
+        _record_staging_failure(connection, manifest_id, failure, rule_id=rule_id)
+        raise
+
+
+def _record_staging_failure(
+    connection: psycopg.Connection, manifest_id: str, failure: Exception, *, rule_id: str
+) -> None:
+    """The failure, on its own commit, against the manifest whose artifact was not loaded.
+
+    The reason code is the exception's own name, so this stays truthful for a header refusal, a
+    memory kill or a database error without being told which it was. Whatever the run staged is
+    rolled back first: a half-written member is not a fact about anything.
+    """
+    connection.rollback()
+    session = current_session()
+    emit(
+        connection,
+        "staging.load_failed",
+        subject_type="manifest",
+        subject_id=manifest_id,
+        payload={
+            "source_id": SOURCE_ID,
+            "reason_code": type(failure).__name__.lower(),
+            "rule_id": rule_id,
+            "detail": str(failure),
+        },
+        correlation_id=session.correlation_id,
+        occurred_at=session.clock.now(),
+    )
+    connection.commit()
+
+
+def _record_staging_load(
+    connection: psycopg.Connection, manifest_id: str, derivation_id: str
+) -> None:
+    """Both passes read the artifact through, so the manifest names the derivation that did it.
+
+    003_manifests.sql declared `staging_load_ref` and nothing ever set it or wrote down what
+    it meant; the column comment 083 adds is where that meaning now lives. Its absence on a
+    head manifest is what lets status.source_health tell a fetch that was parsed from one that
+    was only fetched.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "update lineage.manifests set staging_load_ref = %s where manifest_id = %s",
+            (derivation_id, manifest_id),
+        )
+
+
 def load(
     connection: psycopg.Connection,
     *,
@@ -593,13 +731,14 @@ def load(
     beside the new one is retained on purpose: nothing sweeps a raw artifact, so a monthly
     cadence adds 43.8 GB a year to /data and that is the behaviour 4E.5 asks for.
     """
-    format_rule = rule(connection, FORMAT_RULE)
-    scope_rule = rule(connection, SCOPE_RULE)
-    crosswalk_rule = rule(connection, CROSSWALK_RULE)
-    liquids_rule = rule(connection, LIQUIDS_RULE)
-    gas_rule = rule(connection, GAS_RULE)
-    grain_rule = rule(connection, GRAIN_RULE)
-    api10_rule = rule(connection, API10_RULE, source_id="tx_gis_wells_county")
+    format_rule = rule(connection, FORMAT_FAMILY)
+    layout = member_layout(format_rule)
+    scope_rule = rule(connection, SCOPE_FAMILY)
+    crosswalk_rule = rule(connection, CROSSWALK_FAMILY)
+    liquids_rule = rule(connection, LIQUIDS_FAMILY)
+    gas_rule = rule(connection, GAS_FAMILY)
+    grain_rule = rule(connection, GRAIN_FAMILY)
+    api10_rule = rule(connection, API10_FAMILY, source_id="tx_gis_wells_county")
 
     precheck = precheck_filesystems(
         raw_root, needed=2 * expect_bytes, pgdata=pgdata
@@ -618,119 +757,128 @@ def load(
             member.to_dict() for member in member_inventory(path)
         ],
     )
+    # A completed fetch is a fact and the parse is a separate outcome, so the manifest is
+    # committed the moment the bytes are placed. Held to the end of load(), a refusal below
+    # rolled it back and left 3.65 GB sealed on disk with no row naming it -- and because
+    # stage_payload() reuses a slot only through owning_slot(), the re-run placed a second copy.
+    connection.commit()
     manifest = fetched.manifest
-    members = member_inventory(fetched.payload_path)
-    if restage:
-        with connection.cursor() as cursor:
-            for table in (
-                "tx_pdq_well_completion", "tx_pdq_regulatory_lease", "tx_pdq_lease_cycle"
-            ):
-                cursor.execute(
-                    f"delete from staging.{table} where manifest_id = %s", (manifest.manifest_id,)
-                )
-
-    with zipfile.ZipFile(fetched.payload_path) as archive:
-        window = production_window(archive)
-        districts = district_labels(archive)
-        parse_id, completions, regulatory = _stage_members(
-            connection, archive, manifest.manifest_id, format_rule=format_rule
-        )
-        lease_parse_id, lease_rows = stage_lease_cycle(
-            connection, archive, manifest.manifest_id, format_rule=format_rule
-        )
-
-    vintage = manifest.fetch_vintage
-    membership_id, membership_rows, measurements = _promote_membership(
-        connection,
-        manifest.manifest_id,
-        parse_derivation_id=parse_id,
-        vintage=vintage,
-        crosswalk_rule=crosswalk_rule,
-        api10_rule=api10_rule,
-    )
-    allowlist = scope_allowlist(
-        connection, manifest.manifest_id, scope_rule.spec["county_codes"]
-    )
-    promotion: dict[str, int] = {}
-    if not stage_only:
-        years = promote_years if promote_years is not None else _staged_years(
-            connection, manifest.manifest_id
-        )
-        for year in years:
-            # Per calendar year, with the headroom asserted before each append rather than
-            # discovered inside one: canonical is append-only and a half-promoted vintage is a
-            # state somebody has to reason about.
-            if pgdata is not None:
-                precheck_filesystems(raw_root, needed=0, pgdata=pgdata)
-            _, measured = promote_lease_cycle(
-                connection,
-                manifest.manifest_id,
-                parse_derivation_id=lease_parse_id,
-                vintage=vintage,
-                allowlist=allowlist,
-                scope_rule=scope_rule,
-                liquids_rule=liquids_rule,
-                gas_rule=gas_rule,
-                grain_rule=grain_rule,
-                years=[year],
+    # Everything after the fetch commit is inside this: `_record_staging_load` is stamped in
+    # this same transaction, so a promotion that fails unstamps it as surely as a refusal.
+    with _staging_outcome_recorded(connection, manifest.manifest_id, rule_id=layout.rule_id):
+        members = member_inventory(fetched.payload_path)
+        if restage:
+            with connection.cursor() as cursor:
+                for table in (
+                    "tx_pdq_well_completion", "tx_pdq_regulatory_lease", "tx_pdq_lease_cycle"
+                ):
+                    cursor.execute(
+                        f"delete from staging.{table} where manifest_id = %s",
+                        (manifest.manifest_id,),
+                    )
+        with zipfile.ZipFile(fetched.payload_path) as archive:
+            window = production_window(archive, layout)
+            districts = district_labels(archive, layout)
+            parse_id, completions, regulatory = _stage_members(
+                connection, archive, manifest.manifest_id, layout=layout
             )
-            for measure, value in measured.items():
-                promotion[measure] = promotion.get(measure, 0) + value
-            promotion["high_water_year"] = year
+            lease_parse_id, lease_rows = stage_lease_cycle(
+                connection, archive, manifest.manifest_id, layout=layout
+            )
+        _record_staging_load(connection, manifest.manifest_id, lease_parse_id)
 
-    session = current_session()
-    emit(
-        connection,
-        "staging.scope_excluded",
-        subject_type="manifest",
-        subject_id=manifest.manifest_id,
-        payload={
-            "rows_excluded": 0,
-            "rows_staged": completions + regulatory,
-            "scope_rule": scope_rule.rule_id,
-            "lease_keys_in_scope": len(allowlist),
-            "lease_keys_total": measurements["lease_keys"],
-            "note": (
-                "the crosswalk is staged unfiltered and the scope is applied at promotion,"
-                " because OG_LEASE_CYCLE carries no county"
-            ),
-        },
-        correlation_id=session.correlation_id,
-        occurred_at=session.clock.now(),
-    )
-    record_census(
-        connection,
-        {
-            "crosswalk_api10s": measurements["api10s"],
-            "crosswalk_api10s_with_two_lease_keys": measurements["api10s_with_two_lease_keys"],
-            "crosswalk_lease_keys": measurements["lease_keys"],
-            "crosswalk_lease_keys_in_scope": len(allowlist),
-            "districts_published": len(districts),
-            "lease_months_staged": lease_rows,
-            "lease_rows_promoted": promotion.get("rows_appended", 0),
-        },
-        measured_on=vintage,
-        derivation_id=membership_id,
-    )
-    return CrosswalkLoad(
-        manifest_id=manifest.manifest_id,
-        parse_derivation_id=parse_id,
-        membership_derivation_id=membership_id,
-        staged_completions=completions,
-        staged_regulatory_leases=regulatory,
-        membership_rows=membership_rows,
-        lease_parse_derivation_id=lease_parse_id,
-        lease_rows_staged=lease_rows,
-        lease_promotion=promotion,
-        api10s=measurements["api10s"],
-        api10s_with_two_lease_keys=measurements["api10s_with_two_lease_keys"],
-        lease_keys=measurements["lease_keys"],
-        in_scope_lease_keys=len(allowlist),
-        members=members,
-        window=window,
-        precheck=precheck,
-        unchanged=bool(fetched.unchanged) and not restage,
-    )
+        vintage = manifest.fetch_vintage
+        membership_id, membership_rows, measurements = _promote_membership(
+            connection,
+            manifest.manifest_id,
+            parse_derivation_id=parse_id,
+            vintage=vintage,
+            crosswalk_rule=crosswalk_rule,
+            api10_rule=api10_rule,
+        )
+        allowlist = scope_allowlist(
+            connection, manifest.manifest_id, scope_rule.spec["county_codes"]
+        )
+        promotion: dict[str, int] = {}
+        if not stage_only:
+            years = promote_years if promote_years is not None else _staged_years(
+                connection, manifest.manifest_id
+            )
+            for year in years:
+                # Per calendar year, with the headroom asserted before each append rather than
+                # discovered inside one: canonical is append-only and a half-promoted vintage is a
+                # state somebody has to reason about.
+                if pgdata is not None:
+                    precheck_filesystems(raw_root, needed=0, pgdata=pgdata)
+                _, measured = promote_lease_cycle(
+                    connection,
+                    manifest.manifest_id,
+                    parse_derivation_id=lease_parse_id,
+                    vintage=vintage,
+                    allowlist=allowlist,
+                    scope_rule=scope_rule,
+                    liquids_rule=liquids_rule,
+                    gas_rule=gas_rule,
+                    grain_rule=grain_rule,
+                    years=[year],
+                )
+                for measure, value in measured.items():
+                    promotion[measure] = promotion.get(measure, 0) + value
+                promotion["high_water_year"] = year
+
+        session = current_session()
+        emit(
+            connection,
+            "staging.scope_excluded",
+            subject_type="manifest",
+            subject_id=manifest.manifest_id,
+            payload={
+                "rows_excluded": 0,
+                "rows_staged": completions + regulatory,
+                "scope_rule": scope_rule.rule_id,
+                "lease_keys_in_scope": len(allowlist),
+                "lease_keys_total": measurements["lease_keys"],
+                "note": (
+                    "the crosswalk is staged unfiltered and the scope is applied at promotion,"
+                    " because OG_LEASE_CYCLE carries no county"
+                ),
+            },
+            correlation_id=session.correlation_id,
+            occurred_at=session.clock.now(),
+        )
+        record_census(
+            connection,
+            {
+                "crosswalk_api10s": measurements["api10s"],
+                "crosswalk_api10s_with_two_lease_keys": measurements["api10s_with_two_lease_keys"],
+                "crosswalk_lease_keys": measurements["lease_keys"],
+                "crosswalk_lease_keys_in_scope": len(allowlist),
+                "districts_published": len(districts),
+                "lease_months_staged": lease_rows,
+                "lease_rows_promoted": promotion.get("rows_appended", 0),
+            },
+            measured_on=vintage,
+            derivation_id=membership_id,
+        )
+        return CrosswalkLoad(
+            manifest_id=manifest.manifest_id,
+            parse_derivation_id=parse_id,
+            membership_derivation_id=membership_id,
+            staged_completions=completions,
+            staged_regulatory_leases=regulatory,
+            membership_rows=membership_rows,
+            lease_parse_derivation_id=lease_parse_id,
+            lease_rows_staged=lease_rows,
+            lease_promotion=promotion,
+            api10s=measurements["api10s"],
+            api10s_with_two_lease_keys=measurements["api10s_with_two_lease_keys"],
+            lease_keys=measurements["lease_keys"],
+            in_scope_lease_keys=len(allowlist),
+            members=members,
+            window=window,
+            precheck=precheck,
+            unchanged=bool(fetched.unchanged) and not restage,
+        )
 
 
 _INSERT_LEASE_CYCLE = (
@@ -765,7 +913,7 @@ def stage_lease_cycle(
     archive: zipfile.ZipFile,
     manifest_id: str,
     *,
-    format_rule: ConformanceRule,
+    layout: MemberLayout,
 ) -> tuple[str, int]:
     """Pass two: the lease member, column-projected and unfiltered.
 
@@ -777,7 +925,7 @@ def stage_lease_cycle(
     with connection.cursor() as cursor:
         batch: list[dict[str, Any]] = []
         for ordinal, row in enumerate(
-            _member_rows(archive, LEASE_CYCLE_MEMBER, None)
+            _member_rows(archive, LEASE_CYCLE_MEMBER, layout)
         ):
             batch.append(
                 {
@@ -801,9 +949,9 @@ def stage_lease_cycle(
             dataset="staging.tx_pdq_lease_cycle",
             partition={"manifest_id": manifest_id},
         ),
-        params={"format_rule": format_rule.rule_id, "member": LEASE_CYCLE_MEMBER, "pass": 2},
+        params={"format_rule": layout.rule_id, "member": LEASE_CYCLE_MEMBER, "pass": 2},
         inputs=[InputRef(kind="manifest", ref_id=manifest_id)],
-        rules=[format_rule.rule_id],
+        rules=[layout.rule_id],
     ) as context:
         context.set_rows(staged)
         context.set_output_hash(hash_payload({"rows": staged, "manifest_id": manifest_id}))
@@ -1088,7 +1236,7 @@ def archive_well_status(
     modified 2026-08-25 beside a `.gz` modified 2021-12-09. A fetcher preferring either
     extension takes a five-year-old vintage for one of the two and says nothing.
     """
-    archive_rule = rule(connection, ARCHIVE_RULE, source_id=W10_SOURCE_ID)
+    archive_rule = rule(connection, ARCHIVE_FAMILY, source_id=W10_SOURCE_ID)
     archived: list[dict[str, Any]] = []
     for source_id, spec in archive_rule.spec["archives"].items():
         with MftClient(str(spec["link"])) as mft:

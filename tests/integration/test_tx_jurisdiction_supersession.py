@@ -18,6 +18,7 @@ from psycopg.rows import dict_row
 
 from glasswell.db.migrate import discover_migrations
 from glasswell.lineage.clock import utc_today
+from glasswell.lineage.conformance import load_rules, rule_for_family
 from glasswell.lineage.jurisdictions import clear_jurisdiction_cache, load_jurisdictions
 from glasswell.seed import seed_all
 from glasswell.seed.jurisdictions import (
@@ -199,6 +200,32 @@ def test_the_nine_rules_seed_and_the_publication_evidence_admits_them(
             ],),
         )
         assert len(cursor.fetchall()) == 9
+
+
+def test_the_format_restatement_retires_the_row_that_carried_no_layout(
+    db: psycopg.Connection,
+) -> None:
+    """R8 as resolution, not as prose: load_rules drops a superseded row, so the rule the Texas
+    parse is judged against is cr_tx_pdq_format_2 and nothing has to remember to stop citing
+    _1. _1 is still a row, so the refusal it produced on 2026-09-04 stays readable."""
+    seed_all(db)
+    with db.cursor() as cursor:
+        cursor.execute(
+            "select rule_id from lineage.conformance_rules"
+            " where rule_id in ('cr_tx_pdq_format_1', 'cr_tx_pdq_format_2') order by rule_id"
+        )
+        assert [row[0] for row in cursor.fetchall()] == [
+            "cr_tx_pdq_format_1", "cr_tx_pdq_format_2"
+        ]
+
+    in_force = rule_for_family(
+        load_rules(db, source_id="tx_pdq_dsv"), "cr_tx_pdq_format"
+    )
+
+    assert in_force.rule_id == "cr_tx_pdq_format_2"
+    assert in_force.supersedes_rule_id == "cr_tx_pdq_format_1"
+    assert tuple(in_force.spec["members"]["OG_WELL_COMPLETION_DATA_TABLE.dsv"]["header"])[7:10] \
+        == ("DISTRICT_NAME", "COUNTY_NAME", "OIL_WELL_UNIT_NO")
 
 
 def test_the_superseded_disclosure_is_still_served(db: psycopg.Connection) -> None:

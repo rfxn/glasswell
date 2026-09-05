@@ -96,8 +96,15 @@ def source_freshness(
     oldest_open_attempt_at: datetime | None = None,
     blocking_failure_code: str | None = None,
     blocking_failure_detail: str | None = None,
+    artifact_unloaded: bool = False,
 ) -> SourceFreshness:
-    """Combine durable poll evidence with artifact age; never infer a successful check."""
+    """Combine durable poll evidence with artifact age; never infer a successful check.
+
+    `artifact_unloaded` is the parse's half of the answer. A fetch and a parse are two outcomes:
+    an ingest that keeps its manifest when the parse refuses leaves an honestly successful poll
+    behind, and without this the refusal would read as a current source with a fresh retrieval
+    vintage and no reason anywhere.
+    """
     if observed_at.tzinfo is None:
         raise ValueError("source freshness observation requires a timezone")
     now = observed_at
@@ -257,6 +264,17 @@ def source_freshness(
             last_outcome=recorded_outcome,
             next_expected_poll=next_expected,
             reason="The last successful poll is beyond the source-specific expected interval.",
+        )
+    if artifact_unloaded:
+        return SourceFreshness(
+            state="stale",
+            last_outcome=recorded_outcome,
+            next_expected_poll=next_expected,
+            reason=(
+                "The poll succeeded but the artifact it registered was never loaded into"
+                " staging; a fetch is not a parse, and freshness is refused until one reads"
+                " the artifact through."
+            ),
         )
     if recorded_outcome == "unchanged":
         reason = (

@@ -127,3 +127,68 @@ def test_the_received_year_trap_is_in_the_fixture_and_not_only_in_the_rule() -> 
     assert first["ReportYear"] == "2024"
     assert first["ReportMonth"] == "11"
     assert first["AcceptedDate"].startswith("2025-")
+
+
+def test_every_gis_layer_is_selected_by_the_member_its_archive_ships() -> None:
+    """R8 on the archive layout. Which member a layer is read from was a code constant, and it
+    was wrong for two of the three archives: the loader looked for a stem ending in
+    `directionalbottomholelocations` while ECMC ships `Directional_Bottomhole_Locations`.
+
+    The names are rows now, and the loader reads them rather than restating them, so the
+    fixtures under `co_ecmc/` and the layer specs cannot drift apart again.
+    """
+    from glasswell.ingest.co_ecmc_gis import LAYERS
+    from glasswell.seed.conformance_co import CO_GIS_MEMBERS
+
+    assert {layer.source_id: layer.layer_suffix for layer in LAYERS} == {
+        "co_ecmc_wells_shp": "Wells",
+        "co_ecmc_directional_bh": "Directional_Bottomhole_Locations",
+        "co_ecmc_directional_lines": "Directional_Lines",
+    }
+    for layer in LAYERS:
+        registered = CO_GIS_MEMBERS[layer.source_id]
+        assert layer.layer_suffix == registered["member_stem"]
+        assert layer.source_key == registered["source_key"]
+
+
+@pytest.mark.parametrize(
+    ("fixture", "stem"),
+    [
+        ("Wells_sample.zip", "Wells"),
+        ("DirectionalBottomholeLocations_sample.zip", "Directional_Bottomhole_Locations"),
+        ("DirectionalLines_sample.zip", "Directional_Lines"),
+    ],
+)
+def test_the_gis_fixtures_carry_the_member_names_the_regulator_publishes(
+    fixture: str, stem: str
+) -> None:
+    """`cut_fixtures.py` used to read the source archives by extension and write the cut under
+    a stem typed in here, so the suite asserted a name this repository invented. A fixture that
+    is wrong about the one thing the loader selects on cannot catch a selector that is wrong."""
+    import zipfile
+
+    with zipfile.ZipFile(FIXTURES / fixture) as archive:
+        stems = {name.rpartition(".")[0] for name in archive.namelist()}
+
+    assert stems == {stem}
+
+
+def test_the_member_names_are_registered_rules_with_their_own_publication() -> None:
+    """049's trigger refuses a rule whose publication is not registered, so the three rows and
+    their evidence ship in one commit or the Colorado seeder raises on a fresh database."""
+    from glasswell.seed.conformance_co import CO_RULES
+
+    ids = [str(rule["rule_id"]) for rule in CO_RULES if str(rule["rule_id"]).endswith("_member_1")]
+    migrations = Path(__file__).resolve().parents[2] / "src/glasswell/db/migrations"
+    published = {
+        rule_id
+        for path in migrations.glob("*.sql")
+        for rule_id in ids
+        if f"'{rule_id}'" in path.read_text(encoding="utf-8")
+    }
+
+    assert sorted(ids) == sorted(published) == [
+        "cr_co_directional_bh_member_1",
+        "cr_co_directional_lines_member_1",
+        "cr_co_wells_shp_member_1",
+    ]
