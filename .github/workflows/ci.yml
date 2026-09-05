@@ -130,18 +130,31 @@ jobs:
 
       # Sharding's own failure mode is a file that falls into no shard and silently stops
       # running. The union of the four groups must equal the whole DB collection.
-      - name: Shard parity — the union of the four groups is the suite
+      - name: Shard parity — the four groups partition the suite, item by item
         run: |
           set -euo pipefail
-          total=$(python -m pytest tests/contract tests/integration -q --collect-only | grep -c '^tests/')
-          sum=0
+          collect() { python -m pytest tests/contract tests/integration -q --collect-only "$@" | grep '^tests/'; }
+          collect | sort > parity-collected.txt
+          : > parity-groups.txt
           for group in 1 2 3 4; do
-            n=$(python -m pytest tests/contract tests/integration -q --collect-only \
-                  --splits 4 --group "$group" --durations-path tests/.durations.json | grep -c '^tests/')
-            sum=$((sum + n))
+            collect --splits 4 --group "$group" --durations-path tests/.durations.json \
+              >> parity-groups.txt
           done
-          printf 'shards collect %d of %d\n' "$sum" "$total"
-          [ "$sum" -eq "$total" ]
+          sort parity-groups.txt > parity-emitted.txt
+          sort -u parity-groups.txt > parity-distinct.txt
+          printf 'collected %s, shards emit %s, distinct %s\n' \
+            "$(wc -l < parity-collected.txt)" "$(wc -l < parity-emitted.txt)" \
+            "$(wc -l < parity-distinct.txt)"
+          # By set, not by count: an item in two groups and an item in none satisfy
+          # sum == total exactly, and the second one has silently stopped running.
+          status=0
+          missing=$(comm -23 parity-collected.txt parity-distinct.txt)
+          extra=$(comm -13 parity-collected.txt parity-distinct.txt)
+          duplicated=$(uniq -d parity-emitted.txt)
+          if [ -n "$missing" ]; then printf 'in no shard:\n%s\n' "$missing"; status=1; fi
+          if [ -n "$extra" ]; then printf 'in a shard but not collected:\n%s\n' "$extra"; status=1; fi
+          if [ -n "$duplicated" ]; then printf 'in more than one shard:\n%s\n' "$duplicated"; status=1; fi
+          exit "$status"
 
       - name: Unit tier
         run: python -m pytest tests/unit -q -ra
