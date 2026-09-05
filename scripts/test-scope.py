@@ -220,7 +220,7 @@ def only_the_version_changed(diff: str) -> bool:
         for line in diff.splitlines()
         if line[:1] in "+-" and line[:3] not in ("+++", "---")
     ]
-    return bool(body) and all("version" in line.split("=", 1)[0] for line in body)
+    return bool(body) and all(line[1:].split("=", 1)[0].strip() == "version" for line in body)
 
 
 def main(argv: list[str] | None = None) -> int:

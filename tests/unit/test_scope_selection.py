@@ -65,6 +65,8 @@ def test_a_version_only_pyproject_edit_does_not_widen_the_selection(tmp_path: Pa
         '-version = "0.81"\n+version = "0.82"\n+  "pytest-xdist",\n'
     )
     assert not scope.only_the_version_changed("")
+    # A key that merely contains the word is not the version: this diff must widen the run.
+    assert not scope.only_the_version_changed('-api_version = "1"\n+api_version = "2"\n')
 
 
 def test_a_source_module_selects_the_tests_that_import_it() -> None:

@@ -19,7 +19,7 @@ BASE_MODULE = SOURCE_ROOT / "ingest" / "base.py"
 @pytest.mark.parametrize("module", ["ingest/nd_gis.py", "marts/nd_wells.py"])
 def test_no_module_writes_its_own_environment_row(module):
     """The helper is two modules away; a second copy is how the pin got dropped."""
-    source = (SOURCE_ROOT / module).read_text()
+    source = (SOURCE_ROOT / module).read_text(encoding="utf-8")
 
     assert "lineage.environments" not in source
     assert "resolve_environment" in source
@@ -29,7 +29,7 @@ def test_only_the_shared_helper_inserts_an_environment():
     writers = sorted(
         path.relative_to(SOURCE_ROOT).as_posix()
         for path in SOURCE_ROOT.rglob("*.py")
-        if "insert into lineage.environments" in path.read_text()
+        if "insert into lineage.environments" in path.read_text(encoding="utf-8")
     )
 
     assert writers == [BASE_MODULE.relative_to(SOURCE_ROOT).as_posix()]

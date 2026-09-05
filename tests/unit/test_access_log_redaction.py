@@ -94,7 +94,7 @@ def test_a_session_token_is_redacted_wherever_it_appears() -> None:
 
 
 def test_the_access_log_redacts_a_key_in_the_request_line(
-    caplog: logging.LogRecord,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """uvicorn logs the request line verbatim; the filter is what keeps it out of journald."""
     install_access_log_redaction()
