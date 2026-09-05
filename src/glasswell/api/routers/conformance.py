@@ -49,10 +49,11 @@ _DETAIL_COLUMNS = ", ".join(f"r.{column.strip()}" for column in _COLUMNS.split("
 
 # The publication pair rides the detail rather than the page: it is a per-rule fact, and R8
 # asks that a rule's rationale, its effective date and the evidence behind it read together.
+# An inner join: conformance_rules_publication_fk (049) means every rule has its row.
 _RULE_DETAIL = f"""
 select {_DETAIL_COLUMNS}, p.evidence_tag, p.evidence_commit
   from lineage.conformance_rules r
-  left join lineage.conformance_rule_publications p on p.rule_id = r.rule_id
+  join lineage.conformance_rule_publications p on p.rule_id = r.rule_id
  where true
 """
 
@@ -117,10 +118,19 @@ class AppliedBy(BaseModel):
 
 class ConformanceRuleDetail(ConformanceRule):
     evidence_tag: str | None = Field(
-        description="Release tag whose publication first carried this immutable rule id."
+        description=(
+            "Release tag whose publication first carried this immutable rule id, or"
+            " `UNRELEASED` while the branch that registered the rule has not been through a"
+            " merge train. Present for every served rule: the registry refuses a rule without"
+            " a publication row."
+        )
     )
     evidence_commit: str | None = Field(
-        description="Commit that release resolves to, as checked against git history."
+        description=(
+            "Commit that release resolves to, as checked against git history, or forty zeros"
+            " beside `UNRELEASED`. The pair travels together; one is never repointed without"
+            " the other."
+        )
     )
     applied_by: list[AppliedBy] | None = Field(
         default=None, description="Present when include=applied_by."

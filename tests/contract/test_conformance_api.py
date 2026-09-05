@@ -6,6 +6,7 @@ import re
 from datetime import date
 
 import psycopg
+import pytest
 from fastapi.testclient import TestClient
 
 from glasswell.api.deps import today
@@ -28,6 +29,13 @@ from glasswell.seed.conformance_status_history import (
 from glasswell.seed.conformance_tx import ALLOCATION_RULES, TX_RULES
 from glasswell.seed.conformance_typecurve import TYPECURVE_RULES
 from glasswell.seed.conformance_vintage import VINTAGE_RULES
+from tests.support.scripts import load_script
+
+# The pair a branch registers before its train is cut. The API serves it as it stands, and
+# `release.py` is what refuses to tag while a migration still carries it.
+_release = load_script("gw_release_for_conformance", "release.py")
+PLACEHOLDER_TAG: str = _release.PLACEHOLDER_EVIDENCE_TAG
+PLACEHOLDER_COMMIT: str = _release.PLACEHOLDER_EVIDENCE_COMMIT
 
 SEEDED_RULES = 14
 
@@ -82,43 +90,104 @@ def test_the_detail_serves_the_spec_verbatim(client: TestClient) -> None:
     assert data["published_vintage"] == "2026-08-20"
 
 
-def test_the_detail_serves_the_publication_evidence_beside_the_rationale(
+def _served_evidence(client: TestClient, rule_id: str) -> tuple[str, str]:
+    data = client.get(f"/v1/conformance/{rule_id}").json()["data"]
+    return data["evidence_tag"], data["evidence_commit"]
+
+
+def _assert_whole_state(tag: str, commit: str, rule_id: str) -> None:
+    """A publication pair is repointed or it is the placeholder pair; never one of each."""
+    if tag == PLACEHOLDER_TAG:
+        assert commit == PLACEHOLDER_COMMIT, f"{rule_id}: UNRELEASED beside a real commit"
+    else:
+        assert commit != PLACEHOLDER_COMMIT, f"{rule_id}: a tag beside the placeholder commit"
+        assert re.fullmatch(r"[0-9a-f]{40}", commit), f"{rule_id}: {commit!r} is not a sha"
+
+
+def test_a_repointed_publication_serves_its_tag_and_the_commit_it_resolves_to(
     client: TestClient, seeded: psycopg.Connection
 ) -> None:
     """R8 serves the rationale and the effective date. Which release first carried the rule
     is the same kind of fact and lived only in `lineage.conformance_rule_publications`, so a
-    reader could see when a decision applied but not which shipped code it applied in."""
-    data = client.get(f"/v1/conformance/{EXAMPLE_RULE_ID}").json()["data"]
+    reader could see when a decision applied but not which shipped code it applied in.
+    The example rule is in the registry, so its row has been through a merge train: a real
+    tag and a real commit, and the placeholder pair satisfies neither."""
     with seeded.cursor() as cursor:
         cursor.execute(
             "select evidence_tag, evidence_commit from lineage.conformance_rule_publications"
             " where rule_id = %s",
             (EXAMPLE_RULE_ID,),
         )
-        published = cursor.fetchone()
+        stored = cursor.fetchone()
 
-    assert (data["evidence_tag"], data["evidence_commit"]) == published
-    assert re.fullmatch(r"[0-9a-f]{40}", data["evidence_commit"])
+    served = _served_evidence(client, EXAMPLE_RULE_ID)
+
+    assert served == stored
+    assert served[0] != PLACEHOLDER_TAG
+    assert served[1] != PLACEHOLDER_COMMIT
+    assert re.fullmatch(r"[0-9a-f]{40}", served[1])
 
 
-def test_every_publication_tag_the_registry_carries_reaches_its_rule(
+def test_an_unrepointed_publication_serves_the_placeholder_pair_and_nothing_else(
     client: TestClient, seeded: psycopg.Connection
 ) -> None:
-    """One rule would pass on a constant. One rule per distinct tag cannot."""
+    """A branch registers the placeholder pair because merge order decides the tag. The API
+    serves it as it stands -- not null, not a guessed tag -- and `release.py` is what keeps it
+    out of a cut release. The pair travels together: the served shape says UNRELEASED only
+    beside forty zeros."""
+    rule_id = "cr_contract_unrepointed_1"
+    _publish_rule(
+        seeded,
+        rule_id=rule_id,
+        published_vintage=date(2026, 1, 1),
+        evidence=(PLACEHOLDER_TAG, PLACEHOLDER_COMMIT),
+    )
+
+    served = _served_evidence(client, rule_id)
+
+    assert served == (PLACEHOLDER_TAG, PLACEHOLDER_COMMIT)
+    _assert_whole_state(*served, rule_id)
+
+
+def test_a_rule_without_a_publication_row_cannot_enter_the_registry(
+    seeded: psycopg.Connection,
+) -> None:
+    """The third state does not exist to serve. `conformance_rules.published_vintage` is not
+    null and is a foreign key into the publications table, and the insert trigger refuses a
+    rule with no row there (049) -- so the detail's join never finds nothing, and a null pair
+    would mean the schema had been bypassed, not that a rule was unpublished."""
+    with pytest.raises(psycopg.errors.CheckViolation, match="no publication evidence"):
+        _publish_rule(
+            seeded,
+            rule_id="cr_contract_unpublished_1",
+            published_vintage=date(2026, 1, 1),
+            evidence=None,
+        )
+    seeded.rollback()
+
+
+def test_every_publication_pair_the_registry_carries_reaches_its_rule_whole(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """One rule would pass on a constant. One rule per distinct stored pair cannot, and each
+    served pair is checked as a whole state, so a half-repointed row -- a tag beside the
+    placeholder commit, or the reverse -- reds here rather than reading as evidence."""
     with seeded.cursor() as cursor:
         cursor.execute(
-            "select distinct on (p.evidence_tag) r.rule_id, p.evidence_tag, p.evidence_commit"
+            "select min(r.rule_id), p.evidence_tag, p.evidence_commit"
             "  from lineage.conformance_rule_publications p"
             "  join lineage.conformance_rules r on r.rule_id = p.rule_id"
             " where r.published_vintage <= current_date"
-            " order by p.evidence_tag, r.rule_id"
+            " group by p.evidence_tag, p.evidence_commit"
+            " order by p.evidence_tag, p.evidence_commit"
         )
         published = cursor.fetchall()
 
-    assert len(published) > 1, "the registry carries one tag; this test cannot fail"
+    assert len(published) > 1, "the registry carries one pair; this test cannot fail"
     for rule_id, tag, commit in published:
-        data = client.get(f"/v1/conformance/{rule_id}").json()["data"]
-        assert (data["evidence_tag"], data["evidence_commit"]) == (tag, commit), rule_id
+        served = _served_evidence(client, rule_id)
+        assert served == (tag, commit), rule_id
+        _assert_whole_state(*served, rule_id)
 
 
 def test_the_collection_leaves_the_evidence_pair_to_the_detail(client: TestClient) -> None:
@@ -204,14 +273,16 @@ def _publish_rule(
     published_vintage: date,
     effective_from: date = date(2020, 1, 1),
     supersedes_rule_id: str | None = None,
+    evidence: tuple[str, str] | None = ("contract-fixture", "a" * 40),
 ) -> None:
     with connection.cursor() as cursor:
-        cursor.execute(
-            "insert into lineage.conformance_rule_publications"
-            " (rule_id, published_vintage, evidence_tag, evidence_commit)"
-            " values (%s, %s, 'contract-fixture', %s)",
-            (rule_id, published_vintage, "a" * 40),
-        )
+        if evidence is not None:
+            cursor.execute(
+                "insert into lineage.conformance_rule_publications"
+                " (rule_id, published_vintage, evidence_tag, evidence_commit)"
+                " values (%s, %s, %s, %s)",
+                (rule_id, published_vintage, *evidence),
+            )
         cursor.execute(
             "insert into lineage.conformance_rules (rule_id, rule_family, supersedes_rule_id,"
             " source_id, stage, rule_kind, rule, rationale, evidence_url, effective_from)"
@@ -430,6 +501,22 @@ def test_applied_by_honors_the_knowledge_cut(
 
     assert future_id not in {item["derivation_id"] for item in before}
     assert future_id in {item["derivation_id"] for item in after}
+
+
+def test_the_evidence_fields_describe_both_states_a_served_pair_can_be_in(
+    client: TestClient,
+) -> None:
+    """The description is the contract a reader has. One that says only "as checked against
+    git history" is false for a row the train has not repointed yet."""
+    detail = client.app.openapi()["components"]["schemas"]["ConformanceRuleDetail"]
+    descriptions = {
+        name: detail["properties"][name]["description"]
+        for name in ("evidence_tag", "evidence_commit")
+    }
+
+    for name, description in descriptions.items():
+        assert PLACEHOLDER_TAG in description, f"{name}: the unrepointed state is not described"
+    assert "forty zeros" in descriptions["evidence_commit"]
 
 
 def test_openapi_exposes_both_clocks_and_rule_publication(client: TestClient) -> None:

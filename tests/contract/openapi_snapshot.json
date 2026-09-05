@@ -1307,7 +1307,7 @@
                 "type": "null"
               }
             ],
-            "description": "Commit that release resolves to, as checked against git history.",
+            "description": "Commit that release resolves to, as checked against git history, or forty zeros beside `UNRELEASED`. The pair travels together; one is never repointed without the other.",
             "title": "Evidence Commit"
           },
           "evidence_sha256": {
@@ -1331,7 +1331,7 @@
                 "type": "null"
               }
             ],
-            "description": "Release tag whose publication first carried this immutable rule id.",
+            "description": "Release tag whose publication first carried this immutable rule id, or `UNRELEASED` while the branch that registered the rule has not been through a merge train. Present for every served rule: the registry refuses a rule without a publication row.",
             "title": "Evidence Tag"
           },
           "evidence_url": {

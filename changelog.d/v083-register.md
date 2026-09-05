@@ -28,7 +28,11 @@
 - [New] `/v1/conformance/<id>` serves `evidence_tag` and `evidence_commit` beside the
       rationale and the effective date, so a rule says which release first carried it rather
       than leaving that in `lineage.conformance_rule_publications` alone; additive on the
-      detail only, and the freeze differ reads all six schema changes as additive
+      detail only, and the freeze differ reads all six schema changes as additive. The pair
+      is served as the registry holds it, in one of two whole states: a release tag beside
+      the commit it resolves to, or `UNRELEASED` beside forty zeros while the rule's branch
+      has not been through a merge train; the descriptions say so, and the gate reds on a
+      half-repointed row rather than reading the placeholder as evidence
 - [Fix] The shipped-literal gates read a literal the way the engine does: one decoder, and it
       reads `\n` as a newline, `\x41` as A and a stylesheet's `\24d4` as the code point it
       renders. The pass before it dropped the backslash and kept the letters, so an escaped
