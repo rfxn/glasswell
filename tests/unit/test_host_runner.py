@@ -757,6 +757,31 @@ class TestTheJsonStaysJson:
         assert "\x1b" not in status["steps"][0]["summary"]
 
 
+class TestAKilledRunnerLeavesAReadableFile:
+    def test_a_record_torn_by_a_kill_is_dropped_rather_than_assembled(
+        self, harness: Harness
+    ) -> None:
+        harness.run("--job", "torn", "--", "one", "/bin/echo", "first")
+        sidecar = harness.runs / "torn.steps"
+        sidecar.write_text(
+            sidecar.read_text(encoding="utf-8") + '{"index":2,"step":"half"', encoding="utf-8"
+        )
+
+        harness.run(
+            "--record", "--job", "torn", "--steps-total", "3", "--step", "three",
+            "--step-index", "3", "--result", "running",
+        )
+
+        status = harness.status("torn")
+        assert [step["index"] for step in status["steps"]] == [1, 3]
+
+    def test_a_step_record_is_one_append(self) -> None:
+        # Two appends is a window in which a kill leaves a line nothing can parse.
+        body = RUNNER.read_text(encoding="utf-8").split("record_step() {", 1)[1].split("\n}", 1)[0]
+
+        assert body.count('>> "$steps_record"') == 1
+
+
 class TestRecordMode:
     def test_records_assemble_into_the_same_grammar(self, harness: Harness) -> None:
         common = ("--record", "--job", "deploy-v0.83", "--steps-total", "2")

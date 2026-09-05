@@ -169,11 +169,11 @@ stamp() { printf '%s %s\n' "$(now)" "$1" >> "$stamps_file"; }
 record_step() {
     local index=$1 name=$2 unit=$3 started_at=$4 ended_at=$5 exit_code=$6
     local systemd_result=$7 memory_peak=$8 summary=$9
-    printf '{"index":%s,"step":%s,"unit":%s,"started":%s,"ended":%s,"exit":%s,' \
+    # One write, because a record torn between two appends would be a line the status file
+    # cannot be assembled from.
+    printf '{"index":%s,"step":%s,"unit":%s,"started":%s,"ended":%s,"exit":%s,"systemd_result":%s,"memory_peak":%s,"summary":%s}\n' \
         "$index" "$(json_string "$name")" "$(json_string "$unit")" \
-        "$(json_string "$started_at")" "$(json_or_null "$ended_at")" \
-        "${exit_code:-null}" >> "$steps_record"
-    printf '"systemd_result":%s,"memory_peak":%s,"summary":%s}\n' \
+        "$(json_string "$started_at")" "$(json_or_null "$ended_at")" "${exit_code:-null}" \
         "$(json_or_null "$systemd_result")" "$(json_or_null "$memory_peak")" \
         "$(json_string "$summary")" >> "$steps_record"
 }
@@ -186,6 +186,9 @@ collect_records() {
     highest_index=0
     [[ -f $steps_record ]] || return 0
     while IFS= read -r line; do
+        # A line the writer did not finish is dropped rather than assembled into the status
+        # file, where it would cost a poller the whole document.
+        [[ $line == '{"index":'*'}' ]] || continue
         index=${line#*\"index\":}
         index=${index%%,*}
         [[ $index =~ $INTEGER_PATTERN ]] || continue
@@ -238,6 +241,12 @@ status_field() {
 
 ensure_directory "$RUNS_DIR" 0750
 ensure_directory "$LOG_DIR" 0755
+
+# A runner killed mid-append leaves a record without its newline, and the next append would
+# land on the same line. Close it, and the reader drops what it then cannot parse.
+if [[ -s $steps_record && -n $(tail -c 1 "$steps_record") ]]; then
+    printf '\n' >> "$steps_record"
+fi
 
 if [[ $mode == record ]]; then
     [[ -n $record_name ]] || fail_usage "--record needs --step"
