@@ -23,6 +23,7 @@ from fastapi.testclient import TestClient
 
 from glasswell.api.routers.wells import STATUS_SUMMARY_SQL
 from glasswell.lineage.explain import MAX_HANDLES
+from glasswell.lineage.ids import parse_handle
 from glasswell.marts.producing import load_producing_policy, producing_params
 from glasswell.seed import seed_all
 from tests.support.seed import seed_manifest, seed_well, seed_well_spatial
@@ -51,6 +52,8 @@ NO_CODE_BUT_CLASSED = ("3305300010", "active", -101.50)
 OUTSIDE = ("3305300009", "inactive", -101.00)
 TX_WELL = ("4200300001", "service", -102.50, 32.30)
 LATITUDE = 47.50
+# The Colorado registry decision the spine and the summary both read through.
+BLANK_IS_ABSENT_RULE = "cr_co_wells_shp_blank_is_absent_1"
 
 
 @pytest.fixture
@@ -169,6 +172,136 @@ def test_a_well_that_filed_no_code_and_carries_a_class_is_in_neither_absence_fig
     assert classes[NO_CODE_BUT_CLASSED[1]] == 4
     assert classes["unmapped"] == 2
     assert data["unmapped_wells"]["value"] == "2"
+
+
+def seed_blank_typed_colorado_well(connection: psycopg.Connection) -> None:
+    """One Colorado header inside BOX whose well type ECMC filed as the empty string."""
+    manifest = seed_manifest(
+        connection, sha256="d" * 64, source_id="co_ecmc_wells_shp", source_key="wells.zip"
+    )
+    seed_well(
+        connection,
+        api10="0512300001",
+        manifest_id=manifest,
+        state_code="05",
+        basin=None,
+        status_canonical="active",
+        well_type_reported="",
+    )
+    seed_well_spatial(
+        connection,
+        api10="0512300001",
+        geom_type="surface",
+        wkt=f"POINT(-103.45 {LATITUDE})",
+        manifest_id=manifest,
+    )
+    connection.commit()
+
+
+def derivation_rules(client: TestClient, handle: str) -> set[str]:
+    """The rule ids the derivation behind a served figure cites, as ?explain=true walks them."""
+    derivation = parse_handle(handle).derivation_id
+    response = client.get(f"/v1/derivations/{derivation}", params={"include": "rules"})
+    assert response.status_code == 200, response.text
+    return {rule["rule_id"] for rule in response.json()["data"]["rules"]}
+
+
+def test_a_well_whose_type_the_source_left_blank_is_answered_rather_than_refused(
+    population: psycopg.Connection, api_client: TestClient
+) -> None:
+    """F-3, in the suite: one blank well type refused the whole viewport, for every state in it.
+
+    1,172 Colorado headers reached canonical with the empty string for a well type before
+    cr_co_wells_shp_blank_is_absent_1 existed, and the selector grammar admits no empty value,
+    so `well_type_b64=` refused with selector_ambiguous and the box served no summary at all --
+    including the New Mexico wells in it, for any box whose north edge crosses 37.0N. Those
+    rows cannot be restated, so the read applies the rule: the blank is the absence it always
+    was, counted in the total and named by no class.
+    """
+    seed_blank_typed_colorado_well(population)
+
+    data = summary(api_client)["data"]
+
+    assert "" not in [row["well_type_reported"] for row in data["well_types"]]
+    assert data["wells"]["value"] == "9"
+    assert sum(int(row["wells"]["value"]) for row in data["well_types"]) == 8
+
+
+def test_the_box_cites_the_rule_that_read_its_blanks_and_a_box_without_them_does_not(
+    population: psycopg.Connection, api_client: TestClient
+) -> None:
+    """gate-cofix H-1. R8 is a row *referenced by the derivations it shaped*, and this read is
+    the one that shaped the served list: applying the rule is what took the "" bucket out of
+    well_types. Cited per jurisdiction from lineage.jurisdiction_rules, so a box holding only
+    North Dakota rows cites nothing about Colorado - the failure mode wells.py:1663-1670 already
+    names in the other direction.
+    """
+    nd_only = summary(api_client)
+
+    assert BLANK_IS_ABSENT_RULE not in derivation_rules(api_client, nd_only["data"]["wells"]["d"])
+    assert BLANK_IS_ABSENT_RULE not in nd_only["links"]
+
+    seed_blank_typed_colorado_well(population)
+    with_colorado = summary(api_client)
+
+    assert BLANK_IS_ABSENT_RULE in derivation_rules(
+        api_client, with_colorado["data"]["wells"]["d"]
+    )
+    assert with_colorado["links"][BLANK_IS_ABSENT_RULE] == (
+        f"/v1/conformance/{BLANK_IS_ABSENT_RULE}"
+    )
+
+
+def test_a_status_the_resolver_leaves_empty_is_refused_by_the_schema_and_the_read_stays_guarded(
+    population: psycopg.Connection, api_client: TestClient
+) -> None:
+    """gate-cofix M-2, re-cut at the v0.83 train. The read wraps the status expression the way
+    facets.py does, so an empty resolved class could never serve as a second `status_null=1`
+    bucket; since 085 closed the vocabulary (resolved_status references status_classes) the
+    resolver cannot leave one at all. The schema refuses the plant; the wrap stays as defence in
+    depth, and the unresolved well is served once, in the documented unmapped class, by the
+    summary and the card alike.
+    """
+    with pytest.raises(psycopg.errors.ForeignKeyViolation):
+        with population.cursor() as cursor:
+            cursor.execute(
+                "insert into lineage.status_resolution_resolved (for_state_code,"
+                " for_status_reported, resolved_status, jurisdiction_code, built_for)"
+                " values ('05', 'UNFILED', '', 'CO', current_date)"
+            )
+    population.rollback()
+    manifest = seed_manifest(
+        population, sha256="e" * 64, source_id="co_ecmc_wells_shp", source_key="wells.zip"
+    )
+    seed_well(
+        population,
+        api10="0512300002",
+        manifest_id=manifest,
+        state_code="05",
+        basin=None,
+        status_canonical=None,
+        status_reported="UNFILED",
+    )
+    seed_well_spatial(
+        population,
+        api10="0512300002",
+        geom_type="surface",
+        wkt=f"POINT(-103.44 {LATITUDE})",
+        manifest_id=manifest,
+    )
+    population.commit()
+
+    data = summary(api_client)["data"]
+    selectors = [row["wells"]["d"] for row in data["statuses"]]
+
+    card = api_client.get("/v1/wells/0512300002")
+
+    assert "" not in [row["status"] for row in data["statuses"]]
+    assert len([term for term in selectors if "status_null=1" in term]) == 0
+    assert data["unmapped_wells"]["value"] == "3"
+    # The spine read is wrapped too: the card and the summary answer the same about this well,
+    # and since 085 that answer is the unmapped class, never an empty string and never null.
+    assert card.json()["data"]["status_canonical"] == "unmapped"
 
 
 def test_a_well_outside_the_box_is_not_counted(

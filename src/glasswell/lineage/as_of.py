@@ -12,6 +12,7 @@ from typing import Literal
 import psycopg
 from psycopg.rows import dict_row
 
+from glasswell.absence import absent_if_blank
 from glasswell.lineage.models import InputRef
 from glasswell.lineage.serialization import hash_payload
 from glasswell.units import METRES_PER_FOOT
@@ -292,10 +293,13 @@ def _derivation_input_refs(
     return tuple(ref.model_copy(update={"ord": ordinal}) for ordinal, ref in enumerate(refs))
 
 
-_MODEL_CONTEXT_CTES = """
+# `area` is read under cr_co_wells_shp_blank_is_absent_1 like every other source-reported text
+# column (glasswell/absence.py): an empty string here is a control-feature category of its own
+# and would split one county's peers into two cohorts.
+_MODEL_CONTEXT_CTES = f"""
 with well_versions as (
-    select w.api10, w.county_code_at_permit, w.basin, w.completion_date,
-           w.confidential_flag, w.derivation_id,
+    select w.api10, {absent_if_blank("w.county_code_at_permit")} as county_code_at_permit,
+           w.basin, w.completion_date, w.confidential_flag, w.derivation_id,
            greatest(w.effective_from, m.fetch_vintage,
                     coalesce(d.created_vintage, m.fetch_vintage)) as source_vintage,
            row_number() over (

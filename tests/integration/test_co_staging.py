@@ -104,6 +104,54 @@ def test_all_three_archives_stage_and_carry_their_geometry(staged_gis, seeded) -
             assert [row[0] for row in cursor.fetchall()] == [4326]
 
 
+def blank_text_columns(connection: psycopg.Connection, table: str) -> dict[str, int]:
+    """Every text column of a staging table holding an empty string, counted, by shape."""
+    schema, _, name = table.partition(".")
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "select column_name from information_schema.columns"
+            " where table_schema = %s and table_name = %s and data_type = 'text'"
+            "   and column_name <> 'manifest_id'"
+            " order by ordinal_position",
+            (schema, name),
+        )
+        columns = [row[0] for row in cursor.fetchall()]
+        found: dict[str, int] = {}
+        for column in columns:
+            cursor.execute(f'select count(*) from {table} where "{column}" = %s', ("",))
+            blanks = int(cursor.fetchone()[0])
+            if blanks:
+                found[column] = blanks
+    return found
+
+
+def test_a_blank_attribute_stages_as_absent_and_not_as_an_empty_string(
+    staged_gis, seeded
+) -> None:
+    """cr_co_*_blank_is_absent_1, swept over the shape rather than over one column.
+
+    ECMC is the only publisher in the registry whose DBFs carry an empty string where they
+    carry no value, and an empty string is not a value: it is unaddressable in the selector
+    grammar, it ranks as a class in a legend, and it is a different answer from the null every
+    other jurisdiction stages. The three sampled archives carry blanks in Well_Class (10),
+    Loc_Qual (4), Field_Name (61 and 60) and Deviation (3).
+    """
+    for table in (
+        "staging.co_ecmc_wells",
+        "staging.co_ecmc_directional_bh",
+        "staging.co_ecmc_directional_lines",
+    ):
+        assert blank_text_columns(seeded, table) == {}
+
+    with seeded.cursor() as cursor:
+        cursor.execute("select count(*) from staging.co_ecmc_wells where well_class is null")
+        assert cursor.fetchone()[0] == 10
+        cursor.execute(
+            "select count(*) from staging.co_ecmc_directional_lines where deviation is null"
+        )
+        assert cursor.fetchone()[0] == 3
+
+
 def test_the_header_is_staged_verbatim_including_the_duplicate_rows(staged_gis, seeded) -> None:
     """Deduplication is the promotion's decision under its own rule. Staging holds every row
     the regulator filed, so the quarantine ledger can point at one."""
@@ -129,6 +177,7 @@ def test_a_reprojected_archive_is_refused_rather_than_replotted(seeded) -> None:
             manifest_id="probe",
             expected_epsg=32613,
             storage_epsg=4326,
+            null_tokens=[""],
         )
 
 

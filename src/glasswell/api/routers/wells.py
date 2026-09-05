@@ -10,6 +10,7 @@ from fastapi import APIRouter, Path, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.responses import JSONResponse
 
+from glasswell.absence import SOURCE_REPORTED_TEXT_COLUMNS, absent_if_blank
 from glasswell.api.deps import (
     AsOf,
     Connection,
@@ -116,12 +117,16 @@ COUNT_UNIT = "wells"
 
 # R8: every per-jurisdiction decision this router serves is a row in lineage.jurisdiction_rules
 # resolved at the request's knowledge cut, never a map in this module. status_vocabulary,
-# geometry_provenance and length_scope are decisions; whether the neighbour mart holds subjects
-# is the neighbors_available column. An unregistered prefix yields a null rule, which is an
-# answer; a registry that resolves nothing is service_degraded.
+# geometry_provenance, length_scope and blank_is_absent are decisions; whether the neighbour
+# mart holds subjects is the neighbors_available column. An unregistered prefix yields a null
+# rule, which is an answer; a registry that resolves nothing is service_degraded.
 STATUS_VOCABULARY = "status_vocabulary"
 GEOMETRY_PROVENANCE = "geometry_provenance"
 LENGTH_SCOPE = "length_scope"
+# The decision behind `absent_if_blank`. A read-time absence normalisation is a mapping decision
+# that shapes a served figure -- applying it is what takes the "" bucket out of well_types -- so
+# the reads that apply it name it, and name it per jurisdiction: only a registered one cites it.
+BLANK_IS_ABSENT = "blank_is_absent"
 # Served in the figure's place where a jurisdiction registers a length_scope rule: the length
 # resolver answers nd_gis_horizontals_line for a well with no basin, so serving a length there
 # would put a rule about North Dakota geometry on a Montana map stick.
@@ -183,6 +188,17 @@ STATUS_SUMMARY_LABELS = {
     "/producing_window/liquids_basis": "gt_stream",
 }
 
+# Wrapped for the reason facets.py:54-58 wraps the same expression: a resolver that maps a
+# reported code onto an empty string yields a class named "", which is grouped and served
+# beside the real ones under `status_null=1` -- the handle the absence already carries. Not
+# absent_if_blank: that helper cites Colorado's rule about ECMC's GIS attributes, and a blank
+# in a status map is a different source's blank.
+def _resolved_class(spine: str) -> str:
+    return f"nullif({resolved_status(spine)}, '')"
+
+
+_RESOLVED_CLASS = _resolved_class("w")
+
 _PRODUCING_CLASS = class_expression(api10="ranked.api10", state_code="ranked.state_code")
 
 # The guard is not decoration: with the definition unregistered the classifier would answer
@@ -190,11 +206,17 @@ _PRODUCING_CLASS = class_expression(api10="ranked.api10", state_code="ranked.sta
 # registry. Short-circuiting to NULL is what lets the response say it does not know.
 _PRODUCING_COLUMN = f"case when %(producing_registered)s::boolean then {_PRODUCING_CLASS} end"
 
+# The source-reported text columns are read under cr_co_wells_shp_blank_is_absent_1. The 1,172
+# Colorado headers promoted with an empty Well_Class before the staging applied it cannot be
+# restated -- see glasswell/absence.py for why -- so every read applies the rule instead.
+_REPORTED = ", ".join(
+    f"{absent_if_blank(name)} as {name}" for name in SOURCE_REPORTED_TEXT_COLUMNS
+)
 _COLUMNS = (
-    "api10, api14, state_code, county_code_at_permit, ndic_file_no, operator_name_reported,"
-    " operator_id, well_name,"
-    f" {resolved_status('ranked')} as status_canonical,"
-    " status_reported, well_type_reported, spud_date,"
+    "api10, api14, state_code,"
+    f" {_REPORTED},"
+    f" {_resolved_class('ranked')} as status_canonical,"
+    " spud_date,"
     " confidential_flag, basin, land_unit_label, total_depth_ft, completion_date,"
     " effective_from, source_manifest_id, derivation_id,"
     " greatest(effective_from, manifest_vintage,"
@@ -339,8 +361,9 @@ with in_view as (
                          st_makeenvelope(%(minx)s, %(miny)s, %(maxx)s, %(maxy)s, 4326))),
      latest as (
     select distinct on (v.api10)
-           v.api10, {resolved_status("w")} as status_canonical, w.basin, w.state_code,
-           w.well_type_reported, w.derivation_id, w.effective_from
+           v.api10, {_RESOLVED_CLASS} as status_canonical, w.basin, w.state_code,
+           {absent_if_blank("w.well_type_reported")} as well_type_reported,
+           w.derivation_id, w.effective_from
       from in_view v
       left join canonical.wells w
              on w.api10 = v.api10
@@ -1366,6 +1389,12 @@ def list_wells(
     # either way. Resolved, the registration invalidates the cursor instead, which is the
     # refusal cursor_query_mismatch exists to make.
     registry = jurisdictions(connection)
+    status = _filter_value(status)
+    operator = _filter_value(operator)
+    county = _filter_value(county)
+    well_type = _filter_value(well_type)
+    geometry_provenance = _filter_value(geometry_provenance)
+    q = _filter_value(q)
     requested = state_set(state) if state is not None else ()
     if state is None:
         scoped_states = None
@@ -1420,19 +1449,22 @@ def list_wells(
         clauses.append("and (api10 = %(api10)s or api14 = %(api10)s)")
         params["api10"] = api10
     if status is not None:
-        clauses.append(f"and {resolved_status('ranked')} = %(status)s")
+        clauses.append(f"and {_resolved_class('ranked')} = %(status)s")
         params["status"] = status
     if operator is not None:
-        clauses.append("and operator_name_reported ilike '%%' || %(operator)s || '%%'")
+        clauses.append(
+            f"and {absent_if_blank('operator_name_reported')}"
+            " ilike '%%' || %(operator)s || '%%'"
+        )
         params["operator"] = operator
     if county is not None:
-        clauses.append("and county_code_at_permit = %(county)s")
+        clauses.append(f"and {absent_if_blank('county_code_at_permit')} = %(county)s")
         params["county"] = county
     if state is not None:
         clauses.append("and state_code = any(%(state)s)")
         params["state"] = scoped_states
     if well_type is not None:
-        clauses.append("and well_type_reported = %(well_type)s")
+        clauses.append(f"and {absent_if_blank('well_type_reported')} = %(well_type)s")
         params["well_type"] = well_type
     if geometry_provenance is not None:
         clauses.append(
@@ -1450,7 +1482,9 @@ def list_wells(
         clauses.append(f"and {_PRODUCING_CLASS} = %(producing)s")
         params["producing"] = producing
     if q is not None:
-        clauses.append("and well_name ilike '%%' || %(q)s || '%%'")
+        clauses.append(
+            f"and {absent_if_blank('well_name')} ilike '%%' || %(q)s || '%%'"
+        )
         params["q"] = q
     if envelope is not None:
         clauses.append(
@@ -1490,7 +1524,15 @@ def list_wells(
         links={
             "next": next_link("/v1/wells", filters | {"limit": limit}, next_cursor)
             if next_cursor
-            else None
+            else None,
+            # One key per jurisdiction on the page, the way the summary links its rules: the
+            # spine read every source-reported text column here under the rule the reader is
+            # being pointed at, and a page spanning two states cites each state's own.
+            **{
+                rule: f"/v1/conformance/{rule}"
+                for row in items
+                if (rule := registry.rule_for(row["state_code"], BLANK_IS_ABSENT))
+            },
         },
     )
 
@@ -1669,8 +1711,17 @@ class WellStatusSummary(BaseModel):
     )
 
 
+def _filter_value(value: str | None) -> str | None:
+    """An empty filter value is no filter. A source that files "" has filed no value, and the
+    spine reads it as the absence it is -- so a predicate on it selects rows the response then
+    serves as null, which is the filter and the payload disagreeing about the same row."""
+    return value or None
+
+
 def _selector_term(name: str, value: str | None) -> str:
-    return f"{name}_null=1" if value is None else identity_selector_term(name, value)
+    """An absence and an empty value are one facet: the grammar admits no empty value, so a
+    source that files "" would otherwise build a handle that refuses the whole response."""
+    return f"{name}_null=1" if not value else identity_selector_term(name, value)
 
 
 def _refuse_bbox(code: str, detail: str, raw: str) -> ProblemError:
@@ -2098,7 +2149,16 @@ def get_well_status_summary(
             if (rule := registry.rule_for(row["state_code"], GEOMETRY_PROVENANCE))
         }
     ) if classed else []
-    response_rules = sorted({*rules, *provenance_rules})
+    # The rule STATUS_SUMMARY_SQL read the grouped columns under, resolved the same way and for
+    # the same reason: it decided what a blank well type means, so the list it produced cites it.
+    absence_rules = sorted(
+        {
+            rule
+            for row in counted
+            if (rule := registry.rule_for(row["state_code"], BLANK_IS_ABSENT))
+        }
+    )
+    response_rules = sorted({*rules, *provenance_rules, *absence_rules})
     data = {
         "bbox": box,
         "wells": _count(counted, selector=f"col=wells&bbox={selector_box}"),
@@ -2136,6 +2196,7 @@ def get_well_status_summary(
     )
     links = {rule: f"/v1/conformance/{rule}" for rule in rules}
     links |= {rule: f"/v1/conformance/{rule}" for rule in provenance_rules}
+    links |= {rule: f"/v1/conformance/{rule}" for rule in absence_rules}
     if policy:
         links |= {rule: f"/v1/conformance/{rule}" for rule in PRODUCING_RULE_IDS}
     minx, miny, maxx, maxy = envelope
@@ -2678,6 +2739,7 @@ def get_well(
     # without asking. The jurisdiction's status_history rule is the only thing that emits it.
     history_rule = registry.rule_for(row["state_code"], STATUS_HISTORY)
     length_scope_rule = registry.rule_for(row["state_code"], LENGTH_SCOPE)
+    absence_rule = registry.rule_for(row["state_code"], BLANK_IS_ABSENT)
     neighbours_served, neighbours_rule, neighbours_reason = _neighbours(
         registry, row["state_code"]
     )
@@ -2951,6 +3013,9 @@ def get_well(
                 if cumulatives_rule
                 else {}
             ),
+            # Every source-reported text field on this card was read under it, so the reader
+            # can open the decision that turned a value the source filed into a null.
+            **({"absence_rule": f"/v1/conformance/{absence_rule}"} if absence_rule else {}),
         },
         explain=inline_for(connection, explain),
     )

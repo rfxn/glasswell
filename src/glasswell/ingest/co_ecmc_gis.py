@@ -44,6 +44,11 @@ MEMBER_FAMILIES = {
     "co_ecmc_directional_bh": "cr_co_directional_bh_member",
     "co_ecmc_directional_lines": "cr_co_directional_lines_member",
 }
+BLANK_FAMILIES = {
+    "co_ecmc_wells_shp": "cr_co_wells_shp_blank_is_absent",
+    "co_ecmc_directional_bh": "cr_co_directional_bh_blank_is_absent",
+    "co_ecmc_directional_lines": "cr_co_directional_lines_blank_is_absent",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,6 +127,14 @@ def _already_staged(connection: psycopg.Connection, table: str, manifest_id: str
         return int(cursor.fetchone()[0])
 
 
+def _staged_value(value: Any, null_tokens: frozenset[str]) -> str | None:
+    """One attribute as staging holds it: the tokens the rule names are absences, not values."""
+    if value is None:
+        return None
+    text = str(value).strip()
+    return None if text in null_tokens else text
+
+
 def stage_layer(
     connection: psycopg.Connection,
     layer: LayerSpec,
@@ -130,8 +143,10 @@ def stage_layer(
     manifest_id: str,
     expected_epsg: int,
     storage_epsg: int,
+    null_tokens: Sequence[str],
 ) -> tuple[int, int]:
     """Stage one archive verbatim, transforming the shipped datum on the way in."""
+    absences = frozenset(str(token) for token in null_tokens)
     columns = _staging_columns(connection, layer.staging_table)
     quoted = ", ".join(
         f'"{name}"' for name in ("manifest_id", "source_row_ordinal", *columns, "geom")
@@ -156,10 +171,7 @@ def stage_layer(
                 (
                     manifest_id,
                     entry.ordinal + 1,
-                    *(
-                        None if attributes.get(name) is None else str(attributes[name]).strip()
-                        for name in columns
-                    ),
+                    *(_staged_value(attributes.get(name), absences) for name in columns),
                     None if entry.is_empty else entry.geometry.wkt,
                 )
             )
@@ -180,10 +192,9 @@ def ingest_layer(
     conform = load_rules(connection, source_id=WELLS.source_id, stage="conform", as_of=run.as_of)
     datum = rule_for_family(conform, DATUM_FAMILY)
     scope = rule_for_family(conform, SCOPE_FAMILY)
-    member = rule_for_family(
-        load_rules(connection, source_id=layer.source_id, stage="parse", as_of=run.as_of),
-        MEMBER_FAMILIES[layer.source_id],
-    )
+    parse = load_rules(connection, source_id=layer.source_id, stage="parse", as_of=run.as_of)
+    member = rule_for_family(parse, MEMBER_FAMILIES[layer.source_id])
+    blank = rule_for_family(parse, BLANK_FAMILIES[layer.source_id])
     fetched = fetch_raw(
         connection,
         layer.source_id,
@@ -211,7 +222,7 @@ def ingest_layer(
                 as_of_vintage=manifest.fetch_vintage,
             )
         ],
-        rules=[datum.rule_id, scope.rule_id, member.rule_id],
+        rules=[datum.rule_id, scope.rule_id, member.rule_id, blank.rule_id],
     ) as parsing:
         staged = _already_staged(connection, layer.staging_table, manifest.manifest_id)
         source_epsg = int(datum.spec["measured_source_epsg"])
@@ -223,6 +234,7 @@ def ingest_layer(
                 manifest_id=manifest.manifest_id,
                 expected_epsg=int(datum.spec["measured_source_epsg"]),
                 storage_epsg=int(datum.spec["storage_epsg"]),
+                null_tokens=[str(token) for token in blank.spec["null_tokens"]],
             )
         parsing.set_rows(staged)
         parsing.set_output_hash(

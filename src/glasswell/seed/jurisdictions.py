@@ -443,7 +443,7 @@ JURISDICTION_RULES_AS_FOUNDED: tuple[dict[str, object], ...] = (
 )
 
 
-# Colorado's decisions, at Colorado's own instant. Thirteen rows: every §3 rule that decides
+# Colorado's decisions, at Colorado's own instant. Fourteen rows: every §3 rule that decides
 # something the serving path resolves through the registry. The two parse rules that ride with
 # the production grain are conformance rows without being registry decisions, and the six
 # cadence rules are registered in the scheduler's tables rather than here. So is
@@ -473,6 +473,12 @@ COLORADO_DECISIONS: tuple[dict[str, object], ...] = tuple(
         ("entity_key", "cr_co_production_entity_key_1"),
         ("production_grain", "cr_co_production_grain_1"),
         ("cumulatives_scope", "cr_co_production_grain_1"),
+        # The wells layer's rule, not its two siblings': this decision is the one the serving
+        # path resolves, and what it decides is what a blank header attribute means. The
+        # bottomhole and lines rules say the same thing about layers no served figure is read
+        # from, so registering them here would put three rule ids on a well card that applied
+        # one.
+        ("blank_is_absent", "cr_co_wells_shp_blank_is_absent_1"),
     )
 )
 

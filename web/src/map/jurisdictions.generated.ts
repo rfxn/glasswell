@@ -48,6 +48,7 @@ export const JURISDICTION_LIST: readonly GeneratedJurisdiction[] = [
     legendNote: "Colorado's AL code is a vacated permit, not an abandoned well: those points have no wellbore and are drawn as expired permits (cr_co_wells_status_vocab_1).",
     rules: {
       basin_context: "cr_co_basin_context_1",
+      blank_is_absent: "cr_co_wells_shp_blank_is_absent_1",
       crs: "cr_co_wells_datum_1",
       cumulatives_scope: "cr_co_production_grain_1",
       deduplication: "cr_co_wells_dedup_1",
