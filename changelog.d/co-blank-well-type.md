@@ -18,3 +18,8 @@
 - [Fix] the rule's served evidence names both blank columns the header archive measures —
       Well_Class (1,176) and Loc_Qual (62) — rather than only the one a gate caught
       (gate-cofix M-3)
+- [Fix] an empty value on /v1/wells is no filter rather than a selector for the rows the
+      spine reads as absent: `?well_type=`, `?county=`, `?operator=`, `?q=`, `?status=` and
+      `?geometry_provenance=` now answer the unfiltered population, and every text predicate
+      addresses the value the response serves rather than the column beneath it (gate-cofix
+      M-4)

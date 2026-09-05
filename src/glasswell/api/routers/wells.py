@@ -978,6 +978,12 @@ def list_wells(
     # either way. Resolved, the registration invalidates the cursor instead, which is the
     # refusal cursor_query_mismatch exists to make.
     registry = jurisdictions(connection)
+    status = _filter_value(status)
+    operator = _filter_value(operator)
+    county = _filter_value(county)
+    well_type = _filter_value(well_type)
+    geometry_provenance = _filter_value(geometry_provenance)
+    q = _filter_value(q)
     requested = state_set(state) if state is not None else ()
     if state is None:
         scoped_states = None
@@ -1032,19 +1038,22 @@ def list_wells(
         clauses.append("and (api10 = %(api10)s or api14 = %(api10)s)")
         params["api10"] = api10
     if status is not None:
-        clauses.append(f"and {resolved_status('ranked')} = %(status)s")
+        clauses.append(f"and {_resolved_class('ranked')} = %(status)s")
         params["status"] = status
     if operator is not None:
-        clauses.append("and operator_name_reported ilike '%%' || %(operator)s || '%%'")
+        clauses.append(
+            f"and {absent_if_blank('operator_name_reported')}"
+            " ilike '%%' || %(operator)s || '%%'"
+        )
         params["operator"] = operator
     if county is not None:
-        clauses.append("and county_code_at_permit = %(county)s")
+        clauses.append(f"and {absent_if_blank('county_code_at_permit')} = %(county)s")
         params["county"] = county
     if state is not None:
         clauses.append("and state_code = any(%(state)s)")
         params["state"] = scoped_states
     if well_type is not None:
-        clauses.append("and well_type_reported = %(well_type)s")
+        clauses.append(f"and {absent_if_blank('well_type_reported')} = %(well_type)s")
         params["well_type"] = well_type
     if geometry_provenance is not None:
         clauses.append(
@@ -1062,7 +1071,9 @@ def list_wells(
         clauses.append(f"and {_PRODUCING_CLASS} = %(producing)s")
         params["producing"] = producing
     if q is not None:
-        clauses.append("and well_name ilike '%%' || %(q)s || '%%'")
+        clauses.append(
+            f"and {absent_if_blank('well_name')} ilike '%%' || %(q)s || '%%'"
+        )
         params["q"] = q
     if envelope is not None:
         clauses.append(
@@ -1271,6 +1282,13 @@ class WellStatusSummary(BaseModel):
         description="Every status vocabulary rule that shaped these counts; each one is linked.",
         json_schema_extra={GLOSSARY_KEY: "gt_conformance_rule"},
     )
+
+
+def _filter_value(value: str | None) -> str | None:
+    """An empty filter value is no filter. A source that files "" has filed no value, and the
+    spine reads it as the absence it is -- so a predicate on it selects rows the response then
+    serves as null, which is the filter and the payload disagreeing about the same row."""
+    return value or None
 
 
 def _selector_term(name: str, value: str | None) -> str:
