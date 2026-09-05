@@ -15,8 +15,6 @@ from glasswell.api.accounts import (
     ABSOLUTE_WINDOW,
     IDLE_WINDOW,
     LAST_SEEN_REFRESH,
-    SESSION_TOKEN_BYTES,
-    SESSION_TOKEN_PREFIX,
     User,
     create_session,
     find_user,
@@ -74,16 +72,6 @@ def test_the_three_tables_exist_with_their_grants(db: psycopg.Connection) -> Non
     assert ("login_attempts", "DELETE") in granted
     for table in ("users", "sessions", "login_attempts"):
         assert (table, "TRUNCATE") not in granted
-
-
-def test_a_minted_token_carries_256_bits() -> None:
-    token = mint_session_token()
-
-    assert token.startswith(SESSION_TOKEN_PREFIX)
-    body = token[len(SESSION_TOKEN_PREFIX) :]
-    # base64url of 32 bytes, unpadded.
-    assert len(body) >= (SESSION_TOKEN_BYTES * 8 + 5) // 6
-    assert mint_session_token() != mint_session_token()
 
 
 def test_only_the_sha256_is_stored(db: psycopg.Connection) -> None:

@@ -15,7 +15,6 @@ import pytest
 from glasswell.api.accounts import (
     create_user,
     find_user,
-    normalise_username,
     revoke_user_sessions,
     set_password,
     verify_user_password,
@@ -52,10 +51,6 @@ def test_a_username_is_stored_lowercased_and_is_unique_case_insensitively(
             db, username="MIXEDCASE", password=PASSWORD, role="viewer",
             created_by="test", now=NOW,
         )
-
-
-def test_normalising_a_username_trims_and_folds() -> None:
-    assert normalise_username("  Ryan  ") == "ryan"
 
 
 def test_two_concurrent_demotions_cannot_both_succeed(

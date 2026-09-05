@@ -4,13 +4,14 @@ Reconciliation S-B composes `granularity` and `reporting_level` into the served 
 `(observed, well) → well_observed`, `(observed, well_completion_pool) → well_observed` with an
 aggregation, `(observed, lease) → lease_reported`, `(allocated, well) → lease_allocated`. Four
 mappings, three tokens. The DB admitted two of them and the serializer a different two.
+
+What the composed token set *is*, and that a token outside it is refused, needs no database and
+lives in `tests/unit/test_envelope.py`; both halves of the comparison below are here.
 """
 
 from __future__ import annotations
 
 import re
-
-import pytest
 
 from glasswell.lineage.envelope import GRANULARITIES, figure
 
@@ -54,10 +55,3 @@ def test_every_granularity_the_store_admits_serializes(db):
         assert served.granularity == granularity
 
 
-def test_the_vocabulary_is_s_b_s_composed_token_set():
-    assert set(GRANULARITIES) == {"well_observed", "lease_reported", "lease_allocated"}
-
-
-def test_a_token_outside_the_composition_is_still_refused():
-    with pytest.raises(ValueError, match="granularity must be one of"):
-        figure("1.0", unit="mcf", derivation="drv_x", granularity="observed")

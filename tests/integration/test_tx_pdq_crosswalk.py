@@ -28,6 +28,7 @@ from glasswell.lineage.capture import lineage_session
 from glasswell.lineage.store import PostgresRecorder
 from glasswell.seed import seed_all
 from glasswell.seed.conformance_tx import PDQ_MEMBER_LAYOUT, PERMIAN_COUNTY_CODES
+from tests.conftest import install_lineage_env
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "tx_pdq"
 SAMPLE = FIXTURES / "PDQ_DSV_sample.zip"
@@ -86,27 +87,58 @@ def scalar(db, sql: str, parameters: tuple = ()):
     return row[0] if row else None
 
 
-@pytest.fixture
-def seeded(db: psycopg.Connection) -> psycopg.Connection:
-    seed_all(db)
-    db.commit()
-    return db
+@pytest.fixture(scope="module")
+def loaded_template(module_template, module_raw_root: Path) -> tuple[str, object]:
+    """The seed and the pass-one load, run once into a template every test here clones.
+
+    Twelve tests read one load. Building it per test cost 2.7 s of setup against a 0.00 s body
+    on every one of them (A-timing.md 1).
+    """
+    report = []
+
+    def seed(connection: psycopg.Connection) -> None:
+        seed_all(connection)
+        connection.commit()
+        environment = install_lineage_env(connection)
+        with lineage_session(
+            recorder=PostgresRecorder(connection), environment=environment
+        ), client_for(SAMPLE) as client:
+            report.append(
+                tx_pdq.load(
+                    connection,
+                    url=f"https://example.invalid/{SOURCE_KEY}",
+                    raw_root=module_raw_root,
+                    client=client,
+                    expect_bytes=SAMPLE.stat().st_size,
+                )
+            )
+        connection.commit()
+
+    return module_template("tx_pdq_crosswalk", seed), report[0]
 
 
 @pytest.fixture
-def loaded(seeded, raw_root: Path, lineage_env):
-    with lineage_session(
-        recorder=PostgresRecorder(seeded), environment=lineage_env
-    ), client_for(SAMPLE) as client:
-        result = tx_pdq.load(
-            seeded,
-            url=f"https://example.invalid/{SOURCE_KEY}",
-            raw_root=raw_root,
-            client=client,
-            expect_bytes=SAMPLE.stat().st_size,
-        )
-    seeded.commit()
-    return result
+def seeded(clone, loaded_template: tuple[str, object]) -> psycopg.Connection:
+    """This test's own copy of the loaded database."""
+    return clone(loaded_template[0])
+
+
+@pytest.fixture
+def loaded(seeded: psycopg.Connection, loaded_template: tuple[str, object]) -> object:
+    """The report the template's load returned. `seeded` is what it landed in."""
+    return loaded_template[1]
+
+
+@pytest.fixture
+def raw_root(shared_raw_root: Path) -> Path:
+    """The module's zone: the template's archive is already in it."""
+    return shared_raw_root
+
+
+@pytest.fixture
+def lineage_env(seeded: psycopg.Connection):
+    """Overrides the tier fixture, which would clone a second database for the row."""
+    return install_lineage_env(seeded)
 
 
 def test_the_archive_is_fetched_once_and_recorded_with_its_hash_and_byte_count(

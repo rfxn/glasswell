@@ -1,0 +1,114 @@
+name: Nightly
+
+# The control the sharded gate cannot supply. `ci.yml` runs the database tiers as four shards of
+# four workers, so a test that only passes in file order, a file that fell into no shard, and a
+# fixture that leaks between workers are all failure modes the gate is structurally blind to.
+# This runs the same suite once, in one process, in collection order, and compares its total
+# against the four groups' -- once a day, off every critical path.
+on:
+  schedule:
+    - cron: "0 9 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+jobs:
+  whole-suite:
+    name: The whole suite, unsharded, in one process
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      GLASSWELL_REQUIRE_DOCKER: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0        # test_release_tooling's evidence probe skips on a shallow clone
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.lock
+
+      - name: Install the recorded environment
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.lock
+          python -m pip install -e . --no-deps
+
+      # No --splits, no -n, no server the workflow owns: every fixture takes the path a
+      # developer's `make test-full` takes, including the container the session starts itself.
+      # --store-durations is what keeps the shards balanced; it is unsupported under xdist,
+      # which is the other reason this run is serial.
+      - name: pytest tests, serial, storing durations
+        run: |
+          set -euo pipefail
+          python -m pytest tests -q -ra --store-durations --durations-path tests/.durations.json
+
+      # Risk 3 in C-ci-shape.md §5: a file in no group stops running and nothing goes red.
+      # The serial collection is the truth; the four groups must sum to it exactly.
+      - name: Shard parity against this run's own collection, item by item
+        run: |
+          set -euo pipefail
+          collect() { python -m pytest tests/contract tests/integration -q --collect-only "$@" | grep '^tests/'; }
+          collect | sort > parity-collected.txt
+          : > parity-groups.txt
+          for group in 1 2 3 4; do
+            collect --splits 4 --group "$group" --durations-path tests/.durations.json \
+              >> parity-groups.txt
+          done
+          sort parity-groups.txt > parity-emitted.txt
+          sort -u parity-groups.txt > parity-distinct.txt
+          printf 'collected %s, shards emit %s, distinct %s\n' \
+            "$(wc -l < parity-collected.txt)" "$(wc -l < parity-emitted.txt)" \
+            "$(wc -l < parity-distinct.txt)"
+          # By set, not by count: an item in two groups and an item in none satisfy
+          # sum == total exactly, and the second one has silently stopped running.
+          status=0
+          missing=$(comm -23 parity-collected.txt parity-distinct.txt)
+          extra=$(comm -13 parity-collected.txt parity-distinct.txt)
+          duplicated=$(uniq -d parity-emitted.txt)
+          if [ -n "$missing" ]; then printf 'in no shard:\n%s\n' "$missing"; status=1; fi
+          if [ -n "$extra" ]; then printf 'in a shard but not collected:\n%s\n' "$extra"; status=1; fi
+          if [ -n "$duplicated" ]; then printf 'in more than one shard:\n%s\n' "$duplicated"; status=1; fi
+          exit "$status"
+
+      # The file is committed, so the gate's shards are balanced by the last measurement anyone
+      # landed. This publishes the fresh one rather than pushing it: a scheduled job with write
+      # access to main is a larger change than shard balance is worth. docs/ci-gate.md says how
+      # to land it.
+      - name: Publish the refreshed durations
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: durations
+          path: tests/.durations.json
+          if-no-files-found: error
+
+  e2e-guards:
+    name: E2E — the browserless guard suite
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+      - name: node --test
+        run: node --test tests/e2e
+
+  # The probes that need the deployed instance -- tests/e2e/smoke.mjs against the public host,
+  # infra/verify.sh, and the restore-drill receipt -- are NOT here, deliberately. They need the
+  # owner key, this repository holds no secrets (`gh secret list` is empty), and the key belongs
+  # in `X-Glasswell-Key` on a host that already has it. They run on VM 111 from its own timer;
+  # docs/ci-gate.md names them so their absence here is a decision on the record rather than a
+  # gap nobody noticed.

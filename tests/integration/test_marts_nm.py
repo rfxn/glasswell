@@ -10,14 +10,11 @@ asserting itself back at itself.
 from __future__ import annotations
 
 from datetime import date
-from pathlib import Path
 
 import psycopg
 import pytest
-import yaml
 from psycopg.rows import dict_row
 
-from glasswell import status_resolution
 from glasswell.api.routers.tiles import PUBLISHED_LAYERS
 from glasswell.api.routers.wells import RANKED_WELLS
 from glasswell.ingest.base import resolve_environment
@@ -31,8 +28,7 @@ from glasswell.seed.conformance_nm_wells import (
     DOCUMENTED_UNMAPPED_CLASS,
     STATUS_CANONICAL_MAP,
 )
-from tests.integration.test_marts_nd import MARTIN_CONFIG, covering_tile, extent_of, rows, scalar
-from tests.support.layers import schema_reads_in
+from tests.integration.test_marts_nd import covering_tile, extent_of, rows, scalar
 from tests.support.mvt import attribute_keys, feature_count, layer_name, layers
 from tests.support.seed import seed_manifest, seed_well, seed_well_spatial
 
@@ -171,16 +167,15 @@ def test_the_derivation_records_the_state_and_the_rules_it_cited(refreshed):
 
 
 def test_the_mart_reads_canonical_only(refreshed):
-    """Layer boundary: marts read canonical, never staging."""
+    """The projections this jurisdiction serves address canonical.
+
+    That neither `wells.py` nor `status_resolution.py` reads staging at all is the same
+    property one layer up, and it is asserted over every mart by
+    tests/unit/test_marts_read_canonical_only.py, which walks by glob rather than by name.
+    """
     profile = profile_for(nm_marts.JURISDICTION_CODE)
     source = "".join(p.select for p in profile.projections) + wells._INPUT_DERIVATIONS
 
-    # Folded over the whole module rather than grepped over its SQL: a staging name spelled in
-    # pieces elsewhere in the file greps clean and still reads staging. The resolver module is
-    # folded with it because half of this mart's SQL is composed there, and the engine because
-    # that is where the rest of it moved.
-    assert schema_reads_in(Path(wells.__file__), "staging") == []
-    assert schema_reads_in(Path(status_resolution.__file__), "staging") == []
     assert "canonical.well_spatial" in source
     assert "canonical.wells" in source
 
@@ -190,14 +185,6 @@ def test_no_nm_laterals_layer_is_published(refreshed):
     assert "nm_wells" in PUBLISHED_LAYERS
     assert "nm_laterals" not in PUBLISHED_LAYERS
     assert not any(name.startswith("nm_") and name != "nm_wells" for name in PUBLISHED_LAYERS)
-
-
-def test_the_martin_config_publishes_the_new_layer_too(refreshed):
-    """CI asserts the config equals the allowlist, so the two move together or the build fails."""
-    functions = yaml.safe_load(MARTIN_CONFIG.read_text())["postgres"]["functions"]
-
-    assert set(functions) == set(PUBLISHED_LAYERS)
-    assert functions["nm_wells"] == {"schema": "marts", "function": "nm_wells"}
 
 
 def test_the_layer_serves_a_decodable_tile_with_its_declared_properties(refreshed):

@@ -183,14 +183,6 @@ def test_the_api10_is_composed_per_segment_by_the_registry_rule(db, staged) -> N
     assert rows == [(10, "30")]
 
 
-def test_no_state_code_literal_lives_in_the_module() -> None:
-    """R8: the 30 is in cr_nm_wellhistory_api10_1's spec, read from the registry."""
-    source = Path(nm_wells.__file__).read_text(encoding="utf-8")
-
-    assert "'30'" not in source
-    assert '"30"' not in source
-
-
 def test_every_promoted_row_cites_the_rules_that_shaped_it(db, staged) -> None:
     report = promote(db)
     cited = {

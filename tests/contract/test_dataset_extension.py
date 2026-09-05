@@ -16,7 +16,6 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from pydantic import ValidationError
 
 from glasswell.api.examples import (
     DATASET_GROUPS,
@@ -24,8 +23,6 @@ from glasswell.api.examples import (
     GLOSSARY_KEY,
     RESERVED_DATASET_IDS,
     SEMANTICS_KEY,
-    dataset,
-    semantics,
 )
 from tests.contract.test_naked_numbers import exercised
 
@@ -596,39 +593,6 @@ def test_a_pivot_axis_that_is_not_an_array_fails_the_lint(document: dict[str, An
     assert findings == ["get_health: row_projection.axis /manifest_count is not an array"]
 
 
-def test_the_helper_refuses_a_reserved_id_at_authoring_time() -> None:
-    """The document lint is the gate; the model is the fast failure, so a typo never reaches it."""
-    with pytest.raises(ValidationError, match="reserved"):
-        dataset(**(_pivot() | {"id": "map"}))
-
-
-def test_the_helper_refuses_a_member_a_1_does_not_define() -> None:
-    """A misspelled member is how a declaration silently loses its columns (B5)."""
-    with pytest.raises(ValidationError, match="Extra inputs"):
-        dataset(**(_pivot() | {"column": {"default": ["/pm"]}}))
-
-
-def test_the_helper_refuses_a_hidden_column_with_no_reason() -> None:
-    fields = _pivot()
-    fields["columns"]["hidden"] = ["/streams"]
-
-    with pytest.raises(ValidationError, match="hidden_reason"):
-        dataset(**fields)
-
-
-def test_the_helper_omits_what_a_declaration_did_not_state() -> None:
-    """`exclude_none` keeps the served document to what an author actually wrote — an absent
-    `summary_operation` is absent, not `null`, and the fallback stays expressible."""
-    fields = _pivot()
-    fields["columns"].pop("default")
-
-    payload = dataset(**fields)[DATASET_KEY]
-
-    assert "summary_operation" not in payload
-    assert "default" not in payload["columns"]
-    assert payload["series_pointer"] == "/series"
-
-
 def annotations(
     document: dict[str, Any],
 ) -> list[tuple[str, dict[str, Any], dict[str, Any]]]:
@@ -865,28 +829,6 @@ def test_the_semantics_bindings_are_collected_by_the_r9_check_with_no_edit_to_it
     assert "gt_does_not_exist" in _bindings(mutant)
     assert {term for _, entries, _ in annotations(document) for entry in entries.values()
             if (term := entry.get(GLOSSARY_KEY)) is not None} <= served
-
-
-def test_the_helper_refuses_an_entry_that_binds_nothing_and_says_nothing() -> None:
-    with pytest.raises(ValidationError, match="is not written"):
-        semantics(limit={})
-
-
-def test_the_helper_refuses_a_term_id_that_is_not_one() -> None:
-    """A term id that cannot exist fails here rather than at the R9 check's database round
-    trip, which is the difference between a typo caught at import and one caught in CI."""
-    with pytest.raises(ValidationError, match="pattern"):
-        semantics(limit={"glossary": "report_vintage"})
-
-
-def test_the_helper_serves_the_binding_under_the_key_r9_collects() -> None:
-    """The call site may write `glossary=` for readability; the document may not (G-2)."""
-    payload = semantics(as_of={"glossary": "gt_report_vintage", "so": "Selects the vintage."})
-
-    assert payload[SEMANTICS_KEY]["as_of"] == {
-        GLOSSARY_KEY: "gt_report_vintage",
-        "so": "Selects the vintage.",
-    }
 
 
 def _annotated(

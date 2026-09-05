@@ -9,6 +9,7 @@ click==8.4.2
 coverage==7.15.4
 duckdb==1.5.5
 et_xmlfile==2.0.0
+execnet==2.1.2
 fastapi==0.141.1
 h11==0.16.0
 httpcore==1.0.9
@@ -34,6 +35,8 @@ pyproj==3.7.2
 pyshp==3.1.6
 pytest==9.1.1
 pytest-cov==7.1.0
+pytest-split==0.11.0
+pytest-xdist==3.8.0
 PyYAML==6.0.3
 ruff==0.16.3
 shapely==2.1.2

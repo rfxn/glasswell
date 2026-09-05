@@ -104,13 +104,12 @@ def test_the_study_reads_canonical_and_not_the_staging_column_the_unit_lives_on(
     study, montana
 ) -> None:
     """P4 exists for this: the lease unit is a staging column, and a mart reading staging is
-    the breach marts/producing.py:9-10 names."""
-    from tests.support.layers import schema_reads_in
+    the breach marts/producing.py:9-10 names.
 
-    module = (
-        Path(allocation_backtest.__file__).resolve()
-    )
-    assert schema_reads_in(module, "staging") == []
+    That `allocation_backtest.py` reads no staging relation is asserted over every mart by
+    tests/unit/test_marts_read_canonical_only.py; what a database is needed for is that the
+    study scored the months at all.
+    """
     assert study.lease_months_scored > 0
 
 

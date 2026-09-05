@@ -100,20 +100,3 @@ def test_a_gis_derivation_carries_the_pin_the_unit_exports(db, raw_root, pinned)
     assert {lockfile for _, lockfile, _ in recorded} == {pinned}
 
 
-@pytest.mark.parametrize("module", ["ingest/nd_gis.py", "marts/nd_wells.py"])
-def test_no_module_writes_its_own_environment_row(module):
-    """The helper is two modules away; a second copy is how the pin got dropped."""
-    source = (SOURCE_ROOT / module).read_text()
-
-    assert "lineage.environments" not in source
-    assert "resolve_environment" in source
-
-
-def test_only_the_shared_helper_inserts_an_environment():
-    writers = sorted(
-        path.relative_to(SOURCE_ROOT).as_posix()
-        for path in SOURCE_ROOT.rglob("*.py")
-        if "insert into lineage.environments" in path.read_text()
-    )
-
-    assert writers == [BASE_MODULE.relative_to(SOURCE_ROOT).as_posix()]

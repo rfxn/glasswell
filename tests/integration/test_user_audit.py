@@ -1,36 +1,17 @@
 """Every account change leaves a record. A credential that appears or disappears with no
 trace is the one change nobody can reconstruct afterwards, which is why `keys.py` audits
-issuance and revocation and why the account paths do the same."""
+issuance and revocation and why the account paths do the same.
+
+That the taxonomy carries the account event types is asserted in
+tests/unit/test_audit_taxonomy.py, which needs no database to read a tuple.
+"""
 
 from __future__ import annotations
 
 import psycopg
 import pytest
 
-from glasswell.lineage.audit import AUDIT_EVENT_TYPES, SUBJECT_TYPES
-
 pytestmark = pytest.mark.integration
-
-EXPECTED_EVENTS = (
-    "user.created",
-    "user.updated",
-    "user.disabled",
-    "password.changed",
-    "session.started",
-    "session.ended",
-    "login.failed",
-)
-
-
-@pytest.mark.parametrize("event_type", EXPECTED_EVENTS)
-def test_the_taxonomy_carries_every_account_event(event_type: str) -> None:
-    assert event_type in AUDIT_EVENT_TYPES
-
-
-@pytest.mark.parametrize("subject", ["user", "session"])
-def test_the_taxonomy_carries_the_new_subjects(subject: str) -> None:
-    assert subject in SUBJECT_TYPES
-
 
 def test_the_event_type_column_carries_no_database_check(db: psycopg.Connection) -> None:
     """Why adding the types above needed no migration, asserted rather than assumed."""

@@ -351,8 +351,10 @@ tests/contract/          FastAPI/OpenAPI surface and frozen snapshot checks
 
 ```bash
 make install           # create .venv and install glasswell with dev dependencies
-make test-anvil        # full suite on the lab CI host — the default for a full run
-make test-local        # full suite on this machine's docker daemon
+make test              # the tests this diff can reach, four workers, selection printed
+make test-full         # the whole suite, four workers — before pushing a release train
+make test-anvil        # whole suite on the lab CI host — the default for a full run
+make test-local        # whole suite on this machine's docker daemon
 make test-unit         # pure-function tier, runs without docker
 make test-integration  # PostGIS tier
 make check-workstation # flag glasswell persistent state on a workstation
@@ -426,6 +428,7 @@ records each file's checksum and refuses a changed migration.
 | [docs/runbook-nm-promotion.md](docs/runbook-nm-promotion.md) | Tier 1 — the New Mexico production-history load: nine manifests, the staged spine and its ~24.8M appended rows |
 | [docs/runbook-co-tier2.md](docs/runbook-co-tier2.md) | Colorado's first data load: three GIS archives, the rolling production file, both promotions and the mart, with a merge-blocking gate over all five states |
 | [docs/runbook-scheduler.md](docs/runbook-scheduler.md) | The cadence-driven scheduler: reading the plan, running one job by hand, every refusal code and its severity, registering a job, and what observing means |
+| [docs/ci-gate.md](docs/ci-gate.md) | The merge gate: what each job refuses, the tree-identity skip, the four shards and what keeps them honest, the nightly control, and `make test`'s diff selection |
 | [BRAND.md](BRAND.md) | Visual system, palette, and asset regeneration |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | How changes are made, and what review rejects |
 | [SECURITY.md](SECURITY.md) | Vulnerability reporting |

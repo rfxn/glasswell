@@ -1,4 +1,9 @@
-"""Measured proof that EPSG:5070 discovery cannot drop an in-domain v0 edge."""
+"""Measured proof that EPSG:5070 discovery cannot drop an in-domain v0 edge.
+
+The zone envelope is the same question one layer up: the tuple Python holds and the CHECK the
+migration writes are two spellings of one measurement, and the refresh binds a state tuple
+rather than a literal. Neither needs a database to read.
+"""
 
 from __future__ import annotations
 
@@ -7,6 +12,8 @@ import math
 import pytest
 from pyproj import Transformer
 
+from glasswell.db.migrate import discover_migrations
+from glasswell.marts import neighbors
 from glasswell.marts.neighbors import (
     CANDIDATE_EPSG,
     CANDIDATE_PAD,
@@ -21,6 +28,7 @@ from glasswell.marts.neighbors import (
     WEST_EPSG,
     utm_zone_epsg,
 )
+from glasswell.seed.jurisdictions import PREFIXES
 
 pytestmark = pytest.mark.unit
 
@@ -176,3 +184,25 @@ def test_two_percent_candidate_pad_has_no_false_negative_in_supported_domain() -
     assert boundary_straddles > 0
     assert zone_switches > 0
     assert _zone_for_midpoint(boundary) == EAST_EPSG
+
+
+def test_the_refresh_binds_a_state_tuple_rather_than_a_literal() -> None:
+    """The seam is a bind, not a literal. Which jurisdictions fill it is two registrations
+    now -- `neighbors_available` and a serving `neighbors_scope` rule -- rather than a tuple
+    pinned here, so this asserts the binding and leaves the membership to the registry."""
+    assert "%(state_code)s" not in neighbors._COMPONENTS
+    assert "any(%(state_codes)s)" in neighbors._COMPONENTS
+    assert set(neighbors.STATE_CODES) <= PREFIXES
+
+
+def test_the_python_envelope_and_the_migration_constraint_name_the_same_zones() -> None:
+    """R-7. The zone set is a tuple in Python and a CHECK in 066; two spellings of one
+    measurement drift the first time one of them is widened alone."""
+    body = next(
+        item.sql for item in discover_migrations() if item.name == "neighbors_multistate"
+    )
+    declared = ", ".join(str(epsg) for epsg in neighbors.SUPPORTED_ZONE_EPSGS)
+
+    assert f"distance_epsg in ({declared})" in body
+    assert str(neighbors.SUPPORTED_LONGITUDE_MIN) in body
+    assert str(neighbors.SUPPORTED_LONGITUDE_MAX) in body

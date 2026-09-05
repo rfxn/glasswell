@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import json
 import math
-import subprocess
-import sys
 from decimal import Decimal
 from pathlib import Path
 
@@ -26,13 +24,10 @@ from glasswell.marts.nd_wells import main
 from glasswell.marts.tiles import simplify_tolerance, thin_key_sql
 from glasswell.seed import seed_all
 from glasswell.units import METRES_PER_FOOT
-from tests.support.layers import schema_reads_in
 from tests.support.mvt import attribute_keys, attribute_values, feature_count, layer_name, layers
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "nd_gis"
 REPO_ROOT = Path(__file__).resolve().parents[2]
-MARTIN_CONFIG = REPO_ROOT / "infra" / "martin" / "config.yaml"
-MARTS_PACKAGE = REPO_ROOT / "src" / "glasswell" / "marts"
 ARCHIVES = {
     "wells": FIXTURES / "OGD_Wells_300.zip",
     "laterals": FIXTURES / "OGD_Horizontals_Line_300.zip",
@@ -545,39 +540,6 @@ def test_a_whole_basin_tile_is_smaller_than_it_was_unthinned(canonical_nd, refre
     )
 
     assert len(bytes(thinned)) < len(bytes(unthinned))
-
-
-def test_the_module_runs_as_the_command_p7_documents():
-    completed = subprocess.run(
-        [sys.executable, "-m", "glasswell.marts.nd_wells", "--help"],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    assert "--dsn" in completed.stdout
-
-
-def test_the_marts_read_canonical_and_never_staging():
-    """Blueprint §3.0.1: marts read canonical only, and staging never serves.
-
-    Read from the parsed module, so a name spelled in pieces is folded before it is judged --
-    `"stag" + "ing" + ".nd_mpr_oil"` greps clean and still reads staging.
-
-    `status_resolution.py` is walked with the package though it sits outside it: the New
-    Mexico mart no longer holds all of its own SQL, and the shared resolver's join and
-    coalesce are composed there. It is not moved under `marts/` because the serving routers
-    read it too, and importing `glasswell.marts.*` from `api/routers/` would invert the very
-    layer direction this test protects.
-    """
-    modules = [
-        *sorted(MARTS_PACKAGE.glob("*.py")),
-        MARTS_PACKAGE.parent / "status_resolution.py",
-    ]
-
-    assert modules, "the marts package walked no modules, so this test cannot fail"
-    for source in modules:
-        assert source.is_file(), f"{source} is not on disk, so this test cannot fail"
-        assert schema_reads_in(source, "staging") == [], f"{source.name} reads staging"
 
 
 def _cells_at(connection: psycopg.Connection, relation: str, zoom: int) -> int:

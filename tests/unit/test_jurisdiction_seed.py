@@ -29,9 +29,12 @@ from glasswell.seed.jurisdictions import (
     NAMES,
     PREFIXES,
     PRESENTATION_COLUMNS,
+    REGISTERED_ON,
     REQUIRED_DECISIONS,
     RESTATED_EVIDENCE_COMMIT,
     RESTATED_EVIDENCE_TAG,
+    RESTATED_ON,
+    TX_SUPERSEDED_ON,
     identity_pattern,
     rule_parameters,
 )
@@ -273,3 +276,21 @@ def test_the_ledgers_absence_class_is_the_word_the_canvas_draws() -> None:
     # Once, in the declaration: a bare copy elsewhere in the file is a third spelling that this
     # comparison would not see move.
     assert source.count(f'"{UNMAPPED_CLASS}"') == 1
+
+
+def test_the_texas_supersession_clock_is_later_than_every_clock_texas_already_carried() -> None:
+    """It must resolve, and it must not land on either instant a standing gate plants a rival
+    registration on: the partial unique indexes would refuse them."""
+    assert TX_SUPERSEDED_ON > RESTATED_ON > REGISTERED_ON
+    assert REGISTERED_ON.replace(day=REGISTERED_ON.day + 1) != TX_SUPERSEDED_ON
+    assert RESTATED_ON.replace(day=RESTATED_ON.day + 1) != TX_SUPERSEDED_ON
+
+
+def test_the_presentation_columns_reach_no_response_model() -> None:
+    """N-17: they are read by the map generator and by nothing else, so the OpenAPI snapshot and
+    the naked-number allowlist are untouched by the presentation track."""
+    from glasswell.api.routers import jurisdictions as router
+
+    served = set(router.MapPresentation.model_fields)
+
+    assert served.isdisjoint(PRESENTATION_COLUMNS)

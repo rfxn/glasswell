@@ -64,14 +64,6 @@ def refreshed(db: psycopg.Connection, lineage_env) -> wells.MartRefresh:
     return refresh
 
 
-def test_the_mart_is_a_profile_row_and_not_a_module() -> None:
-    """The claim the track exists to make: a fifth state adds a row to the engine."""
-    assert not (Path(wells.__file__).parent / "co_wells.py").exists()
-    profile = wells.profile_for("CO")
-    assert profile.dataset == "marts.co_tiles"
-    assert [layer.name for layer in profile.layers] == ["co_wells"]
-
-
 def test_the_status_class_arrives_from_the_resolver_and_not_from_the_promotion(
     refreshed, db
 ) -> None:

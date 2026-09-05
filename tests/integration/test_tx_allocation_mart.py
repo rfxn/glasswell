@@ -32,6 +32,7 @@ from glasswell.marts import tx_allocation
 from glasswell.marts.tx_allocation import ConservationError
 from glasswell.seed import seed_all
 from glasswell.seed.conformance_tx import PDQ_MEMBER_LAYOUT
+from tests.conftest import install_lineage_env
 from tests.support.seed import FIXTURE_ENV, seed_derivation, seed_manifest, seed_well
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
@@ -75,59 +76,84 @@ def rows(db, sql: str, parameters: tuple = ()) -> list[tuple]:
         return cursor.fetchall()
 
 
-@pytest.fixture
-def loaded(db: psycopg.Connection, raw_root: Path, lineage_env):
-    """The dump loaded over a wells spine that carries the eligibility cases.
+@pytest.fixture(scope="module")
+def loaded_template(module_template, module_raw_root: Path) -> str:
+    """The dump loaded over a wells spine that carries the eligibility cases, built once.
 
     The spine is seeded rather than loaded from the EWA export: that fixture holds real
     Anderson-county wells and the PDQ fixture holds constructed Permian ones, so joining them
     would prove only that two unrelated cuts do not overlap. What the allocation needs from
     canonical is a well per crosswalk row with a completion date, a plug date and a status, and
     those are stated here so the eligibility cases are visible rather than incidental.
+
+    Every test in this file reads this one load; per test it was 2.7-4.5 s of setup against a
+    0.00 s body (A-timing.md 1). It runs here once, into a template the tests clone.
     """
-    seed_all(db)
-    db.commit()
-    manifest = seed_manifest(db, sha256="c" * 64, source_id="tx_gis_wells_county",
-                             source_key="well003.zip")
-    derivation = seed_derivation(db, operation="canonical.promote")
-    with zipfile.ZipFile(SAMPLE) as archive:
-        completions = list(_member_rows(archive, WELL_COMPLETION_MEMBER, LAYOUT))
-    # One well per API-10, not one per completion: a wellbore completed on two leases is one
-    # well, which is the whole of cr_tx_identity_collapse_1's decision.
-    spine = {}
-    for row in completions:
-        api10 = api10_from(row["API_COUNTY_CODE"], row["API_UNIQUE_NO"])
-        assert api10 is not None
-        spine[api10] = row
-    for api10, row in sorted(spine.items()):
-        seed_well(
-            db,
-            api10=api10,
-            state_code="42",
-            county_code_at_permit=row["API_COUNTY_CODE"],
-            effective_from=SPINE_VINTAGE,
-            manifest_id=manifest,
-            derivation_id=derivation,
-            completion_date=LATE_COMPLETION
-            if api10 == COMPLETED_AFTER_ITS_LEASE
-            else date(2023, 1, 1),
-            plug_date=PLUG_DATE if api10 == PLUGGED_WITH_A_DATE else None,
-            status_canonical="plugged" if api10 in PLUGGED else "active",
-            basin="permian",
-        )
-    db.commit()
-    with lineage_session(
-        recorder=PostgresRecorder(db), environment=lineage_env
-    ), client_for(SAMPLE) as client:
-        tx_pdq.load(
-            db,
-            url="https://example.invalid/PDQ_DSV.zip",
-            raw_root=raw_root,
-            client=client,
-            expect_bytes=SAMPLE.stat().st_size,
-        )
-    db.commit()
-    return db
+
+    def seed(db: psycopg.Connection) -> None:
+        environment = install_lineage_env(db)
+        seed_all(db)
+        db.commit()
+        manifest = seed_manifest(db, sha256="c" * 64, source_id="tx_gis_wells_county",
+                                 source_key="well003.zip")
+        derivation = seed_derivation(db, operation="canonical.promote")
+        with zipfile.ZipFile(SAMPLE) as archive:
+            completions = list(_member_rows(archive, WELL_COMPLETION_MEMBER, LAYOUT))
+        # One well per API-10, not one per completion: a wellbore completed on two leases is one
+        # well, which is the whole of cr_tx_identity_collapse_1's decision.
+        spine = {}
+        for row in completions:
+            api10 = api10_from(row["API_COUNTY_CODE"], row["API_UNIQUE_NO"])
+            assert api10 is not None
+            spine[api10] = row
+        for api10, row in sorted(spine.items()):
+            seed_well(
+                db,
+                api10=api10,
+                state_code="42",
+                county_code_at_permit=row["API_COUNTY_CODE"],
+                effective_from=SPINE_VINTAGE,
+                manifest_id=manifest,
+                derivation_id=derivation,
+                completion_date=LATE_COMPLETION
+                if api10 == COMPLETED_AFTER_ITS_LEASE
+                else date(2023, 1, 1),
+                plug_date=PLUG_DATE if api10 == PLUGGED_WITH_A_DATE else None,
+                status_canonical="plugged" if api10 in PLUGGED else "active",
+                basin="permian",
+            )
+        db.commit()
+        with lineage_session(
+            recorder=PostgresRecorder(db), environment=environment
+        ), client_for(SAMPLE) as client:
+            tx_pdq.load(
+                db,
+                url="https://example.invalid/PDQ_DSV.zip",
+                raw_root=module_raw_root,
+                client=client,
+                expect_bytes=SAMPLE.stat().st_size,
+            )
+        db.commit()
+
+    return module_template("tx_allocation_mart", seed)
+
+
+@pytest.fixture
+def loaded(clone, loaded_template: str) -> psycopg.Connection:
+    """This test's own copy of the loaded database."""
+    return clone(loaded_template)
+
+
+@pytest.fixture
+def raw_root(shared_raw_root: Path) -> Path:
+    """The module's zone: the template's archive is already in it."""
+    return shared_raw_root
+
+
+@pytest.fixture
+def lineage_env(loaded: psycopg.Connection):
+    """Overrides the tier fixture, which would clone a second database for the row."""
+    return install_lineage_env(loaded)
 
 
 @pytest.fixture
