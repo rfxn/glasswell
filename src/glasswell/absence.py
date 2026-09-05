@@ -16,8 +16,6 @@ and the status summary must not answer differently about the same well on the sa
 
 from __future__ import annotations
 
-BLANK_IS_ABSENT_RULE_ID = "cr_co_wells_shp_blank_is_absent_1"
-
 # What the promotion writes from a source-reported text column, and therefore what a read has
 # to apply the rule to. Not basin or land_unit_label: those are glasswell's own assignments and
 # no source files them blank.

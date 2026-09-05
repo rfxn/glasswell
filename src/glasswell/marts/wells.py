@@ -23,7 +23,7 @@ from datetime import date
 
 import psycopg
 
-from glasswell.absence import BLANK_IS_ABSENT_RULE_ID, absent_if_blank
+from glasswell.absence import absent_if_blank
 from glasswell.db.dsn import add_dsn_argument, resolve_dsn
 from glasswell.ingest.base import resolve_environment
 from glasswell.lengths import LengthMethod, resolve_length_method
@@ -414,7 +414,7 @@ MART_PROFILES: tuple[MartProfile, ...] = (
             "cr_co_wells_location_qualifier_1",
             "cr_co_wells_source_selection_1",
             "cr_co_wells_status_vocab_1",
-            BLANK_IS_ABSENT_RULE_ID,
+            "cr_co_wells_shp_blank_is_absent_1",
         ),
         emit_extra=(("state", "CO"), ("geometry_scope", "surface_only")),
     ),
