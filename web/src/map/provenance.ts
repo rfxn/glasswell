@@ -10,6 +10,7 @@ import { BY_PREFIX, JURISDICTION_LIST, rulesFor } from "./jurisdictions.generate
  * is that case, because the RRC's GIS_LOCATION_SOURCE is licence-gated (RF-1) and stays unserved
  * until that is answered — the legend says so where the vocabulary is stated.
  */
+
 /** The registry decision that says how a jurisdiction's recorded geometry is classed. */
 const GEOMETRY_PROVENANCE = "geometry_provenance";
 
