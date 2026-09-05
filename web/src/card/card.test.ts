@@ -1794,3 +1794,88 @@ describe("the fourth production state: filed by pool, and summed to the well", (
     expect((host.textContent ?? "").match(/cr_nm_wcproduction_pool_rollup_2/g)?.length).toBe(1);
   });
 });
+
+describe("a knowledge time the series cannot be read at", () => {
+  // MAJOR-2. The refusal is correct on the wire and the card's own control is the only path a
+  // reader has to it. What made it unreachable was upstream: the card short-circuits on
+  // POOL_GRAIN before it asks for a series, and the wire was sending that code for a well the
+  // mart does serve. With the wire's three states straight the card reaches the request, so
+  // these cases pin both halves — that it asks, and that it renders what it is refused with.
+  const refusal = {
+    type: "https://glasswell.rpx.sh/problems/as_of_not_supported",
+    title: "as_of is not supported on this series",
+    status: 422,
+    detail:
+      "as_of is not supported on this well series: cr_nm_wcproduction_pool_rollup_2 admits a" +
+      " sum glasswell performs in marts.well_pool_rollup, which holds one snapshot per key," +
+      " so an older date would be answered with today's sum. The pool filings it is summed" +
+      " from are at /v1/wells/3305310451/production/pools and answer as_of.",
+  };
+  const summedWell = {
+    ...wellEnvelope,
+    links: {
+      ...wellEnvelope.links,
+      pools: "/v1/wells/3305310451/production/pools?from=served",
+      pools_rule: "/v1/conformance/cr_nm_wcproduction_pool_rollup_2",
+    },
+    meta: {
+      ...wellEnvelope.meta,
+      warnings: [
+        {
+          code: "production_summed_over_pools",
+          detail: "The served well series is glasswell's sum of those filings.",
+          pointer: "/producing",
+          rule_id: "cr_nm_wcproduction_pool_rollup_2",
+        },
+      ],
+    },
+  };
+
+  let fetchSpy: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    window.history.replaceState(null, "", `/?well=${API10}&as_of=2026-09-02`);
+    fetchSpy = vi.fn(
+      stubFetch({
+        [`/v1/wells/${API10}/production`]: refusal,
+        [`/v1/wells/${API10}`]: summedWell,
+      }),
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+  });
+
+  it("asks for the series at the knowledge time, rather than short-circuiting above it", async () => {
+    await renderWellCard(host, API10, callbacks);
+
+    // The series itself, not the pools path underneath it: `/production/pools` also carries
+    // as_of, and matching it would pass on the very short-circuit this case exists to catch.
+    const asked = fetchSpy.mock.calls.map((call) => String(call[0]));
+    expect(
+      asked.some(
+        (url) =>
+          /\/production(\?|$)/.test(url.split("#")[0] ?? "") && url.includes("as_of=2026-09-02"),
+      ),
+    ).toBe(true);
+  });
+
+  it("renders the refusal where the chart would have been, rather than nothing", async () => {
+    await renderWellCard(host, API10, callbacks);
+
+    const panel = host.querySelector(".gw-error");
+    expect(panel).not.toBeNull();
+    expect(panel?.querySelector("h3")?.textContent).toContain("as_of is not supported");
+  });
+
+  it("says why, in the words the API served", async () => {
+    await renderWellCard(host, API10, callbacks);
+
+    expect(host.querySelector(".gw-error")?.textContent).toContain("holds one snapshot per key");
+  });
+
+  it("keeps the rest of the card, because only the series was refused", async () => {
+    await renderWellCard(host, API10, callbacks);
+
+    expect(host.querySelector(".gw-card")).not.toBeNull();
+    expect(host.querySelectorAll(".gw-section").length).toBeGreaterThan(0);
+  });
+});
