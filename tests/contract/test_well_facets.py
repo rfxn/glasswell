@@ -235,6 +235,27 @@ def test_a_search_matching_nothing_says_so_rather_than_serving_a_silent_empty_li
     assert "No " in data["caption"] or "0 " in data["caption"]
 
 
+def test_an_empty_search_is_no_search_rather_than_a_refusal(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """`?q=` reached `identity_selector_term` as "", which the selector grammar admits no value
+    for: the handle rendered `q_b64=` and the whole response was refused with
+    selector_ambiguous. No search and a search for nothing are the same request, which is what
+    the partition term one function below has always said."""
+    _seed_tx(seeded)
+    searched = client.get(
+        "/v1/wells/facets",
+        params={"state": "42", "by": "operator", "q": "", "explain": "true"},
+    )
+
+    assert searched.status_code == 200, searched.text
+    data = searched.json()["data"]
+    assert data["q"] is None
+    assert data["wells"]["value"] == _facets(client)["data"]["wells"]["value"]
+    for handle in [bucket["wells"]["d"] for bucket in data["buckets"]]:
+        assert client.get("/v1/explain", params={"h": handle}).status_code == 200, handle
+
+
 def test_a_state_the_spine_has_no_wells_for_is_refused_not_served_as_empty(
     client: TestClient, seeded: psycopg.Connection
 ) -> None:

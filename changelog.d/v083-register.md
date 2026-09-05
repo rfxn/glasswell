@@ -33,3 +33,10 @@
       reads `\n` as a newline, `\x41` as A and a stylesheet's `\24d4` as the code point it
       renders. The pass before it dropped the backslash and kept the letters, so an escaped
       spelling reached the wire unseen by the gate and by the reviewer both
+- [Fix] `/v1/wells/facets?q=` answers rather than refusing: an empty search is no search, so
+      the handler normalises it once and no selector term is built from an empty string. The
+      grammar admits no empty value, so the handle rendered `q_b64=` and the whole response
+      came back 422 selector_ambiguous
+- [New] Every `identity_selector_term` call site in the API is declared with the check that
+      keeps its value non-empty, so a new one cannot be added without stating why it cannot
+      render an unresolvable handle
