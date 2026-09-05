@@ -13,10 +13,10 @@
       that balances the CI shards
 - [New] docs/ci-gate.md: what each job refuses, when the tree-identity skip may fire, how the
       shards are kept honest, and what every red symptom means
-- [Change] 103 items that reach no database fixture move from the contract and integration tiers
+- [Change] 104 items that reach no database fixture move from the contract and integration tiers
          to `tests/unit/`, eight are deleted with the surviving cover named for each, and the
          `?explain=true` pools surface is merged into `test_explain_inline.py` as a parametrised
-         row; collected 5,736 -> 5,739
+         row; with the guards this work added, collected 5,736 -> 5,775
 - [Fix] tests/unit/test_access_log_redaction.py: the 13 assertions that hold the access-log
       filter to *under*-redacting nothing served -- the five live query strings, the eight served
       parameter names one by one, and `new_password=` / `owner_key=` / `x_csrf_token=` -- were
