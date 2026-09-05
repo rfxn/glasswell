@@ -25,6 +25,9 @@ POSTGIS_IMAGE = "postgis/postgis:16-3.4"
 TEMPLATE_DATABASE = "glasswell_template"
 READY_TIMEOUT_SECONDS = 90
 REQUIRE_DOCKER_ENV = "GLASSWELL_REQUIRE_DOCKER"
+# A server the workflow owns, shared by the shards' xdist workers, instead of one container per
+# worker. Set, the harness starts nothing and cleans up nothing but its own databases.
+SERVER_DSN_ENV = "GLASSWELL_TEST_SERVER_DSN"
 # DR-25/N-10: `make prune-test-volumes` sweeps on this label, so it must be on everything the
 # harness creates and on nothing else. An anonymous volume is indistinguishable from a real one.
 TEST_LABEL = "glasswell.test=1"
@@ -225,9 +228,27 @@ def _wait_until_ready(dsn: str) -> None:
     raise RuntimeError(f"PostGIS container never accepted connections: {last_error}")
 
 
+def worker_scoped(name: str) -> str:
+    """A fixed database name, made unique per xdist worker.
+
+    Session fixtures run once per worker, so `glasswell_template` is created four times over
+    on one server -- a collision, not a race the workers survive. A worker that owns its own
+    container is unaffected either way.
+    """
+    worker = os.environ.get("PYTEST_XDIST_WORKER")
+    return f"{name}_{worker}" if worker else name
+
+
 @pytest.fixture(scope="session")
 def postgres_server() -> Iterator[str]:
     """Session-scoped PostGIS container. Yields a DSN template with a {database} slot."""
+    provided = os.environ.get(SERVER_DSN_ENV)
+    if provided:
+        # The workflow starts and removes the server the shards share, because a worker's
+        # teardown is not guaranteed and a leaked container outlives the job that made it.
+        _wait_until_ready(provided.format(database="postgres"))
+        yield provided
+        return
     environment = docker_environment()
     if environment is None:
         # CI sets this: a green run that skipped 414 of 677 tests is worse than a red one.
@@ -297,6 +318,11 @@ def _remove_volume(environment: dict[str, str], volume: str) -> None:
 @pytest.fixture(scope="session")
 def session_resources(postgres_server: str) -> tuple[str, str]:
     """The container and volume this session owns, so a test can audit what it leaves behind."""
+    if os.environ.get(SERVER_DSN_ENV):
+        pytest.skip(
+            f"{SERVER_DSN_ENV} names the server, so this session owns no container;"
+            " the self-managed path runs as its own CI job"
+        )
     return _session_container, _session_volume
 
 
@@ -329,15 +355,17 @@ def drop_database(dsn_template: str, name: str) -> None:
 
 
 @pytest.fixture(scope="session")
-def migrated_template(postgres_server: str) -> str:
+def migrated_template(postgres_server: str) -> Iterator[str]:
     """Migrations and shared fixture rows run once; every test database is cloned from here."""
-    dsn = create_database(postgres_server, TEMPLATE_DATABASE)
+    name = worker_scoped(TEMPLATE_DATABASE)
+    dsn = create_database(postgres_server, name)
     with psycopg.connect(dsn) as connection:
         migrate(connection)
         connection.commit()
         _seed_fixture_rows(connection)
         connection.commit()
-    return postgres_server
+    yield postgres_server
+    drop_database(postgres_server, name)
 
 
 def _seed_fixture_rows(connection: psycopg.Connection) -> None:
@@ -360,7 +388,7 @@ def _seed_fixture_rows(connection: psycopg.Connection) -> None:
 def db(migrated_template: str) -> Iterator[psycopg.Connection]:
     """A migrated database of its own, per test."""
     name = f"gw_test_{uuid4().hex[:12]}"
-    dsn = create_database(migrated_template, name, template=TEMPLATE_DATABASE)
+    dsn = create_database(migrated_template, name, template=worker_scoped(TEMPLATE_DATABASE))
     connection = psycopg.connect(dsn)
     try:
         yield connection
