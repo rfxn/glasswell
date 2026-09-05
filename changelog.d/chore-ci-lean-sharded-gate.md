@@ -13,6 +13,12 @@
       that balances the CI shards
 - [New] docs/ci-gate.md: what each job refuses, when the tree-identity skip may fire, how the
       shards are kept honest, and what every red symptom means
-- [Change] 24 tests that reach no database fixture move from the contract and integration tiers
-         to `tests/unit/`, and `test_tiles.py`'s tile-allowlist assertion is deleted for the
-         identical one in `tests/unit/test_martin_config.py`
+- [Change] 103 items that reach no database fixture move from the contract and integration tiers
+         to `tests/unit/`, eight are deleted with the surviving cover named for each, and the
+         `?explain=true` pools surface is merged into `test_explain_inline.py` as a parametrised
+         row; collected 5,736 -> 5,739
+- [Fix] tests/unit/test_access_log_redaction.py: the 13 assertions that hold the access-log
+      filter to *under*-redacting nothing served -- the five live query strings, the eight served
+      parameter names one by one, and `new_password=` / `owner_key=` / `x_csrf_token=` -- were
+      overwritten rather than extended when the key-hygiene tests moved in; restored beside the
+      seven arrivals, both directions covered again (B-1)
