@@ -383,3 +383,54 @@ def test_two_windows_of_the_allocated_series_are_two_derivations(client: TestCli
         windowed.json()["data"]["_lineage"]["series.oil_bbl"]
         != whole.json()["data"]["_lineage"]["series.oil_bbl"]
     )
+
+
+def _allocated(client: TestClient, **params: str | list[str]) -> tuple[int, dict]:
+    response = client.get(f"/v1/wells/{TX_API10}/production", params=params)
+    return response.status_code, response.json()
+
+
+def test_asking_for_the_streams_the_allocated_series_already_serves_is_one_derivation(
+    client: TestClient,
+) -> None:
+    """The partition named the streams it was *asked* for, and the default asks for a water
+    stream this regulator publishes none of. So the whole series and `?stream=oil&stream=gas`
+    served the same two columns of the same figures under two derivation ids."""
+    whole_status, whole = _allocated(client)
+    named_status, named = _allocated(client, stream=["oil", "gas"])
+
+    assert whole_status == 200, whole
+    assert named_status == 200, named
+    assert named["data"]["streams"] == whole["data"]["streams"] == ["oil", "gas"]
+    assert named["data"]["series"] == whole["data"]["series"]
+    assert named["data"]["_lineage"] == whole["data"]["_lineage"]
+
+
+def test_two_orderings_of_one_allocated_stream_set_are_one_derivation(
+    client: TestClient,
+) -> None:
+    """The order a caller names the streams in changes nothing about what is computed."""
+    forward_status, forward = _allocated(client, stream=["oil", "gas"])
+    reverse_status, reverse = _allocated(client, stream=["gas", "oil"])
+
+    assert forward_status == 200, forward
+    assert reverse_status == 200, reverse
+    assert forward["data"]["series"] == reverse["data"]["series"]
+    assert forward["data"]["_lineage"] == reverse["data"]["_lineage"]
+
+
+def test_a_narrower_allocated_stream_set_is_a_different_derivation(
+    client: TestClient,
+) -> None:
+    """The converse, which is why the term is in the partition at all: fewer served columns is
+    fewer response outputs, and one id carrying both is what the store's guard refuses."""
+    whole_status, whole = _allocated(client)
+    oil_status, oil = _allocated(client, stream=["oil"])
+
+    assert whole_status == 200, whole
+    assert oil_status == 200, oil
+    assert oil["data"]["streams"] == ["oil"]
+    assert (
+        oil["data"]["_lineage"]["series.oil_bbl"]
+        != whole["data"]["_lineage"]["series.oil_bbl"]
+    )

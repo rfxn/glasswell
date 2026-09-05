@@ -888,7 +888,7 @@ def get_well_production(
                 "normalization": PER_LATERAL_FT,
                 "as_of": iso(resolved) or "latest",
                 "window": _window_term(months),
-                "streams": "+".join(data["streams"]) or "none",
+                "streams": _streams_term(data["streams"]),
             },
             input_derivations=sorted(
                 {row["derivation_id"] for row in observed} | set(divisor.derivations)
@@ -1204,7 +1204,7 @@ def _allocated_response(
         # determinism guard refuses it for the life of the store.
         partition={
             "api10": api10,
-            "streams": "+".join(sorted(requested)),
+            "streams": _streams_term(data["streams"]),
             "window": _window_term(months),
         },
         input_derivations=sorted({row["derivation_id"] for row in points}),
@@ -1603,6 +1603,16 @@ def _point_aggregation(point: dict[str, Any] | None) -> str | None:
 def _window_term(months: Sequence[date]) -> str:
     """The served span, for a response derivation's partition. Absent months are a span too."""
     return f"{month_label(months[0])}:{month_label(months[-1])}" if months else "none"
+
+
+def _streams_term(streams: Sequence[str]) -> str:
+    """The served stream set, for a response derivation's partition, in one order.
+
+    Sorted and read off what was served rather than what was asked, so two asks that carry the
+    same columns share one id whatever order they named them in and whichever of them the
+    jurisdiction publishes -- the same rule `_window_term` applies to the span.
+    """
+    return "+".join(sorted(streams)) or "none"
 
 
 def _aggregation_warning(

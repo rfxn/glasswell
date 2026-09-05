@@ -188,7 +188,7 @@ def test_the_pool_grain_arm_gates_the_pools_section_on_a_link(
 FIRST_WINDOW = {"from": "2026-01", "to": "2026-03"}
 
 
-def _normalised(client: TestClient, **params: str) -> tuple[int, dict]:
+def _normalised(client: TestClient, **params: str | list[str]) -> tuple[int, dict]:
     response = client.get(PATH, params={"normalization": "per_lateral_ft", **params})
     return response.status_code, response.json()
 
@@ -235,6 +235,38 @@ def test_two_stream_sets_of_one_normalised_series_are_two_derivations(
     assert all_status == 200, every
     assert one_status == 200, oil
     assert every["data"]["_lineage"]["series.oil_bbl"] != oil["data"]["_lineage"]["series.oil_bbl"]
+
+
+def test_two_orderings_of_one_normalised_stream_set_are_one_derivation(
+    client: TestClient,
+) -> None:
+    """The partition names the streams that were *served*, sorted, so the same figures have one
+    chain. `?stream=oil&stream=gas` and `?stream=gas&stream=oil` compute the same two columns
+    from the same rows; two handles over them is the naked-number failure R6 exists to prevent,
+    read from the other end.
+    """
+    forward_status, forward = _normalised(client, stream=["oil", "gas"])
+    reverse_status, reverse = _normalised(client, stream=["gas", "oil"])
+
+    assert forward_status == 200, forward
+    assert reverse_status == 200, reverse
+    assert forward["data"]["series"] == reverse["data"]["series"]
+    assert forward["data"]["_lineage"] == reverse["data"]["_lineage"]
+
+
+def test_naming_every_stream_the_default_already_serves_is_the_default_derivation(
+    client: TestClient,
+) -> None:
+    """Asked is not served: the default asks for oil, gas and water, and a caller who names
+    those three in any order is asking for the figures the default answers with."""
+    named_status, named = _normalised(client, stream=["water", "gas", "oil"])
+    default_status, default = _normalised(client)
+
+    assert named_status == 200, named
+    assert default_status == 200, default
+    assert sorted(named["data"]["streams"]) == sorted(default["data"]["streams"])
+    assert named["data"]["series"] == default["data"]["series"]
+    assert named["data"]["_lineage"] == default["data"]["_lineage"]
 
 
 def test_every_point_of_a_windowed_normalised_series_still_resolves(client: TestClient) -> None:
