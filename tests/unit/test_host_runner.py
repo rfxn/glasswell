@@ -65,6 +65,7 @@ for argument in "$@"; do
 done
 printf '%s\n' "$*" >> "$STUB_RUN_LOG"
 printf '%s\n' "$@" > "$STUB_JOURNAL_DIR/$unit.argv"
+[ -n "${STUB_LAUNCH_ONLY:-}" ] && exit 0
 if [ -n "${STUB_SNAPSHOT_DIR:-}" ] && [ -f "${STUB_STATUS_FILE:-}" ]; then
     cp "$STUB_STATUS_FILE" "$STUB_SNAPSHOT_DIR/$unit.json"
 fi
@@ -826,6 +827,20 @@ class TestDetach:
         launched = harness.launches()
         assert any("--unit=backgrounded-runner" in line for line in launched)
         assert not any("--detach" in line for line in launched)
+
+    def test_it_waits_for_the_status_file_before_handing_back_the_poll_command(
+        self, harness: Harness
+    ) -> None:
+        # A unit that starts and writes nothing: the poll command still comes back, and the
+        # operator is told there is nothing under it yet rather than reading a stale answer.
+        result = harness.run(
+            "--job", "silent", "--detach", "--", "load", "/bin/echo", "hi",
+            STUB_LAUNCH_ONLY="1",
+        )
+
+        assert result.returncode == 0
+        assert "--status silent" in result.stdout
+        assert "nothing has been written" in result.stderr
 
     def test_a_failed_runner_unit_is_cleared_before_the_next_launch(
         self, harness: Harness

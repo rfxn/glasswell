@@ -461,8 +461,19 @@ if (( detach )); then
         printf 'host-runner.sh: could not launch %s-runner\n' "$job" >&2
         exit "$launch_status"
     fi
+    # The next line of every runbook polls this file, so do not hand back the command to poll
+    # it until the job it launched has written one.
+    detach_ready=0
+    for (( attempt = 0; attempt < 25; attempt++ )); do
+        if [[ -f $status_file ]]; then detach_ready=1; break; fi
+        sleep 0.2
+    done
     printf 'job %s is running as %s-runner; %s steps; log %s\n' \
         "$job" "$job" "$steps_total" "$log_file"
+    if (( detach_ready == 0 )); then
+        printf 'host-runner.sh: nothing has been written to %s yet — check %s-runner\n' \
+            "$status_file" "$job" >&2
+    fi
     printf 'poll: %s --status %s\n' "$self_path" "$job"
     exit 0
 fi
