@@ -1,5 +1,6 @@
 import { execFileSync, execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { Plugin } from "vite";
@@ -48,14 +49,22 @@ function stamp(): { version: string; hash: string; date: string } {
  * for the same reason: a build host with no python3 must fail loudly, not silently omit a page
  * the rail links to on every screen.
  */
-function changelogPage(): Plugin {
+export function changelogPage(): Plugin {
+  // A build into another directory -- the bundle-budget walk's -- must not write into the
+  // tree that is being served, and must get the page its own rail links to.
+  let outDir = "";
   return {
     name: "gw-changelog-page",
     apply: "build",
+    configResolved(resolved) {
+      outDir = resolve(resolved.root, resolved.build.outDir);
+    },
     closeBundle() {
+      // Same reason the missing python3 throws: a page written to a guessed directory is a
+      // rail link to a 404 that no build notices.
+      if (!outDir) throw new Error("gw-changelog-page: the build resolved no outDir");
       const script = fileURLToPath(new URL("scripts/render-changelog.py", REPO));
-      const out = fileURLToPath(new URL("web/dist/changelog", REPO));
-      execFileSync("python3", [script, "--out", out], { stdio: "inherit" });
+      execFileSync("python3", [script, "--out", join(outDir, "changelog")], { stdio: "inherit" });
     },
   };
 }
