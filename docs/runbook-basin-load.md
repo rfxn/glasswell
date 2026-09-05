@@ -136,18 +136,15 @@ empty, and `--layer all` walks them in that order. Promoting plays first raises
 `BasinLayerMissing` rather than writing false nulls.
 
 `/etc/glasswell/code-version.env` is written by every deploy and holds
-`GLASSWELL_CODE_VERSION` and `GLASSWELL_LOCKFILE_SHA256`; read them out and pass them as
-`--setenv`, which is the form `scripts/deploy.sh` documents for a hand-run mart refresh.
+`GLASSWELL_CODE_VERSION` and `GLASSWELL_LOCKFILE_SHA256`. The runner puts that file, the socket
+DSN and the raw root into every step's environment, so neither is passed by hand here.
 
 ```bash
-ssh root@192.168.2.111 'set -a; . /etc/glasswell/code-version.env; set +a; \
-  systemd-run --uid=glasswell --pipe --wait \
-    --setenv=GLASSWELL_RAW_ROOT=/data/raw \
-    --setenv=GLASSWELL_CODE_VERSION="$GLASSWELL_CODE_VERSION" \
-    --setenv=GLASSWELL_LOCKFILE_SHA256="$GLASSWELL_LOCKFILE_SHA256" \
-    --setenv=GLASSWELL_DSN='postgresql:///glasswell?host=/var/run/postgresql' \
-    /opt/glasswell/venv/bin/glasswell-eia-boundaries \
-      --layer all'
+ssh root@192.168.2.111 '/usr/local/sbin/host-runner.sh --job basin-boundaries --detach -- \
+  boundaries --timeout 3600 /opt/glasswell/venv/bin/glasswell-eia-boundaries --layer all'
+
+# Poll the status file. The ssh exit says the launch worked, not that the job did.
+ssh root@192.168.2.111 '/usr/local/sbin/host-runner.sh --status basin-boundaries'
 ```
 
 Without the two code-identity variables the run still succeeds, but every derivation it writes
@@ -196,12 +193,11 @@ partial load.
 ## Step 2 — refresh the tile mart, as `postgres`
 
 ```bash
-ssh root@192.168.2.111 'set -a; . /etc/glasswell/code-version.env; set +a; \
-  systemd-run --uid=postgres --pipe --wait \
-    --setenv=GLASSWELL_CODE_VERSION="$GLASSWELL_CODE_VERSION" \
-    --setenv=GLASSWELL_LOCKFILE_SHA256="$GLASSWELL_LOCKFILE_SHA256" \
-    --setenv=GLASSWELL_DSN='postgresql:///glasswell?host=/var/run/postgresql' \
+ssh root@192.168.2.111 '/usr/local/sbin/host-runner.sh --job basin-mart --detach -- \
+  mart --user postgres --group postgres --timeout 1800 --memory 2G \
     /opt/glasswell/venv/bin/glasswell-basin-boundaries'
+
+ssh root@192.168.2.111 '/usr/local/sbin/host-runner.sh --status basin-mart'
 ```
 
 Module form: `/opt/glasswell/venv/bin/python -m glasswell.marts.basin_boundaries`

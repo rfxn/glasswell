@@ -377,18 +377,13 @@ register.
 `--stage-only` reads the raw zone.
 
 ```bash
-sudo systemd-run --unit=t3-nm-t2-stage --collect \
-  --property=User=glasswell --property=Group=glasswell \
-  --property=Environment=GLASSWELL_DSN=postgresql:///glasswell?host=/var/run/postgresql \
-  --property=Environment=GLASSWELL_RAW_ROOT=/data/raw \
-  --property=TimeoutStartSec=3600 --property=MemoryMax=6G \
-  --property=EnvironmentFile=-/etc/glasswell/code-version.env \
-  --setenv=GLASSWELL_STAGING_ROOT=/data/staging \
-  /opt/glasswell/venv/bin/python -m glasswell.ingest.nm_ocd \
-    --stage-only --tables wellhistory
+sudo /usr/local/sbin/host-runner.sh --job nm-t2-stage --detach \
+  --setenv GLASSWELL_STAGING_ROOT=/data/staging -- \
+  stage --timeout 3600 --memory 6G \
+    /opt/glasswell/venv/bin/python -m glasswell.ingest.nm_ocd --stage-only --tables wellhistory
 
-journalctl -u t3-nm-t2-stage -f
-systemctl show t3-nm-t2-stage -p Result -p ExecMainStatus   # after it exits
+# Poll the status file; it holds the unit's Result and ExecMainStatus as well as the exit.
+sudo /usr/local/sbin/host-runner.sh --status nm-t2-stage
 ```
 
 **`--tables wellhistory` is the Tier 2 boundary and it is load-bearing.** Tier 1's Step 2 says
@@ -435,15 +430,10 @@ Truncate nothing under `canonical.` or `lineage.`.
 stop and investigate rather than waiting.
 
 ```bash
-sudo systemd-run --unit=t3-nm-t2-headers --collect \
-  --property=User=glasswell --property=Group=glasswell \
-  --property=Environment=GLASSWELL_DSN=postgresql:///glasswell?host=/var/run/postgresql \
-  --property=TimeoutStartSec=3600 --property=MemoryMax=6G \
-  --property=EnvironmentFile=-/etc/glasswell/code-version.env \
-  /opt/glasswell/venv/bin/glasswell-nm-wells
+sudo /usr/local/sbin/host-runner.sh --job nm-t2-headers --detach -- \
+  headers --timeout 3600 --memory 6G /opt/glasswell/venv/bin/glasswell-nm-wells
 
-journalctl -u t3-nm-t2-headers -f
-systemctl show t3-nm-t2-headers -p Result -p ExecMainStatus   # after it exits
+sudo /usr/local/sbin/host-runner.sh --status nm-t2-headers
 ```
 
 On success the step prints one JSON object. Expected, exactly:
@@ -550,19 +540,15 @@ replaces `/var/lib/glasswell/status.json` and the next tick after Step 4 correct
 still avoidable, and avoiding it costs nothing.
 
 ```bash
-sudo systemd-run --unit=t3-nm-t2-tiles --collect \
-  --property=User=glasswell --property=Group=glasswell \
-  --property=Environment=GLASSWELL_DSN=postgresql:///glasswell?host=/var/run/postgresql \
-  --property=TimeoutStartSec=1800 --property=MemoryMax=4G \
-  --property=EnvironmentFile=-/etc/glasswell/code-version.env \
-  /opt/glasswell/venv/bin/glasswell-nm-tiles
+sudo /usr/local/sbin/host-runner.sh --job nm-t2-tiles --detach -- \
+  tiles --timeout 1800 --memory 4G /opt/glasswell/venv/bin/glasswell-nm-tiles
 
-journalctl -u t3-nm-t2-tiles -f
+sudo /usr/local/sbin/host-runner.sh --status nm-t2-tiles
 ```
 
 If precondition 5 reported a `function_owner` other than the running user, or this exits with
-`must be owner of function …`, run the same command with `--uid=postgres` in place of the two
-`User=`/`Group=` properties. `postgres` is a superuser and can replace any of them. Running as
+`must be owner of function …`, run the same command with `--user postgres --group postgres` on
+the step. `postgres` is a superuser and can replace any of them. Running as
 `postgres` changes the derivation's recorded environment, not its output — and the ownership
 drift is a deploy-side defect to route, not a thing to work around every month.
 

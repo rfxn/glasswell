@@ -80,12 +80,33 @@ sudo -u postgres psql -d glasswell -Atc \
 
 `co-tile-rows.before.txt` reads `0`. The wells file carries no `05` line.
 
-## Step 1 — stage the three GIS archives
+The ad-hoc runner of 2026-09-05 wrote a `co-load` verdict under this same job name, and a job
+that already finished is refused. `install.sh` archives it — with the four other ad-hoc runners
+and their status files — into `/var/lib/glasswell/runs/archive/` as the deploy places the
+tracked runner, so the launch below runs as written. If it refuses instead, the deploy that
+retires them has not reached this host yet; read `runs/archive/`, do not pass `--force`.
+
+## Steps 1–5 — the load, as one job
+
+Six units, one after another, stopping at the first that does not succeed. The five sections
+below are that chain in order: each says what its step must report, read from the status file's
+`steps[].summary` once it lands, or from `/var/log/glasswell/co-load.log` while it runs.
 
 ```bash
-sudo -u glasswell GLASSWELL_DSN="$GLASSWELL_DSN" GLASSWELL_RAW_ROOT=/data/raw \
-  /opt/glasswell/venv/bin/python -m glasswell.ingest.co_ecmc_gis --layer all
+sudo /usr/local/sbin/host-runner.sh --job co-load --detach --timeout 3600 --memory 6G -- \
+  gis-stage        /opt/glasswell/venv/bin/python -m glasswell.ingest.co_ecmc_gis --layer all \
+  -- production-stage /opt/glasswell/venv/bin/python -m glasswell.ingest.co_ecmc_production --file rolling \
+  -- promote-headers  /opt/glasswell/venv/bin/glasswell-co-wells \
+  -- promote-production /opt/glasswell/venv/bin/glasswell-co-production \
+  -- marts            /opt/glasswell/venv/bin/glasswell-tiles --jurisdiction CO \
+  -- marts-counts --memory 2G --timeout 1800 \
+    /opt/glasswell/venv/bin/python -m glasswell.marts.counts
+
+# Poll the status file. `result` is `complete`, or `stopped` naming the step that stopped it.
+sudo /usr/local/sbin/host-runner.sh --status co-load
 ```
+
+### Step 1 — stage the three GIS archives
 
 One pass, three manifests, because ECMC republishes all three within seconds of each other.
 Staging is the terminus: the module can name no `canonical` relation, and a test asserts it.
@@ -100,12 +121,7 @@ A refusal naming an EPSG code is the datum guard, not a transient: `cr_co_wells_
 the code the archives ship, and a re-projected archive stops the load rather than being
 re-plotted. Route it; do not re-fetch to repair it.
 
-## Step 2 — stage the rolling production file
-
-```bash
-sudo -u glasswell GLASSWELL_DSN="$GLASSWELL_DSN" GLASSWELL_RAW_ROOT=/data/raw \
-  /opt/glasswell/venv/bin/python -m glasswell.ingest.co_ecmc_production --file rolling
-```
+### Step 2 — stage the rolling production file
 
 `--file all` exists and would pull twenty-seven archives. **Do not**, on this runbook. The
 backfill is its own dispatch with its own baseline, and one of those files spells three columns
@@ -119,34 +135,19 @@ A refusal naming a column is `cr_co_production_schema_drift_1` doing its job: EC
 column this parse does not know, and the answer is to register the spelling, never to widen the
 parse in place.
 
-## Step 3 — promote the headers
-
-```bash
-sudo -u glasswell GLASSWELL_DSN="$GLASSWELL_DSN" /opt/glasswell/venv/bin/glasswell-co-wells
-```
+### Step 3 — promote the headers
 
 Expect `wells_appended: 124392`, and **exactly 18** quarantined `duplicate_row`. Any other
 duplicate count means the archive changed shape; that is a finding and the load stops on it.
 
-## Step 4 — promote the production
-
-```bash
-sudo -u glasswell GLASSWELL_DSN="$GLASSWELL_DSN" /opt/glasswell/venv/bin/glasswell-co-production
-```
+### Step 4 — promote the production
 
 Two shapes land, and the second is what makes a well's chart render at all: one row per
 completion, plus one row per well-month and stream carrying their exact sum, disclosed as
 `aggregation = 'sum_over_pools'`. A month with one completion promotes as the well and carries
 no aggregation, because relabelling it would signal a restatement that did not happen.
 
-## Step 5 — the mart and the counts
-
-```bash
-sudo -u glasswell GLASSWELL_DSN="$GLASSWELL_DSN" \
-  /opt/glasswell/venv/bin/glasswell-tiles --jurisdiction CO
-sudo -u glasswell GLASSWELL_DSN="$GLASSWELL_DSN" \
-  /opt/glasswell/venv/bin/python -m glasswell.marts.counts
-```
+### Step 5 — the mart and the counts
 
 One engine, one entry point. There is no `glasswell-co-tiles` and there is no
 `marts/co_wells.py`: the jurisdiction is an argument and the profile it names is a row.

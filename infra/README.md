@@ -535,11 +535,19 @@ sudo -u postgres /opt/glasswell/venv/bin/glasswell-migrate \
 #    check. Create-or-replace on the ten function bodies; it rewrites no row, which is
 #    what separates it from `python -m glasswell.marts.nd_wells` (that mints a mart.refresh
 #    derivation for what may be a code-only change). martin publishes these functions, so a
-#    stale body is a stale tile source.
-systemd-run --uid=glasswell --pipe --wait --quiet /opt/glasswell/venv/bin/python \
-    -c 'import psycopg, glasswell.marts.tiles as t
+#    stale body is a stale tile source. On the runner like every other host step, seconds-long
+#    or not: read the output from /var/log/glasswell/tile-functions.log and the layer names
+#    from the status file's summary. --detach because a dropped session must not take the
+#    driver that writes the verdict with it; --force because the job name is the same every
+#    deploy and the record that matters is the ship's own, deploy-<tag>+<commit>.json.
+/usr/local/sbin/host-runner.sh --job tile-functions --detach --force --timeout 600 -- \
+    install /opt/glasswell/venv/bin/python \
+    -c 'import json, psycopg, glasswell.marts.tiles as t
 c = psycopg.connect("postgresql:///glasswell?host=/var/run/postgresql")
-print(t.install_tile_functions(c)); c.commit()'
+names = t.install_tile_functions(c); c.commit()
+print(json.dumps({"tile_functions": list(names)}))'
+# Poll the status file. `result` is `complete`, or `stopped` naming what stopped it.
+/usr/local/sbin/host-runner.sh --status tile-functions
 systemctl restart glasswell-api && systemctl restart martin
 systemctl start glasswell-status.timer     # migrations are complete; arm the schedule now
 systemctl start glasswell-lineage-retention.timer

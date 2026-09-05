@@ -24,6 +24,8 @@ VENV_PY=/opt/glasswell/venv/bin/python
 UNIT_DIR=/etc/systemd/system
 SBIN_DIR=/usr/local/sbin
 STATUS_SNAPSHOT=/var/lib/glasswell/status.json
+RUNS_DIR=/var/lib/glasswell/runs
+RUN_LOG_DIR=/var/log/glasswell
 RESTORE_RESULT=/var/lib/glasswell-restore-drill/result.json
 OFFSITE_RECEIPT=/var/lib/glasswell-backup/offsite.json
 RECOVERY_RESULT=/var/lib/glasswell-recovery-drill/result.json
@@ -94,6 +96,17 @@ last_run_state() {
 }
 
 listening_on() { ss -ltn | grep -q "$1"; }
+
+# `stat -c %a` prints the mode without its leading zero, so 0750 reads as 750 below. One string
+# carries mode and ownership together because a widened mode and a wrong owner are the same
+# failure to the job that has to write there.
+directory_state() {
+    if [[ ! -d $1 ]]; then
+        printf 'missing\n'
+        return
+    fi
+    printf '%s %s\n' "$(stat -c '%a' "$1")" "$(stat -c '%U:%G' "$1")"
+}
 
 # The tunnel listener exists only where a tunnel is configured, so its *existence* is not a
 # safety property and must not be asserted as one: unconditional, this reported "8080 is bound
@@ -376,6 +389,17 @@ if [[ -e $RECOVERY_RESULT ]]; then
 else
     ok "recovery drill is mechanised but has NEVER been executed (no receipt at $RECOVERY_RESULT)"
 fi
+
+# Long host work runs as a chain of transient units under this script and is polled through the
+# status file it writes. A missing directory is not a degraded job, it is a job whose progress
+# nobody can read, so both are asserted with the modes install.sh places.
+printf 'host runner\n'
+assert_true "the host runner is installed" "missing at $SBIN_DIR/host-runner.sh" \
+    test -x "$SBIN_DIR/host-runner.sh"
+assert_true "the host runner equals the tree" "drifted from $INFRA_DIR/bin/host-runner.sh" \
+    cmp -s "$INFRA_DIR/bin/host-runner.sh" "$SBIN_DIR/host-runner.sh"
+assert "the run status directory" "750 root:glasswell" "$(directory_state "$RUNS_DIR")"
+assert "the run log directory" "755 glasswell:glasswell" "$(directory_state "$RUN_LOG_DIR")"
 
 # The roster is the tree's, not a list here: a glasswell-* unit added to infra/systemd but not
 # to install.sh's placement loop is never installed, and a timer that was never installed is a

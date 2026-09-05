@@ -53,6 +53,19 @@ under an earlier knowledge cut.
 glasswell-scheduler --run <job_id> [--force] [--wait-for-lock <seconds>]
 ```
 
+A hand-run job is a mart refresh or an ingest, not a keystroke, so it runs as a job on the host
+and is read from its status file. The scheduler's own control connection is root's, which is why
+the step does not drop to `glasswell`:
+
+```bash
+sudo /usr/local/sbin/host-runner.sh --job scheduler-ingest-nd-gis --detach -- \
+  run --user root --group root --timeout 7200 \
+    /opt/glasswell/venv/bin/glasswell-scheduler --run ingest_nd_gis
+
+# Poll the status file. The job the scheduler launches is a unit of its own inside this one.
+sudo /usr/local/sbin/host-runner.sh --status scheduler-ingest-nd-gis
+```
+
 `--run` is the manual path and ignores `launch_mode` entirely. It takes a per-job advisory
 lock first; if the lock is held it **refuses and exits non-zero** rather than skipping
 quietly, because an exit-0 skip is what lets a release believe it refreshed a mart it did not.

@@ -92,40 +92,48 @@ grep GLASSWELL_RAW_ROOT /etc/glasswell/app.env      # expect /data/raw
 fetch.**
 
 ```bash
-sudo systemd-run --unit=t1-tx-pdq-stage --wait \
-  --property=User=glasswell --property=Group=glasswell \
-  --property=Environment=GLASSWELL_DSN=postgresql:///glasswell?host=/var/run/postgresql \
-  --property=Environment=GLASSWELL_RAW_ROOT=/data/raw \
-  --property=EnvironmentFile=-/etc/glasswell/code-version.env \
-  --property=TimeoutStartSec=600 --property=RuntimeMaxSec=21600 \
-  --property=MemoryMax=6G \
-  /opt/glasswell/venv/bin/python -m glasswell.ingest.tx_pdq \
-    --stage-only --pgdata /var/lib/postgresql
+sudo /usr/local/sbin/host-runner.sh --job tx-stage --detach -- \
+  stage --timeout 21600 --memory 6G \
+    /opt/glasswell/venv/bin/python -m glasswell.ingest.tx_pdq \
+      --stage-only --pgdata /var/lib/postgresql
 
-# --wait returns the real exit status to this shell. If the SSH session drops, the unit keeps
-# running: re-attach with `journalctl -u t1-tx-pdq-stage -f`.
-journalctl -u t1-tx-pdq-stage --no-pager -o cat | tail -n 20
-systemctl reset-failed t1-tx-pdq-stage    # only after reading it; this is what unloads the unit
+# The job is a transient unit on the host, so the ssh session is free to drop. Poll the status
+# file rather than waiting on this shell; `journalctl -u tx-stage-1-stage -f` is the live output.
+sudo /usr/local/sbin/host-runner.sh --status tx-stage
 ```
 
-**Three properties, and what each of them bounds.**
+`/var/lib/glasswell/runs/tx-stage.json` carries the step, its unit, its exit, the whole summary
+line the stage printed and a stamp per transition; `/var/log/glasswell/tx-stage.log` carries the
+journal. `result` is `complete` or `stopped`, and `stopped` names the step it stopped at.
 
-- `--wait`, not `--collect`. `--collect` unloads the unit the moment it exits, and
-  `systemctl show <unit> -p Result -p ExecMainStatus` on an unloaded unit answers
+**A step is done when it says so, not when it exits 0.** Every ingest and mart entry point
+prints one JSON document when it commits, and the runner requires that line before it calls a
+step done — `steps[].judged_by` says `summary` where it did and `exit` where a step was
+declared to be judged on its status alone. Measured 2026-09-05 20:00Z: a `systemctl stop` of a
+running promotion answered `Result=success` and exit 0, and the ad-hoc runner ran the next step
+over a promotion that had not happened.
+
+**Three properties the runner sets, and what each of them bounds.**
+
+- `--wait` inside the runner, never `--collect`. `--collect` unloads the unit the moment it
+  exits, and `systemctl show <unit> -p Result -p ExecMainStatus` on an unloaded unit answers
   `Result=success ExecMainStatus=0` — measured on the **failed** unit at 2026-09-04 19:42:51Z,
   with `LoadState=not-found`, and documented as exactly this trap in
   `scheduler/runner.py:35-38`. A step whose success check cannot see a failure is not a check.
-  With `--wait` the shell gets the status and a failed unit stays loaded for `systemctl status`.
+  The runner reads `Result` and `ExecMainStatus` while the unit is still loaded, records both in
+  the status file, and leaves a failed unit loaded for `systemctl status`.
 - `RuntimeMaxSec` is the runtime budget. `TimeoutStartSec` is **not**: on a `Type=simple`
   transient unit the service is "started" as soon as the process is forked, so the start
   timeout has nothing left to bound. Measured on a workstation 2026-09-04 20:40Z —
   `systemd-run --wait -p TimeoutStartSec=1 sleep 4` exited 0 after four seconds, and the same
-  command with `-p RuntimeMaxSec=1` was killed after one.
+  command with `-p RuntimeMaxSec=1` was killed after one. The runner's `--timeout` sets both
+  and `RuntimeMaxSec` is the one that bounds a step already running.
 - `GLASSWELL_RAW_ROOT` is now mandatory: `lineage/fetch.py` refuses with `RawRootUnset` rather
   than falling back to a relative `data/raw`. It used to resolve against the unit's working
-  directory, which under `systemd-run` is `/` — so this step wrote to `/data/raw` by accident
+  directory, which under a transient unit is `/` — so this step wrote to `/data/raw` by accident
   rather than by declaration, and the same command run by hand from a home directory would
-  have written the raw zone there instead.
+  have written the raw zone there instead. The runner puts it, the socket DSN and
+  `/etc/glasswell/code-version.env` in every step's environment, so no step below repeats them.
 
 `--stage-only` stages every member and promotes no lease row, so the expensive, irreversible
 half is a separate decision from the unrepeatable one. What lands: one manifest with the
@@ -263,18 +271,11 @@ takes an equal share every month to the present while the same card serves
 `status_canonical = plugged`.
 
 ```bash
-sudo systemd-run --unit=t2-tx-plug-dates --wait \
-  --property=User=glasswell --property=Group=glasswell \
-  --property=Environment=GLASSWELL_DSN=postgresql:///glasswell?host=/var/run/postgresql \
-  --property=Environment=GLASSWELL_RAW_ROOT=/data/raw \
-  --property=EnvironmentFile=-/etc/glasswell/code-version.env \
-  --property=TimeoutStartSec=600 --property=RuntimeMaxSec=3600 \
-  --property=MemoryMax=6G \
-  /opt/glasswell/venv/bin/python -m glasswell.ingest.tx_wellbore \
-    --repromote-plug-dates
+sudo /usr/local/sbin/host-runner.sh --job tx-plug-dates --detach -- \
+  plug-dates --timeout 3600 \
+    /opt/glasswell/venv/bin/python -m glasswell.ingest.tx_wellbore --repromote-plug-dates
 
-journalctl -u t2-tx-plug-dates --no-pager -o cat | tail -n 10
-systemctl reset-failed t2-tx-plug-dates
+sudo /usr/local/sbin/host-runner.sh --status tx-plug-dates
 ```
 
 It reads `staging.tx_wellbore_ewa` and never re-fetches the 1.3 M-record export. It appends a
@@ -286,40 +287,92 @@ a track about production is a thing to be told about rather than to discover.
 
 ---
 
-## Step 3 — promote the lease volumes, one calendar year at a time
+## Step 3 — promote the lease volumes, in batches sized by rows
 
 **Production write, irreversible. Runtime: 30–90 minutes.**
 
-```bash
-sudo systemd-run --unit=t3-tx-promote-1993 --wait \
-  --property=User=glasswell --property=Group=glasswell \
-  --property=Environment=GLASSWELL_DSN=postgresql:///glasswell?host=/var/run/postgresql \
-  --property=Environment=GLASSWELL_RAW_ROOT=/data/raw \
-  --property=EnvironmentFile=-/etc/glasswell/code-version.env \
-  --property=TimeoutStartSec=600 --property=RuntimeMaxSec=7200 \
-  --property=MemoryMax=6G \
-  /opt/glasswell/venv/bin/python -m glasswell.ingest.tx_pdq \
-    --pgdata /var/lib/postgresql --year 1993 --year 1994
+One job, one step per batch, and the chain stops at the first batch that does not succeed:
 
-journalctl -u t3-tx-promote-1993 --no-pager -o cat | tail -n 10
-systemctl reset-failed t3-tx-promote-1993
+```bash
+sudo /usr/local/sbin/host-runner.sh --job tx-promote --detach -- \
+  y1993 --timeout 7200 /opt/glasswell/venv/bin/python -m glasswell.ingest.tx_pdq \
+    --pgdata /var/lib/postgresql --year 1993 --year 1994 \
+  -- y1995 --timeout 7200 /opt/glasswell/venv/bin/python -m glasswell.ingest.tx_pdq \
+    --pgdata /var/lib/postgresql --year 1995 --year 1996 --year 1997 --year 1998
+
+# Poll the status file. `steps[]` carries every batch's exit, MemoryPeak and summary line.
+sudo /usr/local/sbin/host-runner.sh --status tx-promote
 ```
 
 A transient unit rather than `sudo -u glasswell`, for the same reason Step 1 is one: the
 code-version file has to be in the environment or `ingest/base.py:37-44` falls back to
 `pkg:<version>` and every derivation this step writes is stamped `pkg:0.80` instead of
 `v0.80+<commit>` — a build identity that names a package version rather than the tree that
-produced it. Give each year-batch its own unit name; `systemctl reset-failed` after reading it.
+produced it. The runner names each batch's unit `tx-promote-<n>-<step>` and reads its verdict
+before moving on.
 
 The `--year` flag is repeatable and the promotion asserts the PGDATA gate before each year, so
 a stop lands on a year boundary with a recorded high-water year rather than in the middle of
 one. Omitting `--year` promotes every year the staged member covers, which is the normal
 monthly run once the history is in.
 
+### Batch size is set by expected rows, not by a count of years
+
+**Measured 2026-09-05.** The six-year batch 2011–2016 was OOM-killed at the unit's
+`MemoryMax=6G`: 6.0 G peak with 3.4 G of swap in use. The transaction rolled back cleanly and
+nothing half-promoted survived it. The batches that had landed under the same ceiling were
+**5.23 M**, **5.72 M** and **6.72 M** rows. The first resume ran 2011–13, 2014–16, 2017–19,
+2020–22, 2023–24 and 2025–26, and **2011–2013 reached the ceiling too** — so from 2011 on it is
+one calendar year per unit. Peak memory is not a clean function of the row count — the shape of
+the year matters too — so the budget sits below the largest batch that landed rather than at
+it, and the recent years get a unit each.
+
+So the rule is a row budget: **keep a batch under about 5 M rows at `MemoryMax=6G`**, and let
+the year count fall out of that. Recent years carry far more lease-months than 1993 does, so
+six years early in the history and two years late in it are the same batch. Size the next batch
+from the row count the last one reported, not from a fixed span.
+
+**Do not raise the ceiling.** This host has about 11 GB of RAM and PostgreSQL is sized against
+its share of it; a unit allowed past 6 G takes the database's memory rather than finding more.
+Smaller batches are the lever, and they cost nothing but wall clock.
+
+### An OOM-kill is a resume; a data refusal is a stop
+
+Read the status file, not the tail of the log. The two are different facts and the file names
+which one happened:
+
+```bash
+sudo /usr/local/sbin/host-runner.sh --status tx-promote \
+  | jq '{result, step, last: (.steps[-1] | {systemd_result, summary})}'
+```
+
+- `systemd_result` is `oom-kill`, or the summary carries `Killed`: the batch was too large for
+  the ceiling and nothing it had promoted survived the rollback. **Resume**, with the remaining
+  years in smaller batches. The resume keeps the job name, the log and the status file, and its
+  steps are numbered after the ones already recorded, so the killed batch keeps its own record:
+
+  ```bash
+  sudo /usr/local/sbin/host-runner.sh --job tx-promote --resume --detach -- \
+    y2011 --timeout 7200 /opt/glasswell/venv/bin/python -m glasswell.ingest.tx_pdq \
+      --pgdata /var/lib/postgresql --year 2011 --year 2012 --year 2013 \
+    -- y2014 --timeout 7200 /opt/glasswell/venv/bin/python -m glasswell.ingest.tx_pdq \
+      --pgdata /var/lib/postgresql --year 2014 --year 2015 --year 2016
+  ```
+
+- The summary names a rule id — `cr_tx_pdq_format_*`, a datum rule, the PGDATA headroom
+  refusal: **stop.** The batch size is not the problem and re-running it with fewer years
+  changes nothing. Route it; Step 1's refusal section is the shape of the answer.
+
+- `exit` is 0, `systemd_result` is `success` and `judged_by` is `summary`: the batch was
+  **stopped or killed before it finished**, whatever the status says — it never printed the
+  line it prints when it commits. Nothing was promoted; treat it exactly as an OOM-kill and
+  resume from that year.
+
 Relation growth is calibrated at roughly 0.68 GB per million canonical rows, and
 `max_wal_size = 4GB` peaks at about double during a promotion. Rows are
 `in_scope_lease_months × streams_filed`; the load reports the actual count and it is that
-number, not the estimate, that goes in `STATUS.md`.
+number, not the estimate, that goes in `STATUS.md` — and it is the number that sizes the next
+batch.
 
 ---
 
@@ -327,24 +380,61 @@ number, not the estimate, that goes in `STATUS.md`.
 
 **Production write, rebuilt rather than appended. Runtime: 20–60 minutes.**
 
+Arm it behind Step 3 rather than watching for Step 3 to end. Launch this any time after Step 3
+has started — it needs `tx-promote`'s status file to exist — and the runner follows that file,
+never a unit's `Result`, which answers `success` for a transient unit however it ended.
+
 ```bash
-for mart in tx_allocation allocation_backtest cumulatives; do
-  sudo systemd-run --unit="t4-tx-$mart" --wait \
-    --property=User=glasswell --property=Group=glasswell \
-    --property=Environment=GLASSWELL_DSN=postgresql:///glasswell?host=/var/run/postgresql \
-    --property=EnvironmentFile=-/etc/glasswell/code-version.env \
-    --property=TimeoutStartSec=600 --property=RuntimeMaxSec=3600 \
-    --property=MemoryMax=2G \
-    "/opt/glasswell/venv/bin/python" -m "glasswell.marts.$mart" || break
-  journalctl -u "t4-tx-$mart" --no-pager -o cat | tail -n 5
-  systemctl reset-failed "t4-tx-$mart"
-done
+sudo /usr/local/sbin/host-runner.sh --job tx-marts --after-job tx-promote \
+  --after-timeout 28800 --detach --memory 2G --timeout 3600 -- \
+  allocation   /opt/glasswell/venv/bin/python -m glasswell.marts.tx_allocation \
+  -- backtest  /opt/glasswell/venv/bin/python -m glasswell.marts.allocation_backtest \
+  -- cumulatives /opt/glasswell/venv/bin/python -m glasswell.marts.cumulatives
+
+# Poll the status file. `waiting` names the job it is behind and the deadline it waits to;
+# a stopped chain names the mart that did not rebuild.
+sudo /usr/local/sbin/host-runner.sh --status tx-marts
 ```
 
-`|| break` because the three are ordered: the cumulative refresh reads the allocated mart, so
-running it after a failed allocation would publish a total over a mart that did not rebuild.
-The units carry the code-version file for the same reason Step 3's does — a mart derivation
-stamped `pkg:0.80` cannot be traced to the tree that computed it.
+The job is `tx-marts` and not `tx-step45`, which is what the ad-hoc runner of 2026-09-05 called
+this hand-off. That runner has written a status file under its own name, and the deploy defers
+retiring it for exactly as long as it is still going — so a tracked job launched under that name
+would be refused for at least a release. A tracked runbook job never reuses a name an ad-hoc
+runner has written a status under.
+
+**A Step 3 that stopped stops this too, and that is the point.** The follower refuses to start
+behind a job whose status says `stopped` — an OOM-killed batch is a promotion that did not
+happen, and marts rebuilt over it would publish totals for rows that are not there. It records
+`stopped` naming `tx-promote`, which is the record of why it did not run.
+
+That record is also what the relaunch has to get past: a job that already stopped is refused a
+second launch. **Resume it, do not force it** — same job name, same status file, and the marts
+numbered as its first steps, because the refusal ran none of them:
+
+```bash
+sudo /usr/local/sbin/host-runner.sh --job tx-marts --resume --after-job tx-promote \
+  --after-timeout 28800 --detach --memory 2G --timeout 3600 -- \
+  allocation   /opt/glasswell/venv/bin/python -m glasswell.marts.tx_allocation \
+  -- backtest  /opt/glasswell/venv/bin/python -m glasswell.marts.allocation_backtest \
+  -- cumulatives /opt/glasswell/venv/bin/python -m glasswell.marts.cumulatives
+
+sudo /usr/local/sbin/host-runner.sh --status tx-marts
+```
+
+`--force` would run it again from step 1 over the top of that status file, and the refusal it
+records is the only evidence the marts were held back from a promotion that had not landed.
+Launch the resume once Step 3's own resume is under way: it arms behind `tx-promote` again, and
+`tx-promote`'s status reads unfinished from the moment its resume starts.
+
+Eight hours is the deadline, not a guess about Step 3: past it the follower stops and says so
+rather than waiting for ever. Raise it if the remaining batches are larger than that.
+
+One job with three steps rather than three jobs, because the three are ordered: the cumulative
+refresh reads the allocated mart, so running it after a failed allocation would publish a total
+over a mart that did not rebuild. Stopping at the first failure is the runner's default, and the
+status file says which step it stopped at. The units carry the code-version file for the same
+reason Step 3's do — a mart derivation stamped `pkg:0.80` cannot be traced to the tree that
+computed it.
 
 **The allocation refuses rather than publishing when conservation fails.** The split is exact by
 construction, so a non-zero difference on an allocated lease-month is a defect in the module and
