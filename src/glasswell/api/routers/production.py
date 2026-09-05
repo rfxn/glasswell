@@ -1610,7 +1610,9 @@ def _streams_term(streams: Sequence[str]) -> str:
 
     Sorted and read off what was served rather than what was asked, so two asks that carry the
     same columns share one id whatever order they named them in and whichever of them the
-    jurisdiction publishes -- the same rule `_window_term` applies to the span.
+    jurisdiction publishes -- the same rule `_window_term` applies to the span. Not
+    de-duplicated: `?stream=oil&stream=oil` serves a different `streams` array, and the store
+    would not refuse one id over two such bodies because that array is not a recorded output.
     """
     return "+".join(sorted(streams)) or "none"
 

@@ -269,6 +269,28 @@ def test_naming_every_stream_the_default_already_serves_is_the_default_derivatio
     assert named["data"]["_lineage"] == default["data"]["_lineage"]
 
 
+def test_two_asks_that_serve_different_stream_arrays_are_two_derivations(
+    client: TestClient,
+) -> None:
+    """The term is sorted but not de-duplicated, and this is the property that decides it.
+
+    `?stream=oil&stream=oil` serves `streams: ["oil", "oil"]` — a different response body from
+    `?stream=oil` — so it must not share its id. Nothing would refuse the collision: the served
+    `streams` array is not a recorded selector output, so the store's determinism guard sees no
+    conflicting output and both asks would answer 200 under one chain (H-44).
+    """
+    once_status, once = _normalised(client, stream=["oil"])
+    twice_status, twice = _normalised(client, stream=["oil", "oil"])
+
+    assert once_status == 200, once
+    assert twice_status == 200, twice
+    assert twice["data"]["streams"] == ["oil", "oil"]
+    assert (
+        once["data"]["_lineage"]["series.oil_bbl"]
+        != twice["data"]["_lineage"]["series.oil_bbl"]
+    )
+
+
 def test_every_point_of_a_windowed_normalised_series_still_resolves(client: TestClient) -> None:
     """A partition that changes with the window has to keep the points addressable under it."""
     status, body = _normalised(client, **FIRST_WINDOW)
