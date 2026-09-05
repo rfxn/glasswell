@@ -43,10 +43,16 @@ if [ -n "${STUB_FAIL_PATTERN:-}" ]; then
         *"$STUB_FAIL_PATTERN"*) exit 1 ;;
     esac
 fi
+command="$2"
+# A host that records `stopped` where this shell saw success: the case the verdict rule exists
+# for, and the only way to produce it is to make the host say something the shell did not.
+if [ -n "${STUB_RECORD_STOPPED:-}" ]; then
+    command="${command/--result complete/--result stopped --exit 1}"
+fi
 case "$2" in
     *"tar -x"*) cat >/dev/null; exit 0 ;;
     *host-runner.sh*)
-        eval "${2//\\/opt\\/glasswell\\/src\\/infra\\/bin\\/host-runner.sh/$STUB_REAL_RUNNER}"
+        eval "${command//\\/opt\\/glasswell\\/src\\/infra\\/bin\\/host-runner.sh/$STUB_REAL_RUNNER}"
         exit $?
         ;;
     *schema_migrations*) echo 1; exit 0 ;;
@@ -202,3 +208,36 @@ class TestWhatAShipWrites:
         status = ship(environment)
         assert status["result"] == "stopped"
         assert status["exit"] == 1
+
+
+class TestTheFileIsTheVerdictNotTheSshExit:
+    """The headline rule: a deploy is complete because the host recorded it, not because the
+    last ssh returned 0. A workstation that dies mid-ship leaves only the host's file, so the
+    two answers have to be able to disagree — and when they do, the file wins.
+    """
+
+    def test_a_host_that_recorded_stopped_fails_a_ship_both_gates_passed(
+        self, deployment: tuple[Path, dict[str, str]]
+    ) -> None:
+        tree, environment = deployment
+
+        result = deploy(tree, {**environment, "STUB_RECORD_STOPPED": "1"})
+
+        # Both gates answered 0: nothing this shell saw failed.
+        assert "verify.sh exit 0" in result.stdout
+        assert "smoke.sh  exit 0" in result.stdout
+        assert ship(environment)["result"] == "stopped"
+        assert "says stopped" in result.stdout
+        assert result.returncode == 1, "the ssh exit answered for the file"
+
+    def test_a_verdict_the_host_could_not_be_asked_for_is_not_a_pass(
+        self, deployment: tuple[Path, dict[str, str]]
+    ) -> None:
+        # The read-back itself failing is the same class of silence: no verdict is not complete.
+        tree, environment = deployment
+
+        result = deploy(tree, {**environment, "STUB_FAIL_PATTERN": "--status deploy-"})
+
+        assert "verify.sh exit 0" in result.stdout
+        assert "unreadable" in result.stdout
+        assert result.returncode == 1
