@@ -1913,6 +1913,37 @@ describe("a re-land keeps the card the reader has", () => {
     expect(host.textContent).toContain("no live session");
   });
 
+  it("reads a served status that is a string, so the arm is not chosen by its type", async () => {
+    // `problemOf` hardened `type` and `title` against a foreign responder and passed `status`
+    // through however it was typed. A JSON `"403"` coerces in the 4xx range test and fails both
+    // strict equalities, so a lost session kept the card, kept eight stale sections, and lost
+    // the one control that leads back into a session.
+    const onSignIn = vi.fn();
+    await renderWellCard(host, API10, { ...callbacks, onSignIn });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              type: "https://glasswell.rpx.sh/v1/errors/unauthenticated",
+              title: "Not authenticated",
+              status: "403",
+            }),
+            { status: 403, headers: { "content-type": "application/problem+json" } },
+          ),
+        ),
+      ),
+    );
+
+    window.history.replaceState(null, "", "/?as_of=2026-06-01");
+    await renderWellCard(host, API10, { ...callbacks, onSignIn });
+
+    expect(host.querySelector(".gw-card"), "stale sections stood under a lost session").toBeNull();
+    expect(host.querySelector(".gw-production-chart .gw-error")).toBeNull();
+    expect(host.querySelector(".gw-error-key"), "the way back into a session was lost").not.toBeNull();
+  });
+
   it("puts no card-closing dismiss inside a refusal it scoped to one section", async () => {
     // The × reads `Dismiss this error` and is wired to `onClose`, which main.ts binds to
     // `selectWell(null)`. Inside the panel the round scoped to the production section, that is

@@ -136,7 +136,9 @@ async function problemOf(response: Response): Promise<Problem> {
       ...body,
       type: body.type ?? "about:blank",
       title: problemTitle(response, body.title),
-      status: body.status ?? response.status,
+      // A number, not whatever was served: the card's arms compare the status strictly, and a
+      // served `"403"` string passes a range test while failing every equality.
+      status: Number(body.status ?? response.status) || response.status,
     } as Problem;
   } catch {
     // A non-JSON body (a proxy error page, say) still has to render as a problem.

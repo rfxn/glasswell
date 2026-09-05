@@ -176,8 +176,8 @@
       and the request that failed; and it says a request failed and names the status
       over HTTP/2, which carries no reason phrase for it to print, where the heading
       read ` (HTTP 500)` on the deployment's own transport; a problem body that serves
-      those fields empty or null is filled the same way rather than rendering the empty
-      heading back
+      those fields empty, null or as the wrong type is filled the same way rather than
+      rendering the empty heading back or deciding which failure the card is looking at
 - [Fix] a re-land the server refuses costs the reader the section that asked and not the
       card: a press of `Read at …` at a vintage that resolves nowhere answered 404 and
       replaced every section, every disclosure and the window bar with the banner, where
