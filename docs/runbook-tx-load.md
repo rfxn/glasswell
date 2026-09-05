@@ -380,15 +380,33 @@ batch.
 
 **Production write, rebuilt rather than appended. Runtime: 20–60 minutes.**
 
+Arm it behind Step 3 rather than watching for Step 3 to end. Launch this any time after Step 3
+has started — it needs `tx-promote`'s status file to exist — and the runner follows that file,
+never a unit's `Result`, which answers `success` for a transient unit however it ended.
+
 ```bash
-sudo /usr/local/sbin/host-runner.sh --job tx-marts --detach --memory 2G --timeout 3600 -- \
+sudo /usr/local/sbin/host-runner.sh --job tx-step45 --after-job tx-promote \
+  --after-timeout 28800 --detach --memory 2G --timeout 3600 -- \
   allocation   /opt/glasswell/venv/bin/python -m glasswell.marts.tx_allocation \
   -- backtest  /opt/glasswell/venv/bin/python -m glasswell.marts.allocation_backtest \
   -- cumulatives /opt/glasswell/venv/bin/python -m glasswell.marts.cumulatives
 
-# Poll the status file; a stopped chain names the mart that did not rebuild.
-sudo /usr/local/sbin/host-runner.sh --status tx-marts
+# Poll the status file. `waiting` names the job it is behind and the deadline it waits to;
+# a stopped chain names the mart that did not rebuild.
+sudo /usr/local/sbin/host-runner.sh --status tx-step45
 ```
+
+`tx-step45` is the name the ad-hoc runner of 2026-09-05 used for this hand-off, which polled
+`systemctl is-active` in a loop; it is kept so the two records read as one story.
+
+**A Step 3 that stopped stops this too, and that is the point.** The follower refuses to start
+behind a job whose status says `stopped` — an OOM-killed batch is a promotion that did not
+happen, and marts rebuilt over it would publish totals for rows that are not there. Relaunch
+this after the resume of Step 3 completes; its own status file will say `stopped` naming
+`tx-promote`, which is the record of why it did not run.
+
+Eight hours is the deadline, not a guess about Step 3: past it the follower stops and says so
+rather than waiting for ever. Raise it if the remaining batches are larger than that.
 
 One job with three steps rather than three jobs, because the three are ordered: the cumulative
 refresh reads the allocated mart, so running it after a failed allocation would publish a total

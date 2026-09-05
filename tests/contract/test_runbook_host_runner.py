@@ -247,8 +247,12 @@ def test_every_documented_launch_hands_the_chain_to_a_unit_and_returns() -> None
     # job with it. Without `--detach` the chain runs in the operator's ssh session: the step's
     # own transient unit survives the drop, but the driver that writes the verdict does not, so
     # the status file reads `running` for ever and the lines after it never run.
-    sources = [(name, fenced(name)) for name in RUNBOOKS]
-    sources.append(("infra/README.md", fenced_text(DEPLOY_README.read_text(encoding="utf-8"))))
+    # Continuations closed up first: `--detach` may sit on the second physical line.
+    sources = [(name, joined(name)) for name in RUNBOOKS]
+    sources.append((
+        "infra/README.md",
+        re.sub(r"\\\n\s*", " ", fenced_text(DEPLOY_README.read_text(encoding="utf-8"))),
+    ))
 
     attached = [
         f"{name}: {line.strip()}"
@@ -258,6 +262,39 @@ def test_every_documented_launch_hands_the_chain_to_a_unit_and_returns() -> None
     ]
 
     assert attached == [], f"a launch that dies with the session that started it: {attached}"
+
+
+AFTER_JOB = re.compile(r"--after-job\s+([A-Za-z0-9._-]+)")
+
+
+def joined(name: str) -> str:
+    """The fenced blocks with `\\`-continuations closed up, so one command is one line."""
+    return re.sub(r"\\\n\s*", " ", fenced(name))
+
+
+@pytest.mark.parametrize("name", RUNBOOKS)
+def test_a_documented_wait_always_carries_its_deadline(name: str) -> None:
+    # `--after-job` polls another job's status file, and a job that never finishes leaves the
+    # follower waiting. The default is 86400 s; a document that arms one says what it waits to.
+    undated = [
+        line.strip()
+        for line in joined(name).splitlines()
+        if "--after-job" in line and "--after-timeout" not in line
+    ]
+
+    assert undated == [], f"{name} arms a job behind another with no deadline: {undated}"
+
+
+def test_the_texas_marts_are_armed_behind_the_promotion_they_must_not_precede() -> None:
+    # The ad-hoc `tx-step45-runner.sh` polled `systemctl is-active` in a loop, which is the
+    # shape `test_no_fenced_block_waits_on_a_unit_by_hand` forbids a runbook from teaching.
+    blocks = joined("runbook-tx-load.md")
+    followed = set(AFTER_JOB.findall(blocks))
+
+    assert followed, "Step 4 is still a hand-off the operator has to watch for"
+    assert followed <= set(JOB.findall(blocks)), (
+        f"the runbook follows a job it does not launch: {followed - set(JOB.findall(blocks))}"
+    )
 
 
 def test_the_texas_resume_is_documented_against_the_job_it_resumes() -> None:
@@ -326,6 +363,14 @@ class TestTheDocumentedInvocationsParse:
             runs = tmp_path / f"runs-{position}"
             environment = stub_environment(tmp_path / f"stubs-{position}", runs)
             job = arguments[arguments.index("--job") + 1]
+            if "--after-job" in arguments:
+                # A job that never ran cannot be followed, and the refusal comes first.
+                subprocess.run(
+                    [str(RUNNER), "--record", "--job",
+                     arguments[arguments.index("--after-job") + 1], "--step", "lead",
+                     "--step-index", "1", "--steps-total", "1", "--result", "complete"],
+                    env=environment, check=True, capture_output=True,
+                )
             if "--resume" in arguments:
                 # Nothing to resume until something has stopped, and the refusal comes first.
                 subprocess.run(
