@@ -115,6 +115,12 @@ const entryStyles = (): string[] =>
     (match) => match[1]!,
   );
 
+// The map cut, written once for the budget and the drift check alike.
+function routeUntilMap(): string[] {
+  const map = named("map");
+  return reach([...entryChunks(), named("shell")], (name) => name === map);
+}
+
 // The explorer route is one cut, enforced and quoted from the same walk: everything the entry
 // and the shell reach until the chunks a reader downloads only by landing on them.
 function explorerRouteChunks(): string[] {
@@ -209,7 +215,7 @@ describe("what the explorer's shell costs the reader", () => {
 
   it("keeps the map chunk inside its budget", () => {
     const map = named("map");
-    const route = reach([...entryChunks(), named("shell")], (name) => name === map);
+    const route = routeUntilMap();
     const mapOnly = reach([map]).filter((name) => !route.includes(name));
     const measured = mapOnly.reduce((sum, name) => sum + gzip(name), 0);
 
@@ -256,7 +262,7 @@ describe("what the explorer's shell costs the reader", () => {
    */
   it("keeps the measurement PERF.md quotes beside each budget within 3% of the tree", () => {
     const map = named("map");
-    const routeCut = reach([...entryChunks(), named("shell")], (name) => name === map);
+    const routeCut = routeUntilMap();
     const measured = {
       "entry chunk": entryChunks().reduce((sum, name) => sum + gzip(name), 0),
       "explorer route, map excluded": explorerRouteChunks().reduce((sum, name) => sum + gzip(name), 0),

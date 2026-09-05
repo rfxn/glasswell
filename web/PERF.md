@@ -145,7 +145,7 @@ rest on it.
 |---|---:|---|
 | entry chunk | 14,000 | +1.9% over 13,737 (v0.82 train head ca7dce7, re-walked; 13,026 at v0.80 P0, 13,950 at v0.78) |
 | **entry stylesheet** | **7,400** | the ratcheted value: 7,367 measured at the card group's last phase plus 33 B. Was 7,420 — the 6,520 measured on the v0.77 tree plus the 900 B ceiling the rail was allowed to spend |
-| explorer route, map excluded | 79,750 | +0.04% over 79,717 (v0.82 train head with the band fix; the budget was raised 79,700 → 79,750 by the owner on 2026-09-05 for round 10's 42 B, which removes a correctness dependency rather than adding a feature — REG-WC-1; the register's layer-panel change had spent 27 B) |
+| explorer route, map excluded | 79,750 | +0.04% over 79,717 (the test's own walk at the v0.82 train head with the band fix; the budget was raised 79,700 → 79,750 by the owner on 2026-09-05 for round 10's 42 B, which removes a correctness dependency rather than adding a feature — REG-WC-1. Quote headroom from the walk at the head that ships, never from arithmetic: the build stamp in the entry chunk, `vite.config.ts` `__GW_BUILD__`, moves this figure by a few bytes with every commit and calendar day) |
 | map chunk | 330,000 | +1.3% over 325,632 (v0.82 train head, re-walked; 313,823 at C11) |
 
 **The fourth budget, and why it is the only one carrying deliberate slack.** The other three
