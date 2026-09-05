@@ -263,6 +263,20 @@ def test_a_suffix_that_names_two_layers_refuses_instead_of_taking_the_first(tmp_
     assert "Historic_Directional-Lines" in message
 
 
+def test_the_ambiguity_refusal_states_the_requirement_instead_of_citing_a_rule(tmp_path: Path):
+    """H-16. `layer_suffix` is also how nd_gis, mt_gis, tx_gis and eia_boundaries pick a member,
+    and no conformance row names one for any of them, so "the rule names one" sent an operator
+    looking for a row that does not exist. The requirement is the reader's, and it says so."""
+    archive = write_named_zip(tmp_path / "nd.zip", "Wells", "Historic_Wells")
+
+    with pytest.raises(MalformedArchive) as refusal:
+        ZippedShapefile(archive, layer_suffix="wells")
+
+    message = str(refusal.value)
+    assert "a suffix must select exactly one" in message
+    assert "rule" not in message
+
+
 def test_one_matching_layer_beside_others_that_do_not_match_still_reads(tmp_path: Path):
     """The refusal is about ambiguity, not about company: an archive shipping several layers
     reads the one its suffix names."""

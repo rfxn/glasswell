@@ -103,14 +103,13 @@ class ZippedShapefile:
                     matched.add(stem)
                     if extension not in payloads:
                         payloads[extension] = bundle.read(name)
-        # A suffix that names two layers names neither. Taking the first in ZIP order would
-        # pick between them silently, and for Colorado the conformance row states one exact
-        # member -- so a second candidate is a source that grew a layer, which is a change to
-        # read rather than a tie to break.
+        # A suffix that names two layers names neither: a second candidate is a source that grew
+        # a layer, not a tie for ZIP order to break. Only the Colorado callers have a conformance
+        # row naming a member, so the message states the requirement instead of citing a rule.
         if layer_suffix is not None and len(matched) > 1:
             raise MalformedArchive(
                 f"{self.path.name} has {len(matched)} members matching {layer_suffix!r}:"
-                f" {', '.join(sorted(matched))}; the rule names one"
+                f" {', '.join(sorted(matched))}; a suffix must select exactly one"
             )
         missing = [member for member in REQUIRED_MEMBERS if member not in payloads]
         if missing:

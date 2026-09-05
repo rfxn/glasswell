@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import UTC, date, datetime
 from pathlib import Path
 
@@ -142,3 +143,19 @@ def test_a_read_path_answers_not_found_rather_than_five_hundred(monkeypatch):
     monkeypatch.delenv(RAW_ROOT_ENV, raising=False)
 
     assert _payload_within_raw_zone("/data/raw/tx_pdq_dsv/x/payload.zip") is None
+
+
+def test_the_undeclared_raw_zone_says_so_in_the_log_because_the_404_cannot(monkeypatch, caplog):
+    """H-16. The route answers `not_found` with "this host holds no raw-zone copy", which is not
+    true when the cause is an undeclared zone -- the bytes may be on the disk and the process
+    simply cannot resolve a root. The status is right; the silence is what made a misconfigured
+    app.env undiagnosable from either the response or the log."""
+    from glasswell.api.routers.lineage import _payload_within_raw_zone
+
+    monkeypatch.delenv(RAW_ROOT_ENV, raising=False)
+
+    with caplog.at_level(logging.WARNING, logger="glasswell.api.routers.lineage"):
+        assert _payload_within_raw_zone("/data/raw/tx_pdq_dsv/x/payload.zip") is None
+
+    assert "raw zone undeclared" in caplog.text
+    assert RAW_ROOT_ENV in caplog.text
