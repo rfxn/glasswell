@@ -25,16 +25,24 @@ IN_SCOPE_COUNTY = "003"
 SECOND_COUNTY = "135"
 OUT_OF_SCOPE_COUNTY = "001"
 
+# Every header below is the member's own first line as measured on the 2026-09-04 fetch of the
+# live archive, and is asserted against cr_tx_pdq_format_2's published layout by
+# test_tx_pdq_parse.py. Reading them from the rule instead would make the fixture agree with
+# the parser by construction and prove nothing about either.
 LEASE_CYCLE_HEADER = (
-    "OIL_GAS_CODE", "DISTRICT_NO", "LEASE_NO", "CYCLE_YEAR_MONTH", "OPERATOR_NO", "FIELD_NO",
-    "FIELD_TYPE", "GAS_WELL_NO", "PROD_REPORT_FILED_FLAG", "LEASE_OIL_PROD_VOL",
-    "LEASE_GAS_PROD_VOL", "LEASE_COND_PROD_VOL", "LEASE_CSGD_PROD_VOL", "LEASE_NAME",
-    "OPERATOR_NAME", "FIELD_NAME",
+    "OIL_GAS_CODE", "DISTRICT_NO", "LEASE_NO", "CYCLE_YEAR", "CYCLE_MONTH", "CYCLE_YEAR_MONTH",
+    "LEASE_NO_DISTRICT_NO", "OPERATOR_NO", "FIELD_NO", "FIELD_TYPE", "GAS_WELL_NO",
+    "PROD_REPORT_FILED_FLAG", "LEASE_OIL_PROD_VOL", "LEASE_OIL_ALLOW", "LEASE_OIL_ENDING_BAL",
+    "LEASE_GAS_PROD_VOL", "LEASE_GAS_ALLOW", "LEASE_GAS_LIFT_INJ_VOL", "LEASE_COND_PROD_VOL",
+    "LEASE_COND_LIMIT", "LEASE_COND_ENDING_BAL", "LEASE_CSGD_PROD_VOL", "LEASE_CSGD_LIMIT",
+    "LEASE_CSGD_GAS_LIFT", "LEASE_OIL_TOT_DISP", "LEASE_GAS_TOT_DISP", "LEASE_COND_TOT_DISP",
+    "LEASE_CSGD_TOT_DISP", "DISTRICT_NAME", "LEASE_NAME", "OPERATOR_NAME", "FIELD_NAME",
 )
 WELL_COMPLETION_HEADER = (
     "OIL_GAS_CODE", "DISTRICT_NO", "LEASE_NO", "WELL_NO", "API_COUNTY_CODE", "API_UNIQUE_NO",
-    "ONSHORE_ASSC_CNTY", "WELL_ROOT_NO", "WELLBORE_SHUTIN_DT", "WELL_SHUTIN_DT",
-    "WELL_14B2_STATUS_CODE", "WELL_SUBJECT_14B2_FLAG", "WELLBORE_LOCATION_CODE",
+    "ONSHORE_ASSC_CNTY", "DISTRICT_NAME", "COUNTY_NAME", "OIL_WELL_UNIT_NO", "WELL_ROOT_NO",
+    "WELLBORE_SHUTIN_DT", "WELL_SHUTIN_DT", "WELL_14B2_STATUS_CODE", "WELL_SUBJECT_14B2_FLAG",
+    "WELLBORE_LOCATION_CODE",
 )
 REGULATORY_LEASE_HEADER = (
     "OIL_GAS_CODE", "DISTRICT_NO", "LEASE_NO", "DISTRICT_NAME", "LEASE_NAME", "OPERATOR_NO",
@@ -50,6 +58,12 @@ DATE_RANGE_HEADER = (
     "OLDEST_PROD_CYCLE_YEAR_MONTH", "NEWEST_PROD_CYCLE_YEAR_MONTH",
     "NEWEST_SCHED_CYCLE_YEAR_MONTH", "GAS_EXTRACT_DATE", "OIL_EXTRACT_DATE",
 )
+
+DISTRICT_NAME = "7B"
+COUNTY_NAMES = {"003": "ANDREWS", "135": "ECTOR", "001": "ANDERSON"}
+# The two injection columns, filled with a value no production column carries. They are the two
+# cr_tx_gas_basis_1 forbids summing, so a parse that ever reached them would say so in a total.
+GAS_LIFT_SENTINEL = "999999"
 
 # Measured on the live 2026-08-27 archive and quoted in the spec: the district file carries two
 # vocabularies, so a join on the name silently crosses districts.
@@ -87,9 +101,10 @@ def _lease_cycle_row(
     field_no: str = "00123456",
 ) -> tuple[str, ...]:
     return (
-        code, "08", lease_no, month, "123456", field_no, "OI" if code == "O" else "GA",
-        gas_well_no, filed, oil, gas, cond, csgd, f"LEASE {lease_no}", "SAMPLE OPERATOR",
-        "SAMPLE FIELD",
+        code, "08", lease_no, month[:4], month[4:], month, f"{lease_no}08", "123456", field_no,
+        "OI" if code == "O" else "GA", gas_well_no, filed, oil, "", "", gas, "",
+        GAS_LIFT_SENTINEL, cond, "", "", csgd, "", GAS_LIFT_SENTINEL, "", "", "", "",
+        DISTRICT_NAME, f"LEASE {lease_no}", "SAMPLE OPERATOR", "SAMPLE FIELD",
     )
 
 
@@ -104,8 +119,9 @@ def _completion_row(
     status_14b2: str = "",
 ) -> tuple[str, ...]:
     return (
-        code, "08", lease_no, well_no, county, unique_no, "", f"W{unique_no}", "", shutin,
-        status_14b2, "N" if not status_14b2 else "Y", "1",
+        code, "08", lease_no, well_no, county, unique_no, "", DISTRICT_NAME,
+        COUNTY_NAMES[county], "", f"W{unique_no}", "", shutin, status_14b2,
+        "N" if not status_14b2 else "Y", "1",
     )
 
 

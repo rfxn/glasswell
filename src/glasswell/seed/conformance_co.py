@@ -41,6 +41,24 @@ LINES_SOURCE_ID = "co_ecmc_directional_lines"
 MONTHLY_SOURCE_ID = "co_ecmc_monthly_prod"
 ARCHIVE_SOURCE_ID = "co_ecmc_prod_reports"
 
+# The member each GIS archive ships, read from the archives themselves on 2026-09-04 at
+# 20:06:30Z. Published by the three cr_co_*_member_1 rows below and imported by
+# ingest/co_ecmc_gis.py, so the name a layer is selected by is a row and not a spelling.
+CO_GIS_MEMBERS: dict[str, dict[str, str]] = {
+    WELLS_SOURCE_ID: {
+        "source_key": "WELLS_SHP.ZIP",
+        "member_stem": "Wells",
+    },
+    BOTTOMHOLE_SOURCE_ID: {
+        "source_key": "DIRECTIONAL_BOTTOMHOLE_LOCATIONS_SHP.ZIP",
+        "member_stem": "Directional_Bottomhole_Locations",
+    },
+    LINES_SOURCE_ID: {
+        "source_key": "DIRECTIONAL_LINES_SHP.ZIP",
+        "member_stem": "Directional_Lines",
+    },
+}
+
 # The header shapefile, measured 2026-09-02: 124,410 features, 37 fields, one Facil_Type.
 HEADER_FEATURES = 124410
 HEADER_WELLS = 124392
@@ -830,6 +848,55 @@ CO_RULES: tuple[dict[str, object], ...] = (
         "evidence_url": PROD_REPORTS_URL % "2025",
         "code_ref": "src/glasswell/ingest/co_ecmc_production.py",
     },
+    *(
+        {
+            "rule_id": f"cr_co_{name}_member_1",
+            "source_id": source_id,
+            "stage": "parse",
+            "rule_kind": "parse_directive",
+            "applies_to_fields": ["all"],
+            "spec": {
+                "source_key": CO_GIS_MEMBERS[source_id]["source_key"],
+                "member_stem": CO_GIS_MEMBERS[source_id]["member_stem"],
+                "member_selection": "by_normalised_stem",
+                "required_members": ["shp", "shx", "dbf"],
+                "optional_members": ["prj"],
+                "module_function": "glasswell.ingest.shapefile:ZippedShapefile",
+                "contract_note": (
+                    "ingest/co_ecmc_gis.py selects this layer by the stem recorded here, and"
+                    " the comparison ignores case and separators on both sides"
+                ),
+            },
+            "rule": (
+                f"{CO_GIS_MEMBERS[source_id]['source_key']} is read as the shapefile"
+                f" {CO_GIS_MEMBERS[source_id]['member_stem']}, selected by name with case and"
+                " separators ignored; an archive carrying no such member refuses."
+            ),
+            "rationale": (
+                "The member a layer is read from was a code constant and nothing else, and it"
+                " was wrong for two of the three archives: the loader looked for a stem ending"
+                " in `directionalbottomholelocations` while ECMC ships"
+                " `Directional_Bottomhole_Locations`, and the underscores defeated the match."
+                " The staging refused on 2026-09-04 at 20:06:30Z after the wells layer had"
+                " already been staged and recorded, which is a half-loaded vintage rather than"
+                " a clean stop. The fixtures could not have caught it: cut_fixtures.py reads"
+                " the source archives by extension and never records their member names, then"
+                " writes the cut under a stem passed in as a literal, so the suite was"
+                " asserting a name this repository invented rather than one ECMC published."
+                " Recorded as a row because it is a cross-source mapping decision (R8), and"
+                " compared with separators removed because the regulator's punctuation is not"
+                " a decision anybody here made."
+            ),
+            "evidence_url": f"{DOWNLOAD_ROOT}/gis/"
+            f"{CO_GIS_MEMBERS[source_id]['source_key']}",
+            "code_ref": "src/glasswell/ingest/co_ecmc_gis.py",
+        }
+        for name, source_id in (
+            ("wells_shp", WELLS_SOURCE_ID),
+            ("directional_bh", BOTTOMHOLE_SOURCE_ID),
+            ("directional_lines", LINES_SOURCE_ID),
+        )
+    ),
 )
 
 # The six cadence decisions, declared here and built into rules by the scheduler's own builder

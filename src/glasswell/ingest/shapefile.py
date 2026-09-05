@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import re
 import zipfile
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
@@ -15,6 +16,19 @@ from shapely.geometry import shape as shapely_shape
 from shapely.geometry.base import BaseGeometry
 
 REQUIRED_MEMBERS = ("shp", "shx", "dbf")
+
+_SEPARATORS = re.compile(r"[^a-z0-9]")
+
+
+def _comparable(name: str) -> str:
+    """A member stem or a layer suffix with case and separators removed.
+
+    ECMC ships `Directional_Bottomhole_Locations.shp` for the layer registered as
+    `directionalbottomholelocations`, and an endswith over the raw stem matched nothing: the
+    regulator's punctuation is not a decision anybody here made, so neither side is compared on
+    it. Measured on VM 111, 2026-09-04 20:06:30Z.
+    """
+    return _SEPARATORS.sub("", name.lower())
 
 
 class UnknownProjection(ValueError):
@@ -74,16 +88,29 @@ class ZippedShapefile:
         self.layer_suffix = layer_suffix
         self.encoding = encoding
         payloads: dict[str, bytes] = {}
+        matched: set[str] = set()
         with zipfile.ZipFile(self.path) as bundle:
             for name in sorted(bundle.namelist()):
                 if name.endswith("/"):
                     continue
                 stem, _, extension = name.rpartition(".")
                 extension = extension.lower()
-                if layer_suffix is not None and not stem.lower().endswith(layer_suffix.lower()):
+                if layer_suffix is not None and not _comparable(stem).endswith(
+                    _comparable(layer_suffix)
+                ):
                     continue
-                if extension in (*REQUIRED_MEMBERS, "prj") and extension not in payloads:
-                    payloads[extension] = bundle.read(name)
+                if extension in (*REQUIRED_MEMBERS, "prj"):
+                    matched.add(stem)
+                    if extension not in payloads:
+                        payloads[extension] = bundle.read(name)
+        # A suffix that names two layers names neither: a second candidate is a source that grew
+        # a layer, not a tie for ZIP order to break. Only the Colorado callers have a conformance
+        # row naming a member, so the message states the requirement instead of citing a rule.
+        if layer_suffix is not None and len(matched) > 1:
+            raise MalformedArchive(
+                f"{self.path.name} has {len(matched)} members matching {layer_suffix!r}:"
+                f" {', '.join(sorted(matched))}; a suffix must select exactly one"
+            )
         missing = [member for member in REQUIRED_MEMBERS if member not in payloads]
         if missing:
             selector = f" matching {layer_suffix!r}" if layer_suffix else ""

@@ -284,6 +284,26 @@ def test_the_scheduler_grants_are_derived_from_the_queries_the_planner_runs(db) 
             assert cursor.fetchone()[0], f"glasswell_scheduler cannot read {relation}"
 
 
+def test_the_scheduler_reads_refusals_through_a_view_and_not_the_account_trail(db) -> None:
+    """H-14. Growing the source-health query grew what the scheduler must read, and 083's first
+    shape granted it all of lineage.audit_events -- the same table that carries `username`,
+    `client_ip`, `role` and session-revocation counts (api/routers/session.py, api/accounts.py).
+    The query asks for one column of one event type, so that is what the grant is on."""
+    with db.cursor() as cursor:
+        cursor.execute(
+            "select has_table_privilege('glasswell_scheduler', 'lineage.audit_events', 'SELECT')"
+        )
+        assert cursor.fetchone()[0] is False, "the scheduler can read the account and session trail"
+
+    assert "lineage.staging_load_failures" in planner_relations()
+
+    with acting_as(db, "glasswell_scheduler") as cursor:
+        cursor.execute("select count(*) from lineage.staging_load_failures")
+        assert cursor.fetchone()[0] >= 0
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            cursor.execute("select payload from lineage.audit_events")
+
+
 def test_the_scheduler_may_write_the_ledger_and_nothing_else(db) -> None:
     with db.cursor() as cursor:
         cursor.execute(

@@ -19,6 +19,7 @@ from glasswell.ingest.tx_pdq import (
     LEASE_CYCLE_MEMBER,
     SOURCE_KEY,
     WELL_COMPLETION_MEMBER,
+    MemberLayout,
     _member_rows,
     api10_from,
     lease_key,
@@ -26,11 +27,15 @@ from glasswell.ingest.tx_pdq import (
 from glasswell.lineage.capture import lineage_session
 from glasswell.lineage.store import PostgresRecorder
 from glasswell.seed import seed_all
-from glasswell.seed.conformance_tx import PERMIAN_COUNTY_CODES
+from glasswell.seed.conformance_tx import PDQ_MEMBER_LAYOUT, PERMIAN_COUNTY_CODES
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "tx_pdq"
 SAMPLE = FIXTURES / "PDQ_DSV_sample.zip"
 RESTATED = FIXTURES / "PDQ_DSV_sample_restated.zip"
+
+# The layout load() resolves from the rule in force, built from the same registry the rule row
+# is published from so a reader of the fixture is judged by the rule and not by the fixture.
+LAYOUT = MemberLayout("cr_tx_pdq_format_2", PDQ_MEMBER_LAYOUT)
 
 
 def expected() -> dict[str, int]:
@@ -39,8 +44,8 @@ def expected() -> dict[str, int]:
     import zipfile
 
     with zipfile.ZipFile(SAMPLE) as archive:
-        completions = list(_member_rows(archive, WELL_COMPLETION_MEMBER))
-        leases = list(_member_rows(archive, LEASE_CYCLE_MEMBER))
+        completions = list(_member_rows(archive, WELL_COMPLETION_MEMBER, LAYOUT))
+        leases = list(_member_rows(archive, LEASE_CYCLE_MEMBER, LAYOUT))
     by_api: dict[str, set[str]] = {}
     in_scope: set[str] = set()
     for row in completions:

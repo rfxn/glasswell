@@ -83,7 +83,7 @@ sudo -u postgres psql -d glasswell -Atc \
 ## Step 1 — stage the three GIS archives
 
 ```bash
-sudo -u glasswell GLASSWELL_DSN="$GLASSWELL_DSN" \
+sudo -u glasswell GLASSWELL_DSN="$GLASSWELL_DSN" GLASSWELL_RAW_ROOT=/data/raw \
   /opt/glasswell/venv/bin/python -m glasswell.ingest.co_ecmc_gis --layer all
 ```
 
@@ -103,7 +103,7 @@ re-plotted. Route it; do not re-fetch to repair it.
 ## Step 2 — stage the rolling production file
 
 ```bash
-sudo -u glasswell GLASSWELL_DSN="$GLASSWELL_DSN" \
+sudo -u glasswell GLASSWELL_DSN="$GLASSWELL_DSN" GLASSWELL_RAW_ROOT=/data/raw \
   /opt/glasswell/venv/bin/python -m glasswell.ingest.co_ecmc_production --file rolling
 ```
 

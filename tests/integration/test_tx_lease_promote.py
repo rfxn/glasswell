@@ -10,6 +10,7 @@ and what happens to a lease this deployment does not hold.
 from __future__ import annotations
 
 import zipfile
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 
@@ -22,15 +23,26 @@ from glasswell.ingest.tx_pdq import (
     LEASE_CYCLE_MEMBER,
     SOURCE_KEY,
     ArchiveFormatError,
+    FilesystemPrecheckError,
+    MemberLayout,
     _member_rows,
     production_month,
 )
 from glasswell.lineage.capture import lineage_session
+from glasswell.lineage.fetch_attempts import durable_fetch_attempts
 from glasswell.lineage.store import PostgresRecorder
 from glasswell.seed import seed_all
+from glasswell.seed.conformance_tx import PDQ_MEMBER_LAYOUT
+from glasswell.status.source_health import source_health_data
+from tests.support.fakes import FixedClock
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "tx_pdq"
 SAMPLE = FIXTURES / "PDQ_DSV_sample.zip"
+RESTATED = FIXTURES / "PDQ_DSV_sample_restated.zip"
+
+# The layout load() resolves from the rule in force, built from the same registry the rule row
+# is published from so a reader of the fixture is judged by the rule and not by the fixture.
+LAYOUT = MemberLayout("cr_tx_pdq_format_2", PDQ_MEMBER_LAYOUT)
 
 
 def client_for(payload: Path) -> httpx.Client:
@@ -215,7 +227,7 @@ def test_the_promotion_runs_a_calendar_year_at_a_time_with_a_recorded_high_water
     with zipfile.ZipFile(SAMPLE) as archive:
         years = {
             production_month(row["CYCLE_YEAR_MONTH"]).year
-            for row in _member_rows(archive, LEASE_CYCLE_MEMBER)
+            for row in _member_rows(archive, LEASE_CYCLE_MEMBER, LAYOUT)
         }
 
     assert promoted.lease_promotion["high_water_year"] == max(years)
@@ -287,6 +299,447 @@ def test_a_member_whose_header_moved_promotes_nothing_at_all(
         seeded,
         "select count(*) from canonical.production_monthly where source_id = 'tx_pdq_dsv'",
     ) == 0
+
+
+def test_a_refused_stage_still_records_the_fetch_it_completed(
+    seeded, raw_root: Path, lineage_env, tmp_path: Path
+) -> None:
+    """A completed fetch is a fact and the parse is a separate outcome.
+
+    Held to the end of load(), the manifest rolled back with the refusal and left the archive
+    sealed on disk with no row naming it -- which is what happened on 2026-09-04 to 3.65 GB
+    that no re-run can reach, because stage_payload() reuses a slot only through owning_slot()
+    and owning_slot() reads lineage.manifests.
+    """
+    seeded.commit()  # the environments row the fixture planted, so the rollback below is the load's
+    drifted = tmp_path / "drifted.zip"
+    with zipfile.ZipFile(SAMPLE) as source, zipfile.ZipFile(drifted, "w") as target:
+        for name in source.namelist():
+            text = source.read(name).decode()
+            if name == LEASE_CYCLE_MEMBER:
+                header, _, body = text.partition("\n")
+                text = header + "}INVENTED_COLUMN\n" + body
+            target.writestr(name, text)
+
+    with lineage_session(
+        recorder=PostgresRecorder(seeded), environment=lineage_env
+    ), client_for(drifted) as client, pytest.raises(ArchiveFormatError):
+        tx_pdq.load(
+            seeded,
+            url=f"https://example.invalid/{SOURCE_KEY}",
+            raw_root=raw_root,
+            client=client,
+            expect_bytes=drifted.stat().st_size,
+        )
+    seeded.rollback()
+
+    recorded = rows(
+        seeded,
+        "select sha256, storage_uri from lineage.manifests where source_id = 'tx_pdq_dsv'",
+    )
+    assert len(recorded) == 1
+    assert Path(recorded[0][1]).is_file()
+    assert scalar(
+        seeded, "select count(*) from staging.tx_pdq_well_completion"
+    ) == 0
+
+
+def test_the_re_run_after_a_refusal_reuses_the_slot_it_already_paid_for(
+    seeded, raw_root: Path, lineage_env, tmp_path: Path
+) -> None:
+    """There is no resume -- the portal ignores Range -- so a re-run spends the whole fetch
+    again. What it must not do is place a second 3.65 GB copy beside the first."""
+    seeded.commit()  # the environments row the fixture planted, so the rollback below is the load's
+    drifted = tmp_path / "drifted.zip"
+    with zipfile.ZipFile(SAMPLE) as source, zipfile.ZipFile(drifted, "w") as target:
+        for name in source.namelist():
+            text = source.read(name).decode()
+            if name == LEASE_CYCLE_MEMBER:
+                header, _, body = text.partition("\n")
+                text = header + "}INVENTED_COLUMN\n" + body
+            target.writestr(name, text)
+
+    # Two clocks a minute apart: the artifact directory carries the fetch time to the second,
+    # so two runs inside one second would collide into the same slot and prove nothing.
+    for minute in (11, 12):
+        with lineage_session(
+            recorder=PostgresRecorder(seeded),
+            environment=lineage_env,
+            clock=FixedClock(datetime(2026, 9, 4, 19, minute, 0, tzinfo=UTC)),
+        ), client_for(drifted) as client, pytest.raises(ArchiveFormatError):
+            tx_pdq.load(
+                seeded,
+                url=f"https://example.invalid/{SOURCE_KEY}",
+                raw_root=raw_root,
+                client=client,
+                expect_bytes=drifted.stat().st_size,
+            )
+        seeded.rollback()
+
+    placed = sorted((raw_root / "tx_pdq_dsv" / "pdq-dsv-zip").iterdir())
+
+    assert len(placed) == 1
+    assert scalar(
+        seeded, "select count(*) from lineage.manifests where source_id = 'tx_pdq_dsv'"
+    ) == 1
+
+
+def test_a_refused_stage_is_never_served_as_a_current_source(
+    seeded, raw_root: Path, lineage_env, tmp_path: Path, postgres_password, monkeypatch
+) -> None:
+    """H-1. Committing the manifest at fetch time makes the poll finalise `new`, because the
+    poll did succeed -- so the failure code that used to make /status read `stale` is gone.
+
+    The parse refusal has to be durable somewhere else or a refused stage is served as a
+    current source with a fresh retrieval vintage and no reason anywhere. It is recorded twice:
+    a `staging.load_failed` event against the manifest, and the head manifest's
+    `staging_load_ref` left null, which is what that column has always meant.
+    """
+    monkeypatch.setenv("PGPASSWORD", postgres_password)
+    seeded.commit()
+    drifted = tmp_path / "drifted.zip"
+    with zipfile.ZipFile(SAMPLE) as source, zipfile.ZipFile(drifted, "w") as target:
+        for name in source.namelist():
+            text = source.read(name).decode()
+            if name == LEASE_CYCLE_MEMBER:
+                header, _, body = text.partition("\n")
+                text = header + "}INVENTED_COLUMN\n" + body
+            target.writestr(name, text)
+
+    with durable_fetch_attempts(seeded.info.dsn):
+        with lineage_session(
+            recorder=PostgresRecorder(seeded), environment=lineage_env
+        ), client_for(drifted) as client, pytest.raises(ArchiveFormatError):
+            tx_pdq.load(
+                seeded,
+                url=f"https://example.invalid/{SOURCE_KEY}",
+                raw_root=raw_root,
+                client=client,
+                expect_bytes=drifted.stat().st_size,
+            )
+        seeded.rollback()
+
+    outcome = scalar(
+        seeded,
+        "select outcome from lineage.fetch_attempts where source_id = 'tx_pdq_dsv'",
+    )
+    served, _ = source_health_data(
+        seeded, observed_at=datetime.now(UTC), source_ids=["tx_pdq_dsv"]
+    )
+
+    # The poll is `new` and that is true: the bytes landed and the manifest names them.
+    assert outcome == "new"
+    assert scalar(
+        seeded,
+        "select staging_load_ref from lineage.manifests where source_id = 'tx_pdq_dsv'",
+    ) is None
+    assert scalar(
+        seeded,
+        "select count(*) from lineage.audit_events where event_type = 'staging.load_failed'"
+        " and payload ->> 'source_id' = 'tx_pdq_dsv'",
+    ) == 1
+    assert served[0]["state"] != "current"
+    assert "staging" in served[0]["freshness_reason"]
+
+
+def test_a_stage_that_dies_for_any_other_reason_is_recorded_the_same_way(
+    seeded, raw_root: Path, lineage_env, postgres_password, monkeypatch
+) -> None:
+    """H-13. Only ArchiveFormatError was caught, so every other way a stage can end left the
+    manifest committed, unstamped and unexplained -- H-1's exact shape over the whole of Step 1
+    rather than over two statements.
+
+    MemoryError stands in for the class: the `MemoryMax=6G` the runbook's own Step 1 declares,
+    a disk-full during staging, a psycopg error, or the per-year FilesystemPrecheckError inside
+    the promotion loop. The reason code is derived from the exception, so the event stays
+    truthful without knowing what failed.
+    """
+    monkeypatch.setenv("PGPASSWORD", postgres_password)
+    seeded.commit()
+
+    def out_of_memory(*_args, **_kwargs):
+        raise MemoryError("cgroup limit reached while staging the lease member")
+
+    monkeypatch.setattr(tx_pdq, "stage_lease_cycle", out_of_memory)
+
+    with durable_fetch_attempts(seeded.info.dsn):
+        with lineage_session(
+            recorder=PostgresRecorder(seeded), environment=lineage_env
+        ), client_for(SAMPLE) as client, pytest.raises(MemoryError):
+            tx_pdq.load(
+                seeded,
+                url=f"https://example.invalid/{SOURCE_KEY}",
+                raw_root=raw_root,
+                client=client,
+                expect_bytes=SAMPLE.stat().st_size,
+                stage_only=True,
+            )
+        seeded.rollback()
+
+    served, _ = source_health_data(
+        seeded, observed_at=datetime.now(UTC), source_ids=["tx_pdq_dsv"]
+    )
+
+    assert scalar(
+        seeded,
+        "select payload ->> 'reason_code' from lineage.audit_events"
+        " where event_type = 'staging.load_failed'",
+    ) == "memoryerror"
+    assert scalar(
+        seeded,
+        "select staging_load_ref from lineage.manifests where source_id = 'tx_pdq_dsv'",
+    ) is None
+    assert scalar(seeded, "select count(*) from staging.tx_pdq_well_completion") == 0
+    assert served[0]["state"] == "stale"
+
+
+def test_the_guard_starts_at_the_fetch_commit_and_not_at_the_archive(
+    seeded, raw_root: Path, lineage_env, postgres_password, monkeypatch
+) -> None:
+    """H-18. The inventory read and the restage deletes sit between the fetch commit and the
+    archive block, so a failure in either left the manifest committed and unexplained -- H-13's
+    own shape, inside the guard's own claim."""
+    monkeypatch.setenv("PGPASSWORD", postgres_password)
+    seeded.commit()
+
+    real_inventory = tx_pdq.member_inventory
+    calls: list[Path] = []
+
+    def failing_inventory(path):
+        calls.append(path)
+        if len(calls) > 1:  # the first call is fetch_raw's decompressed_inventory
+            raise MemoryError("cgroup limit reached while reading the member inventory")
+        return real_inventory(path)
+
+    monkeypatch.setattr(tx_pdq, "member_inventory", failing_inventory)
+
+    with durable_fetch_attempts(seeded.info.dsn):
+        with lineage_session(
+            recorder=PostgresRecorder(seeded), environment=lineage_env
+        ), client_for(SAMPLE) as client, pytest.raises(MemoryError):
+            tx_pdq.load(
+                seeded,
+                url=f"https://example.invalid/{SOURCE_KEY}",
+                raw_root=raw_root,
+                client=client,
+                expect_bytes=SAMPLE.stat().st_size,
+                stage_only=True,
+            )
+        seeded.rollback()
+
+    served, _ = source_health_data(
+        seeded, observed_at=datetime.now(UTC), source_ids=["tx_pdq_dsv"]
+    )
+
+    assert scalar(
+        seeded,
+        "select count(*) from lineage.audit_events where event_type = 'staging.load_failed'",
+    ) == 1
+    assert served[0]["state"] == "stale"
+
+
+def test_a_database_error_is_recorded_from_the_aborted_transaction_it_leaves(
+    seeded, raw_root: Path, lineage_env, postgres_password, monkeypatch
+) -> None:
+    """The database's own errors are the case the recorder has to survive, not just observe.
+
+    A psycopg error leaves the transaction aborted, so every statement after it is refused
+    until a rollback. The recorder rolls back before it emits for exactly this reason, and this
+    is what proves the order is load-bearing rather than tidy.
+    """
+    monkeypatch.setenv("PGPASSWORD", postgres_password)
+    seeded.commit()
+
+    def bad_statement(connection, *_args, **_kwargs):
+        with connection.cursor() as cursor:
+            cursor.execute("select 1 from staging.a_table_no_migration_creates")
+
+    monkeypatch.setattr(tx_pdq, "stage_lease_cycle", bad_statement)
+
+    with durable_fetch_attempts(seeded.info.dsn):
+        with lineage_session(
+            recorder=PostgresRecorder(seeded), environment=lineage_env
+        ), client_for(SAMPLE) as client, pytest.raises(psycopg.errors.UndefinedTable):
+            tx_pdq.load(
+                seeded,
+                url=f"https://example.invalid/{SOURCE_KEY}",
+                raw_root=raw_root,
+                client=client,
+                expect_bytes=SAMPLE.stat().st_size,
+                stage_only=True,
+            )
+        seeded.rollback()
+
+    served, _ = source_health_data(
+        seeded, observed_at=datetime.now(UTC), source_ids=["tx_pdq_dsv"]
+    )
+
+    assert scalar(
+        seeded,
+        "select payload ->> 'reason_code' from lineage.audit_events"
+        " where event_type = 'staging.load_failed'",
+    ) == "undefinedtable"
+    assert served[0]["state"] == "stale"
+
+
+def test_a_failure_after_the_stage_unstamps_the_load_and_is_recorded_too(
+    seeded, raw_root: Path, lineage_env, postgres_password, monkeypatch
+) -> None:
+    """The half of H-13 a catch around the archive block alone would still have missed.
+
+    The staging load is stamped inside the run's transaction, so a promotion that fails rolls
+    the stamp back with everything else and leaves exactly the unexplained manifest a refusal
+    would. The per-year `FilesystemPrecheckError` the runbook's Step 3 declares is the real
+    instance of this; a planted one stands in for it.
+    """
+    monkeypatch.setenv("PGPASSWORD", postgres_password)
+    seeded.commit()
+
+    def no_headroom(*_args, **_kwargs):
+        raise FilesystemPrecheckError("/var/lib/postgresql has 0 bytes available")
+
+    monkeypatch.setattr(tx_pdq, "promote_lease_cycle", no_headroom)
+
+    with durable_fetch_attempts(seeded.info.dsn):
+        with lineage_session(
+            recorder=PostgresRecorder(seeded), environment=lineage_env
+        ), client_for(SAMPLE) as client, pytest.raises(FilesystemPrecheckError):
+            tx_pdq.load(
+                seeded,
+                url=f"https://example.invalid/{SOURCE_KEY}",
+                raw_root=raw_root,
+                client=client,
+                expect_bytes=SAMPLE.stat().st_size,
+            )
+        seeded.rollback()
+
+    served, _ = source_health_data(
+        seeded, observed_at=datetime.now(UTC), source_ids=["tx_pdq_dsv"]
+    )
+
+    assert scalar(
+        seeded,
+        "select payload ->> 'reason_code' from lineage.audit_events"
+        " where event_type = 'staging.load_failed'",
+    ) == "filesystemprecheckerror"
+    assert scalar(
+        seeded,
+        "select staging_load_ref from lineage.manifests where source_id = 'tx_pdq_dsv'",
+    ) is None
+    assert served[0]["state"] == "stale"
+
+
+def test_a_signal_death_on_a_first_load_is_the_residual_and_reads_current(
+    seeded, raw_root: Path, lineage_env, postgres_password, monkeypatch
+) -> None:
+    """The hole `except Exception` cannot close, pinned so it is not forgotten.
+
+    SIGKILL, and SIGTERM with no handler installed, end the process without unwinding, so no
+    recorder runs. What survives is the committed manifest: unstamped, with no event. On a
+    source that has stamped a manifest before, the backstop arm still calls it unloaded. On a
+    source's **first** load -- which is what Texas is owed on the host today, where
+    `lineage.manifests` holds no `tx_pdq_dsv` row -- there is nothing to compare against and it
+    reads current. One successful stage closes it permanently for that source.
+    """
+    monkeypatch.setenv("PGPASSWORD", postgres_password)
+    seeded.commit()
+
+    with durable_fetch_attempts(seeded.info.dsn), lineage_session(
+        recorder=PostgresRecorder(seeded), environment=lineage_env
+    ), client_for(SAMPLE) as client:
+        tx_pdq.fetch_raw(
+            seeded,
+            tx_pdq.SOURCE_ID,
+            SOURCE_KEY,
+            url=f"https://example.invalid/{SOURCE_KEY}",
+            acquisition_method="mft_guid_resolve",
+            raw_root=raw_root,
+            client=client,
+            media_type="application/zip",
+        )
+        seeded.commit()  # the fetch-time commit, and then the process is gone
+
+    served, _ = source_health_data(
+        seeded, observed_at=datetime.now(UTC), source_ids=["tx_pdq_dsv"]
+    )
+
+    assert scalar(seeded, "select count(*) from lineage.audit_events"
+                          " where event_type = 'staging.load_failed'") == 0
+    assert served[0]["state"] == "current"
+
+
+def test_a_signal_death_after_the_first_successful_stage_is_covered(
+    seeded, raw_root: Path, lineage_env, postgres_password, monkeypatch
+) -> None:
+    """The same death, once the source has stamped a load: the backstop arm reads the unstamped
+    head against a source that keeps the bookkeeping and refuses to call it current."""
+    monkeypatch.setenv("PGPASSWORD", postgres_password)
+    seeded.commit()
+    with durable_fetch_attempts(seeded.info.dsn), lineage_session(
+        recorder=PostgresRecorder(seeded), environment=lineage_env
+    ), client_for(SAMPLE) as client:
+        tx_pdq.load(
+            seeded,
+            url=f"https://example.invalid/{SOURCE_KEY}",
+            raw_root=raw_root,
+            client=client,
+            expect_bytes=SAMPLE.stat().st_size,
+            stage_only=True,
+        )
+        seeded.commit()
+
+    with durable_fetch_attempts(seeded.info.dsn), lineage_session(
+        recorder=PostgresRecorder(seeded), environment=lineage_env
+    ), client_for(RESTATED) as client:
+        tx_pdq.fetch_raw(
+            seeded,
+            tx_pdq.SOURCE_ID,
+            SOURCE_KEY,
+            url=f"https://example.invalid/{SOURCE_KEY}",
+            acquisition_method="mft_guid_resolve",
+            raw_root=raw_root,
+            client=client,
+            media_type="application/zip",
+        )
+        seeded.commit()
+
+    served, _ = source_health_data(
+        seeded, observed_at=datetime.now(UTC), source_ids=["tx_pdq_dsv"]
+    )
+
+    assert served[0]["state"] == "stale"
+
+
+def test_a_re_run_that_parses_is_what_makes_the_source_current_again(
+    seeded, raw_root: Path, lineage_env, postgres_password, monkeypatch
+) -> None:
+    """The other half of H-1: the refusal must not be permanent either. A stage that reads the
+    archive through records its staging load on the manifest, and the source reads current."""
+    monkeypatch.setenv("PGPASSWORD", postgres_password)
+    seeded.commit()
+
+    with durable_fetch_attempts(seeded.info.dsn), lineage_session(
+        recorder=PostgresRecorder(seeded), environment=lineage_env
+    ), client_for(SAMPLE) as client:
+        tx_pdq.load(
+            seeded,
+            url=f"https://example.invalid/{SOURCE_KEY}",
+            raw_root=raw_root,
+            client=client,
+            expect_bytes=SAMPLE.stat().st_size,
+            stage_only=True,
+        )
+        seeded.commit()
+
+    served, _ = source_health_data(
+        seeded, observed_at=datetime.now(UTC), source_ids=["tx_pdq_dsv"]
+    )
+
+    assert scalar(
+        seeded,
+        "select staging_load_ref from lineage.manifests where source_id = 'tx_pdq_dsv'",
+    ) is not None
+    assert served[0]["state"] == "current"
 
 
 def test_the_run_reports_what_it_promoted(promoted) -> None:

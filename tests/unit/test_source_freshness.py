@@ -176,3 +176,31 @@ def test_failure_sanitizer_redacts_host_and_path_evidence() -> None:
     assert "C:\\glasswell" not in safe
     assert "[redacted-host]" in safe
     assert "[redacted-path]" in safe
+
+
+def test_an_artifact_that_was_fetched_and_never_parsed_is_not_current() -> None:
+    """H-1. A fetch and a parse are two outcomes. An ingest that keeps its manifest when the
+    parse refuses leaves an honestly successful poll behind, so the poll alone cannot say
+    whether anything ever read the artifact."""
+    result = assess(recorded_outcome="new", artifact_unloaded=True)
+
+    assert result.state == "stale"
+    assert result.last_outcome == "new"
+    assert "never loaded into staging" in result.reason
+
+
+def test_a_failed_poll_still_reads_as_the_failure_and_not_as_an_unloaded_artifact() -> None:
+    """The two are different facts and the poll's is the stronger one: a source that could not
+    be fetched at all should say so rather than reporting on a parse that never started."""
+    result = assess(recorded_outcome="failed", failure_code="malformedarchive",
+                    artifact_unloaded=True)
+
+    assert result.state == "stale"
+    assert result.last_outcome == "failed"
+    assert "malformedarchive" in result.reason
+
+
+def test_the_default_is_loaded_so_no_source_goes_stale_for_not_stamping() -> None:
+    """Nothing but the Texas stage records a staging load today, so the parameter defaults to
+    the answer that changes no other source's served state."""
+    assert assess().state == "current"

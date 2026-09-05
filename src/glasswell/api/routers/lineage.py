@@ -6,6 +6,7 @@ and adds no lineage logic of its own — a second chain resolver would be a revi
 
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Mapping, Sequence
 from datetime import date, datetime
@@ -50,6 +51,7 @@ from glasswell.api.pagination import (
 from glasswell.api.principal import Principal as ResolvedPrincipal
 from glasswell.api.responses import EnvelopeModel, enveloped, inline_for, iso
 from glasswell.lineage.envelope import LINEAGE_SIDECAR
+from glasswell.lineage.errors import RawRootUnset
 from glasswell.lineage.explain import (
     DOT_MEDIA_TYPE,
     MAX_DEPTH,
@@ -63,6 +65,7 @@ from glasswell.lineage.ids import format_handle
 
 router = APIRouter(tags=["lineage"])
 
+_LOGGER = logging.getLogger(__name__)
 _SAFE_FILENAME = re.compile(r"[^A-Za-z0-9._-]")
 
 _DERIVATION = """
@@ -1193,7 +1196,19 @@ def _payload_within_raw_zone(storage_uri: str) -> PathType | None:
     """
     if not storage_uri:
         return None
-    root = resolve_raw_root().resolve()
+    try:
+        root = resolve_raw_root().resolve()
+    except RawRootUnset:
+        # A host that declares no raw zone holds no copy of anything in one, which is the same
+        # answer as a path that escapes: not found. `RawRootUnset` has no problem-document
+        # mapping, so letting it out of a read path would be a 500 where a 404 is the truth.
+        # The 404's detail says the host holds no copy; an undeclared zone is the one cause of
+        # that answer where the bytes may be on the disk, so it is said somewhere.
+        _LOGGER.warning(
+            "raw zone undeclared; raw-payload downloads answer not_found until"
+            " GLASSWELL_RAW_ROOT is set"
+        )
+        return None
     candidate = PathType(storage_uri).resolve()
     if not candidate.is_relative_to(root) or not candidate.is_file():
         return None

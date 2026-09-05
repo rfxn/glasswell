@@ -21,6 +21,28 @@ _SOURCES = """
 select s.source_id,
        s.name,
        artifact.fetch_vintage as retrieval_vintage,
+       -- The parse's half of freshness. A fetch and a parse are two outcomes: an ingest that
+       -- keeps its manifest when the parse refuses leaves an honestly successful poll behind,
+       -- so the poll alone cannot say whether the artifact was ever read. A stamped manifest
+       -- (staging_load_ref, whose meaning is the column comment 083 writes) is loaded and that
+       -- is the end of it -- a re-run of a refused stage reaches the same bytes and so the same
+       -- manifest, and its old refusal must not outlive the parse that succeeded. An unstamped
+       -- one counts as unloaded when a refusal was recorded against it, or when the source
+       -- stamps its loads at all, which is the backstop for a run that died before it could
+       -- record one. The refusals arrive through lineage.staging_load_failures, a view 083 adds
+       -- over the audit stream: the least-privileged role that runs this query would otherwise
+       -- need select on a table that also carries the account and session trail. Naming the
+       -- table here would put it back in the grant, which the registry test extracts from this
+       -- string.
+       coalesce(artifact.manifest_id is not null
+            and artifact.staging_load_ref is null
+            and (
+                 exists (select 1 from lineage.staging_load_failures f
+                          where f.manifest_id = artifact.manifest_id)
+              or exists (select 1 from lineage.manifests loaded
+                          where loaded.source_id = s.source_id
+                            and loaded.staging_load_ref is not null)
+            ), false) as artifact_unloaded,
        coalesce(artifact_count.manifest_count, 0) as manifest_count,
        artifact.manifest_id as last_manifest_id,
        artifact.fetched_at as last_manifest_fetched_at,
@@ -42,14 +64,15 @@ select s.source_id,
   from lineage.sources s
   left join lineage.source_poll_policies p on p.source_id = s.source_id
   left join lateral (
-       select observed.manifest_id, observed.fetched_at, observed.fetch_vintage
+       select observed.manifest_id, observed.fetched_at, observed.fetch_vintage,
+              observed.staging_load_ref
          from (
-              select m.manifest_id, m.fetched_at, m.fetch_vintage,
+              select m.manifest_id, m.fetched_at, m.fetch_vintage, m.staging_load_ref,
                      m.fetched_at as observed_at, 0 as observation_rank
                 from lineage.manifests m
                where m.source_id = s.source_id
               union all
-              select m.manifest_id, m.fetched_at, m.fetch_vintage,
+              select m.manifest_id, m.fetched_at, m.fetch_vintage, m.staging_load_ref,
                      f.completed_at as observed_at, 1 as observation_rank
                 from lineage.fetch_attempts f
                 join lineage.manifests m on m.manifest_id = f.manifest_id
@@ -139,6 +162,7 @@ def source_health_data(
             oldest_open_attempt_at=row["oldest_open_attempt_at"],
             blocking_failure_code=row["blocking_failure_code"],
             blocking_failure_detail=row["blocking_failure_detail"],
+            artifact_unloaded=row["artifact_unloaded"],
         )
         source = {
             "source_id": row["source_id"],

@@ -255,7 +255,7 @@ def test_collector_no_longer_discloses_attempt_or_cadence_as_uninstrumented(
     monkeypatch.setattr(status_collector, "_system_service", lambda *_args, **_kwargs: check)
     monkeypatch.setattr(status_collector, "_martin_check", lambda *_args: check)
     monkeypatch.setattr(status_collector, "_edge_check", lambda *_args: check)
-    monkeypatch.setattr(status_collector, "_storage_check", lambda *_args: check)
+    monkeypatch.setattr(status_collector, "_storage_check", lambda *_args, **_kwargs: check)
     monkeypatch.setattr(status_collector, "_job", lambda *_args: job)
     monkeypatch.setattr(status_collector, "_registry_jobs", lambda *_args: [job])
     monkeypatch.setattr(status_collector, "_restore_drill_job", lambda *_args: job)
@@ -284,6 +284,101 @@ def test_collector_no_longer_discloses_attempt_or_cadence_as_uninstrumented(
     # timer to probe and stay literals.
     assert len(snapshot.jobs) == 1 + 3
     assert len(snapshot.checks) == 7
+
+
+def _statvfs(blocks: int, available: int, frsize: int = 4096):
+    return lambda _path: SimpleNamespace(f_blocks=blocks, f_bavail=available, f_frsize=frsize)
+
+
+def _recorded_storage_check(monkeypatch: pytest.MonkeyPatch) -> dict[str, tuple | dict]:
+    recorded: dict[str, tuple | dict] = {}
+
+    def _record(*args, **kwargs) -> StatusCheck:
+        recorded["args"] = args
+        recorded["kwargs"] = kwargs
+        return StatusCheck(id="root_storage", label="Recorded", state="ok", detail="Read.")
+
+    monkeypatch.setattr(status_collector, "_storage_check", _record)
+    return recorded
+
+
+def test_root_storage_refuses_on_the_floor_the_ratio_alone_would_have_passed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed_at = datetime(2026, 9, 4, 21, 0, tzinfo=UTC)
+    # 40 % available, four times the ratio guardrail, so only an absolute floor can refuse it.
+    monkeypatch.setattr(status_collector.os, "statvfs", _statvfs(blocks=100, available=40))
+    monkeypatch.setenv(status_collector.PGDATA_ENV, "/var/lib/postgresql/16/main")
+
+    monkeypatch.setenv(status_collector.PGDATA_FLOOR_ENV, str(40 * 4096 + 1))
+    refused = status_collector._root_storage_check(observed_at)
+    monkeypatch.setenv(status_collector.PGDATA_FLOOR_ENV, str(40 * 4096))
+    met = status_collector._root_storage_check(observed_at)
+
+    assert (refused.state, met.state) == ("degraded", "ok")
+    assert refused.id == met.id == "root_storage"
+    assert refused.probe == met.probe == "/var/lib/postgresql/16/main"
+
+
+def test_root_storage_still_refuses_on_the_ratio_when_the_floor_is_met(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed_at = datetime(2026, 9, 4, 21, 0, tzinfo=UTC)
+    monkeypatch.setattr(status_collector.os, "statvfs", _statvfs(blocks=100, available=5))
+    monkeypatch.setenv(status_collector.PGDATA_FLOOR_ENV, "0")
+
+    check = status_collector._root_storage_check(observed_at)
+
+    assert check.state == "degraded"
+
+
+def test_a_floor_that_is_not_a_byte_count_keeps_the_default_rather_than_dropping_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed_at = datetime(2026, 9, 4, 21, 0, tzinfo=UTC)
+    recorded = _recorded_storage_check(monkeypatch)
+    monkeypatch.delenv(status_collector.PGDATA_ENV, raising=False)
+    monkeypatch.setenv(status_collector.PGDATA_FLOOR_ENV, "sixty gibibytes")
+
+    status_collector._root_storage_check(observed_at)
+
+    assert recorded["args"][2] == status_collector.DEFAULT_PGDATA
+    # A keyword, which is why the _storage_check stub above takes **kwargs and so does the
+    # one in test_collector_no_longer_discloses_attempt_or_cadence_as_uninstrumented.
+    assert recorded["kwargs"] == {
+        "minimum_available": status_collector.DEFAULT_PGDATA_FLOOR_BYTES
+    }
+
+
+def test_a_configured_path_that_is_empty_falls_back_to_the_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed_at = datetime(2026, 9, 4, 21, 0, tzinfo=UTC)
+    recorded = _recorded_storage_check(monkeypatch)
+    # An `Environment=GLASSWELL_STATUS_PGDATA=` line with nothing after it: Path("") is
+    # Path("."), which measures whatever directory the collector happens to run in.
+    monkeypatch.setenv(status_collector.PGDATA_ENV, "")
+
+    status_collector._root_storage_check(observed_at)
+
+    assert recorded["args"][2] == status_collector.DEFAULT_PGDATA
+
+
+def test_the_status_unit_configures_both_names_the_collector_reads() -> None:
+    unit = (
+        Path(__file__).resolve().parents[2] / "infra" / "systemd" / "glasswell-status.service"
+    ).read_text(encoding="utf-8")
+    environment = dict(
+        line.removeprefix("Environment=").split("=", 1)
+        for line in unit.splitlines()
+        if line.startswith("Environment=")
+    )
+
+    # The value is deliberately not pinned to the default: the platform spec's remedy for the
+    # window before the disk grows is to lower this number, and a test that forbade that would
+    # be a test against the operator.
+    assert environment[status_collector.PGDATA_ENV] == str(status_collector.DEFAULT_PGDATA)
+    assert environment[status_collector.PGDATA_FLOOR_ENV].isdecimal()
 
 
 def test_restore_job_uses_current_durable_proof_not_only_systemd_success(tmp_path: Path) -> None:
