@@ -29,3 +29,7 @@
       rationale and the effective date, so a rule says which release first carried it rather
       than leaving that in `lineage.conformance_rule_publications` alone; additive on the
       detail only, and the freeze differ reads all six schema changes as additive
+- [Fix] The shipped-literal gates read a literal the way the engine does: one decoder, and it
+      reads `\n` as a newline, `\x41` as A and a stylesheet's `\24d4` as the code point it
+      renders. The pass before it dropped the backslash and kept the letters, so an escaped
+      spelling reached the wire unseen by the gate and by the reviewer both
