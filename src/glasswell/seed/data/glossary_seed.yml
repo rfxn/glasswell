@@ -1061,6 +1061,24 @@
   related_terms: ["Wellbore", "Lateral", "Datum"]
   source_refs: ["blueprint-v0.6 §9", "cr_nd_survey_min_stations_1"]
 
+- term: Status class domain
+  aliases: ["Status classes", "Class domain", "status_canonical domain"]
+  highlightable: false
+  short_definition: >-
+    The registered set of canonical well-status classes, and the only set a regulator's status
+    map may target.
+  expanded_definition: >-
+    A row per class in lineage.status_classes under cr_status_class_domain_1, carrying the
+    label, colour, glyph, zoom floor and legend order the map is drawn with, and a note that
+    names no regulator. Every registered status map has a foreign key to it, so a class outside
+    it is a mapping with no published decision behind it rather than a surprise on the canvas.
+    /v1/jurisdictions serves the whole domain once, and each jurisdiction's own vocabulary
+    beside it. One row is the absence class, cited by cr_status_absence_basis_1, and it is the
+    class a serving path emits where nothing resolved, never null.
+  domain_tags: [identity, data-model, serving]
+  related_terms: ["Well status", "Conformance rule", "Jurisdiction"]
+  source_refs: ["lineage.status_classes", "cr_status_class_domain_1", "cr_status_absence_basis_1"]
+
 - term: Status snapshot
   aliases: ["Snapshot", "Snapshots"]
   short_definition: >-
@@ -1316,25 +1334,23 @@
   aliases: ["Status canonical"]
   highlightable: false
   short_definition: >-
-    The well's lifecycle state mapped to one vocabulary across states - active, plugged, dry,
-    expired, inactive, confidential, permitted, drilling, temporarily_abandoned, service, or
-    documented_unmapped for a code a regulator publishes and this vocabulary has no word for.
+    The well's lifecycle state mapped onto the registered status class domain, which
+    /v1/jurisdictions serves in full beside each regulator's own vocabulary.
   expanded_definition: >-
-    Each regulator publishes its own codes, and every mapping onto this vocabulary is a
-    conformance rule with a rationale - cr_nd_status_vocab_1 in North Dakota,
-    cr_tx_status_vocab_1 in Texas, cr_nm_wellhistory_status_vocab_2 in New Mexico,
-    cr_mt_gis_status_vocab_1 in Montana and cr_co_wells_status_vocab_1 in Colorado - so a
-    canonical status resolves to the decision that produced it. Empty is not the same as
-    unknown: it means the source reported no status at all. What becomes of a code the
-    vocabulary does not map is the rule's own choice: North Dakota, Texas and Montana
-    quarantine it, while New Mexico and Colorado pass it through unclassed rather than drop a
-    header the identity spine joins production to. documented_unmapped is a third case again -
-    the regulator documents the code and glasswell has no equivalent class, which is a fact
-    worth serving rather than a null; Colorado's SO and UN are that case, and so are four OCD
-    letters in New Mexico.
+    Each regulator publishes its own codes, and every mapping onto the domain is a conformance
+    rule with a rationale, so a canonical status resolves to the decision that produced it.
+    Which rule governs a jurisdiction is served under its vocabulary on /v1/jurisdictions and
+    resolves at /conformance; this entry deliberately lists neither the classes nor the rules,
+    because a hand list here is a fourth copy nothing checks. What becomes of a code the
+    vocabulary does not map is the rule's own choice, published as unmapped_action beside it:
+    quarantine holds the record back, passthrough serves the absence class rather than dropping
+    a header the identity spine joins production to. Two cases are distinct and both are
+    served: documented_unmapped is a code the regulator publishes and glasswell has no
+    equivalent class for, and the absence class is no class resolved at all, with the filed
+    code beside it saying whether the source reported one.
   domain_tags: [identity, data-model]
-  related_terms: ["Conformance rule", "Confidential well", "Quarantine"]
-  source_refs: ["migration 010_nd_reference_seed.sql", "migration 027_tx_slice.sql"]
+  related_terms: ["Status class domain", "Conformance rule", "Confidential well", "Quarantine"]
+  source_refs: ["lineage.status_classes", "cr_status_class_domain_1", "GET /v1/jurisdictions"]
 
 - term: Well type
   aliases: ["Well types", "well_type"]

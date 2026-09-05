@@ -21,7 +21,10 @@ from fastapi.testclient import TestClient
 from psycopg.types.json import Jsonb
 
 from glasswell.api.examples import EXAMPLE_API10
+from glasswell.lineage.capture import lineage_session
 from glasswell.lineage.jurisdictions import clear_jurisdiction_cache, load_jurisdictions
+from glasswell.lineage.store import PostgresRecorder
+from glasswell.marts.well_pool_rollup import refresh_well_pool_rollup
 from tests.contract.conftest import TX_API10
 from tests.support.jurisdictions import (
     declared_rule,
@@ -36,6 +39,11 @@ NM_POOL = "96269"
 NM_SURFACE = "POINT(-103.9000 32.1000)"
 NM_MONTHS = (date(2026, 5, 1), date(2026, 6, 1))
 NM_VINTAGE = date(2026, 8, 20)
+ZERO_MONTH = date(2026, 7, 1)
+# Later than the other two, so a per-point vintage cannot be the well's maximum by coincidence.
+ZERO_VINTAGE = date(2026, 8, 25)
+NO_NUMBER_MONTH = date(2026, 8, 1)
+NO_NUMBER_VINTAGE = date(2026, 8, 27)
 
 
 @pytest.fixture
@@ -113,6 +121,113 @@ def with_new_mexico(seeded: psycopg.Connection, client: TestClient) -> TestClien
         )
     seeded.commit()
     return client
+
+
+@pytest.fixture
+def with_the_rollup(
+    with_new_mexico: TestClient, seeded: psycopg.Connection, lineage_env
+) -> TestClient:
+    """The same well, after the rollup mart has been built from its pool filings.
+
+    The mart is built here rather than assumed, because a served sum with no mart behind it is
+    the state an instance is in between `make deploy` and the refresh, and that state has its
+    own answer: the panel, which the case below still asserts.
+    """
+    with lineage_session(recorder=PostgresRecorder(seeded), environment=lineage_env):
+        refresh_well_pool_rollup(seeded)
+    seeded.commit()
+    return with_new_mexico
+
+
+@pytest.fixture
+def with_a_zero_month(
+    with_new_mexico: TestClient, seeded: psycopg.Connection, lineage_env
+) -> TestClient:
+    """A third month whose only filing is an explicit zero, and only for oil.
+
+    The fixture above files `reported` in every month and every stream, so the served token is
+    right by construction whatever the arm does. Two of the four states the card's legend
+    advertises are only reachable through a month like this one: an explicit zero the regulator
+    filed, and a stream that filed nothing in a month the well has.
+    """
+    with seeded.cursor() as cursor:
+        cursor.execute(
+            "select source_manifest_id, derivation_id from canonical.production_monthly limit 1"
+        )
+        manifest_id, derivation_id = cursor.fetchone()
+        cursor.execute(
+            "insert into canonical.production_monthly (api10, entity_type, entity_key,"
+            " reporting_level, well_completion_pool, production_month, stream, source_id,"
+            " report_vintage, volume, unit, granularity, value_hash, null_semantics,"
+            " source_manifest_id, derivation_id)"
+            " values (%s, 'well_completion_pool', %s, 'well_completion_pool', %s, %s, 'oil',"
+            " 'nm_ocd_wcproduction', %s, 0, 'bbl', 'well_observed', %s, 'reported_zero', %s, %s)",
+            (
+                NM_API10, f"{NM_API10}:{NM_POOL}", NM_POOL, ZERO_MONTH,
+                ZERO_VINTAGE, "f" * 64, manifest_id, derivation_id,
+            ),
+        )
+    seeded.commit()
+    with lineage_session(recorder=PostgresRecorder(seeded), environment=lineage_env):
+        refresh_well_pool_rollup(seeded)
+    seeded.commit()
+    return with_new_mexico
+
+
+@pytest.fixture
+def with_a_month_its_pools_filed_no_number_for(
+    with_new_mexico: TestClient, seeded: psycopg.Connection, lineage_env
+) -> TestClient:
+    """A fourth month where oil is filed, gas says `no_report` and water says `withheld`.
+
+    The sum admits neither of the last two, so both reach the arm through the same door, in a
+    month the axis holds because oil filed. `withheld` has no New Mexico producer today
+    (`nm_ocd.py:139`) but is in the store's own jurisdiction-neutral vocabulary, and filing both
+    tokens in one month is the only way to tell a served token from a served constant.
+    """
+    with seeded.cursor() as cursor:
+        cursor.execute(
+            "select source_manifest_id, derivation_id from canonical.production_monthly limit 1"
+        )
+        manifest_id, derivation_id = cursor.fetchone()
+        cursor.executemany(
+            "insert into canonical.production_monthly (api10, entity_type, entity_key,"
+            " reporting_level, well_completion_pool, production_month, stream, source_id,"
+            " report_vintage, volume, unit, granularity, value_hash, null_semantics,"
+            " source_manifest_id, derivation_id)"
+            " values (%(api10)s, 'well_completion_pool', %(entity_key)s, 'well_completion_pool',"
+            " %(pool)s, %(month)s, %(stream)s, 'nm_ocd_wcproduction', %(vintage)s, %(volume)s,"
+            " %(unit)s, 'well_observed', %(value_hash)s, %(semantics)s, %(manifest_id)s,"
+            " %(derivation_id)s)",
+            [
+                {
+                    "api10": NM_API10,
+                    "entity_key": f"{NM_API10}:{NM_POOL}",
+                    "pool": NM_POOL,
+                    "month": NO_NUMBER_MONTH,
+                    "stream": stream,
+                    "vintage": NO_NUMBER_VINTAGE,
+                    # canonical.volume is NOT NULL, so an unfiled volume is carried as zero and
+                    # null_semantics is all that separates it from a filed one (nm_ocd.py:858).
+                    "volume": volume,
+                    "unit": unit,
+                    "value_hash": digit * 64,
+                    "semantics": semantics,
+                    "manifest_id": manifest_id,
+                    "derivation_id": derivation_id,
+                }
+                for stream, unit, volume, semantics, digit in (
+                    ("oil", "bbl", Decimal("55.000"), "reported", "1"),
+                    ("gas", "mcf", Decimal("0"), "no_report", "2"),
+                    ("water", "bbl", Decimal("0"), "withheld", "3"),
+                )
+            ],
+        )
+    seeded.commit()
+    with lineage_session(recorder=PostgresRecorder(seeded), environment=lineage_env):
+        refresh_well_pool_rollup(seeded)
+    seeded.commit()
+    return with_new_mexico
 
 
 def body(client: TestClient, path: str, **params) -> dict:
@@ -193,7 +308,7 @@ def test_the_pool_series_cites_new_mexicos_grain_rule_not_north_dakotas(
 
     assert (
         envelope["links"]["aggregation_rule"]
-        == "/v1/conformance/cr_nm_wcproduction_pool_rollup_1"
+        == "/v1/conformance/cr_nm_wcproduction_pool_rollup_2"
     )
     assert "cr_nd_pool_rollup_1" not in envelope["links"]["aggregation_rule"]
 
@@ -256,22 +371,308 @@ def test_the_liquids_basis_on_a_new_mexico_oil_figure_is_new_mexicos(
     assert data["pools"][0]["series"]["oil_bbl"]
 
 
-def test_an_empty_well_level_series_says_why_rather_than_reading_as_no_production(
-    with_new_mexico: TestClient,
+def test_a_new_mexico_well_is_served_the_sum_of_its_pool_filings_and_says_it_is_one(
+    with_the_rollup: TestClient,
 ) -> None:
-    """New Mexico promotes only pool rows and rolls nothing up, so the well-level series is
-    absent, not zero. An empty chart would say the opposite of what is true (DIR-3)."""
-    envelope = body(with_new_mexico, f"/v1/wells/{NM_API10}/production")
+    """The card-track case for the pool-grain panel, amended where this track falsifies it.
+
+    It asserted that a New Mexico well shows a titled panel naming
+    cr_nm_wcproduction_pool_rollup_1 and linking down to the Pools section. After the rollup
+    mart the well has a series, so what it must say instead is that the series is a sum: the
+    warning names the successor, the chart is drawn rather than replaced, and the link down to
+    the filings is still there. The panel keeps its own arm, asserted below on a rule that
+    registers no rollup, which is the state a sixth pool-grain jurisdiction arrives in.
+    """
+    envelope = body(with_the_rollup, f"/v1/wells/{NM_API10}/production")
     warnings = {item["code"]: item for item in envelope["meta"].get("warnings", [])}
 
-    assert "production_reported_at_pool_grain" in warnings
-    detail = warnings["production_reported_at_pool_grain"]["detail"]
-    assert "cr_nm_wcproduction_pool_rollup_1" in detail
-    assert f"/v1/wells/{NM_API10}/production/pools" in detail
+    assert envelope["data"]["series"]["pm"] == ["2026-05", "2026-06"]
+    assert "production_reported_at_pool_grain" not in warnings
+    summed = warnings["production_summed_over_pools"]
+    assert summed["rule_id"] == "cr_nm_wcproduction_pool_rollup_2"
+    assert "cr_nm_wcproduction_pool_rollup_2" in summed["detail"]
+    assert f"/v1/wells/{NM_API10}/production/pools" in summed["detail"]
+    assert envelope["links"]["pools"] == f"/v1/wells/{NM_API10}/production/pools"
+    assert (
+        envelope["links"]["aggregation_rule"]
+        == "/v1/conformance/cr_nm_wcproduction_pool_rollup_2"
+    )
+    assert envelope["data"]["reporting_level"] == "well_completion_pool"
+    assert envelope["data"]["series"]["oil_bbl_aggregation"] == ["sum_over_pools"] * 2
+
+
+def test_a_summed_month_whose_filings_were_all_zero_is_served_as_a_filed_zero(
+    with_a_zero_month: TestClient,
+) -> None:
+    """H-3, measured on the deployed spine at 901,568 served points over 43,921 wells.
+
+    The arm wrote the constant `reported` for every month that had a mart row, so an explicit
+    zero the regulator filed rendered "The operator reported a volume for this month" -- and
+    `format.ts:47` states the client's own invariant that the four states are never collapsed
+    into one another. The mart sums `reported` and `reported_zero` alike, so the distinction is
+    not in the mart and has to be re-read from the filings the sum was taken over.
+    """
+    series = body(with_a_zero_month, f"/v1/wells/{NM_API10}/production")["data"]["series"]
+    months = series["pm"]
+    zero = months.index("2026-07")
+
+    assert months == ["2026-05", "2026-06", "2026-07"]
+    assert series["oil_bbl"][zero] == "0.000"
+    assert series["oil_bbl_null_semantics"] == ["reported", "reported", "reported_zero"]
+
+
+def test_a_stream_with_no_filing_in_a_served_month_says_no_report_not_null(
+    with_a_zero_month: TestClient,
+) -> None:
+    """NIT-3. A null token falls through `format.ts` to gw-state-unknown, which style.css
+    paints in the gas red, and `keyStates()` skips a null so the key never gains a row for it:
+    a mark on the band with nothing in the key to read it by."""
+    series = body(with_a_zero_month, f"/v1/wells/{NM_API10}/production")["data"]["series"]
+
+    assert series["gas_mcf"][2] is None
+    assert series["gas_mcf_null_semantics"] == ["reported", "reported", "no_report"]
+    assert series["water_bbl_null_semantics"] == ["reported", "reported", "no_report"]
+    assert None not in series["gas_mcf_null_semantics"]
+
+
+def test_a_summed_month_whose_filings_all_say_no_report_is_not_called_withheld(
+    with_a_month_its_pools_filed_no_number_for: TestClient,
+) -> None:
+    """H-12. The arm inferred `withheld` from the sum admitting no filing, so on the only
+    jurisdiction it serves -- one that files no `withheld` at all -- a stream that filed no
+    number was served as one the operator held back. `format.ts:47` is the client's invariant
+    that the four states are never collapsed, and the token that keeps them apart is in the
+    filings: this month carries both unadmitted tokens, so a constant cannot answer it.
+    """
+    series = body(
+        with_a_month_its_pools_filed_no_number_for, f"/v1/wells/{NM_API10}/production"
+    )["data"]["series"]
+    month = series["pm"].index("2026-08")
+
+    assert series["pm"] == ["2026-05", "2026-06", "2026-08"]
+    assert [series["gas_mcf"][month], series["water_bbl"][month]] == [None, None]
+    assert series["oil_bbl_null_semantics"][month] == "reported"
+    assert series["gas_mcf_null_semantics"][month] == "no_report"
+    assert series["water_bbl_null_semantics"][month] == "withheld"
+
+
+def test_every_point_of_a_summed_series_carries_its_own_months_vintage(
+    with_a_zero_month: TestClient,
+) -> None:
+    """H-7. One scalar for the well was written onto every point of a field documented per
+    point, so the first OCD restatement would date every month at the restated month's vintage.
+    Both the observed arm and the allocated arm serve the month's own."""
+    series = body(with_a_zero_month, f"/v1/wells/{NM_API10}/production")["data"]["series"]
+
+    assert series["oil_bbl_report_vintage"] == ["2026-08-20", "2026-08-20", "2026-08-25"]
+    assert series["gas_mcf_report_vintage"] == ["2026-08-20", "2026-08-20", None]
+
+
+def test_every_point_of_the_summed_series_resolves_to_the_refresh_that_produced_it(
+    with_the_rollup: TestClient, seeded: psycopg.Connection
+) -> None:
+    """One derivation for the series is coarser than one per month, which is why the address is
+    not: each point carries col, api10 and pm, and every one of them resolves."""
+    envelope = body(with_the_rollup, f"/v1/wells/{NM_API10}/production")
+    handles = [
+        value for key, value in envelope["data"]["_lineage"].items()
+        if key.startswith("series.oil_bbl")
+    ]
+
+    assert len(handles) == 2
+    # Fail-closed: the shape that may address a summed point is a registered profile, so a
+    # handle the registry does not admit resolves to a refusal rather than to a figure.
+    resolved = with_the_rollup.get(
+        "/v1/explain", params={"h": handles[0], "depth": 3}
+    )
+    assert resolved.status_code == 200, resolved.text
+    assert handles[0].split("#")[0] in resolved.text
+
+    with seeded.cursor() as cursor:
+        cursor.execute("select distinct derivation_id from marts.well_pool_rollup")
+        refreshes = {row[0] for row in cursor.fetchall()}
+    assert {handle.split("#")[0] for handle in handles} == refreshes
+    for index, month in enumerate(("2026-05", "2026-06")):
+        assert handles[index].endswith(f"api10={NM_API10}&col=oil_bbl&pm={month}")
+
+
+def test_as_of_is_refused_on_the_summed_series_with_a_stated_reason(
+    with_the_rollup: TestClient,
+) -> None:
+    """HB-34 / H-5. The refusal was a 200 becoming a 4xx on a public surface with no test
+    behind it, in no phase exit and in no changelog line. It is the right answer -- the mart
+    holds one snapshot per key and the pool filings underneath it are bitemporal and answer
+    as_of -- and it is asserted here in the shape the allocated arm's refusal already uses.
+
+    It is also conditional on mart freshness by construction: this arm is only entered when the
+    mart holds rows, so between a deploy and the first refresh the same request answers 200.
+    The case below is the other side of that, on the same well before the refresh.
+    """
+    response = with_the_rollup.get(
+        f"/v1/wells/{NM_API10}/production", params={"as_of": "2026-08-25"}
+    )
+
+    assert response.status_code == 422, response.text
+    problem = response.json()
+    assert problem["type"].endswith("as_of_not_supported")
+    assert "one snapshot per key" in problem["detail"]
+    assert "cr_nm_wcproduction_pool_rollup_2" in problem["detail"]
+    assert f"/v1/wells/{NM_API10}/production/pools" in problem["detail"]
+
+
+def test_the_same_request_is_answered_before_the_mart_is_refreshed(
+    with_new_mexico: TestClient,
+) -> None:
+    """The freshness condition, stated as a served fact rather than left to be discovered: on
+    an instance whose rollup mart is empty the well still answers as_of, because there is no
+    sum to date wrongly. Two answers to one request, decided by a mart's build state."""
+    response = with_new_mexico.get(
+        f"/v1/wells/{NM_API10}/production", params={"as_of": "2026-08-25"}
+    )
+
+    assert response.status_code == 200, response.text
+
+
+def test_a_per_foot_rate_is_refused_on_the_summed_arm_rather_than_ignored(
+    with_the_rollup: TestClient, seeded: psycopg.Connection
+) -> None:
+    """H-6. The summed arm returned before `divisor` was consulted, so a caller asking for a
+    per-foot rate was answered with the undivided sum under the plain unit. The allocated arm
+    forty lines above refuses by name for the same reason and this one said nothing.
+
+    A lateral is seeded because New Mexico registers no length_scope rule and holds surface
+    points only, so the divisor refuses first today; the arm is live the moment a pool-grain
+    jurisdiction with laterals registers a rollup, which this design advertises as a spec key.
+    """
+    seed_well_spatial(seeded, api10=NM_API10, geom_type="lateral")
+    seeded.commit()
+
+    answer = with_the_rollup.get(
+        f"/v1/wells/{NM_API10}/production", params={"normalization": "per_lateral_ft"}
+    )
+
+    assert answer.status_code == 422, answer.text
+    detail = answer.json()["detail"]
+    assert "cr_nm_wcproduction_pool_rollup_2" in detail
+    assert "not a per-foot rate anybody measured" in detail
+
+
+def test_a_registered_well_whose_filings_the_mart_admits_none_of_keeps_the_panel(
+    with_new_mexico: TestClient,
+) -> None:
+    """BLOCKER-1, on a served response from a registered jurisdiction rather than on a branch.
+
+    New Mexico registers a served rollup, so before the mart is refreshed -- and for every well
+    whose filings the sum admits none of, which on the deployed spine is every well that filed
+    only withheld months -- there is no sum. The card gates its Production-by-pool section on
+    this code, so serving the summed code here removed that section from a well whose whole
+    production record is in it, and the reader was shown `No production reported.` instead.
+    """
+    envelope = body(with_new_mexico, f"/v1/wells/{NM_API10}")
+    warnings = {item["code"]: item for item in envelope["meta"].get("warnings", [])}
+
+    assert "production_summed_over_pools" not in warnings
+    disclosure = warnings["production_reported_at_pool_grain"]
+    assert disclosure["rule_id"] == "cr_nm_wcproduction_pool_rollup_2"
+    assert "none of this well's are admitted into that sum" in disclosure["detail"]
+    assert disclosure["pointer"] == "/producing"
+
+
+def test_the_two_envelopes_agree_on_which_pool_grain_state_a_well_is_in(
+    with_new_mexico: TestClient,
+) -> None:
+    """The card reads the well's warnings for its sections and the series' for its chart, so
+    the two disagreeing is two answers to one question on one screen. They did: the well said
+    a sum was served for a well the mart holds no row for, while /production said the panel."""
+    well = body(with_new_mexico, f"/v1/wells/{NM_API10}")
+    series = body(with_new_mexico, f"/v1/wells/{NM_API10}/production")
+    codes = {"production_reported_at_pool_grain", "production_summed_over_pools"}
+
+    assert {
+        item["code"] for item in well["meta"].get("warnings", [])
+    } & codes == {
+        item["code"] for item in series["meta"].get("warnings", [])
+    } & codes
+
+
+def test_a_registered_well_that_filed_nothing_below_it_is_told_of_no_sum(
+    with_the_rollup: TestClient, seeded: psycopg.Connection
+) -> None:
+    """MAJOR-1. The disclosure fired on the registration, so a New Mexico well with no pool
+    filing at all was told the served series is glasswell's sum of those filings and that the
+    filings are served separately -- naming a surface the same response declines to link,
+    about filings that do not exist."""
+    quiet = "3001599002"
+    with seeded.cursor() as cursor:
+        cursor.execute(
+            "select source_manifest_id, derivation_id from canonical.production_monthly limit 1"
+        )
+        manifest_id, derivation_id = cursor.fetchone()
+    seed_well(
+        seeded,
+        api10=quiet,
+        state_code="30",
+        county_code_at_permit="015",
+        ndic_file_no=None,
+        basin="permian",
+        land_unit_label=None,
+        status_canonical=None,
+        status_reported="A",
+        well_name="CHAVES NO POOLS 1",
+        manifest_id=manifest_id,
+        derivation_id=derivation_id,
+    )
+    seeded.commit()
+
+    envelope = body(with_the_rollup, f"/v1/wells/{quiet}")
+    codes = {item["code"] for item in envelope["meta"].get("warnings", [])}
+
+    assert envelope["data"]["producing"] == "unknown"
+    assert "production_summed_over_pools" not in codes
+    assert "production_reported_at_pool_grain" not in codes
+    assert "pools" not in envelope["links"]
+
+
+def test_the_panel_is_still_what_a_pool_grain_jurisdiction_with_no_rollup_is_served(
+) -> None:
+    """The other arm, asserted where it is decided rather than through a planted registration:
+    no resident jurisdiction files at pool grain and registers no rollup any more, and the body
+    a sixth one would get is the panel, with its own words intact."""
+    from glasswell.api.routers.wells import reported_at_pool_grain
+
+    unrolled = reported_at_pool_grain(
+        {
+            "rule_id": "cr_xx_pool_grain_1",
+            "rule": "files per completion pool",
+            "reporting_level": "well_completion_pool",
+            "effective_from": date(2026, 1, 1),
+            "published_vintage": date(2026, 1, 1),
+            "served_rollup": None,
+        },
+        filings=True,
+        summed=False,
+    )
+    rolled = reported_at_pool_grain(
+        {
+            "rule_id": "cr_nm_wcproduction_pool_rollup_2",
+            "rule": "files per completion pool, summed in the mart layer",
+            "reporting_level": "well_completion_pool",
+            "effective_from": date(2026, 9, 3),
+            "published_vintage": date(2026, 9, 3),
+            "served_rollup": "sum_over_pools",
+        },
+        filings=True,
+        summed=True,
+    )
+
+    assert unrolled["code"] == "production_reported_at_pool_grain"
+    assert "glasswell performs no rollup to the well" in unrolled["detail"]
+    assert rolled["code"] == "production_summed_over_pools"
+    assert "performs no rollup" not in rolled["detail"]
 
 
 def test_a_new_mexico_well_is_producing_unknown_and_the_reason_is_disclosed(
-    with_new_mexico: TestClient,
+    with_the_rollup: TestClient,
 ) -> None:
     """`unknown` is the safe value and the wrong story without the reason.
 
@@ -279,14 +680,21 @@ def test_a_new_mexico_well_is_producing_unknown_and_the_reason_is_disclosed(
     that filed 17.6M pool rows would otherwise be reported under a field whose description
     offers only "filed nothing", "withheld" and "reports at the lease" — none of which is true
     of it.
+
+    On the rollup fixture, because the summed sentence is what a well the mart serves is owed
+    and this case is about the well that has one; the two the mart does not serve are asserted
+    above.
     """
-    envelope = body(with_new_mexico, f"/v1/wells/{NM_API10}")
+    envelope = body(with_the_rollup, f"/v1/wells/{NM_API10}")
     warnings = {item["code"]: item for item in envelope["meta"].get("warnings", [])}
 
     assert envelope["data"]["producing"] == "unknown"
-    assert "production_reported_at_pool_grain" in warnings
-    disclosure = warnings["production_reported_at_pool_grain"]
-    assert "cr_nm_wcproduction_pool_rollup_1" in disclosure["detail"]
+    # The reason moved with the mart and the code moved with it: `card.ts:428` replaces the
+    # chart with a panel for the pool-grain code, and a New Mexico well now has a chart to draw.
+    assert "production_reported_at_pool_grain" not in warnings
+    disclosure = warnings["production_summed_over_pools"]
+    assert "cr_nm_wcproduction_pool_rollup_2" in disclosure["detail"]
+    assert "canonical holds no well-grain row" in disclosure["detail"]
     assert disclosure["pointer"] == "/producing"
 
 
@@ -375,10 +783,10 @@ def test_a_state_with_no_registered_policy_gets_no_other_states_policy(
 ) -> None:
     """The failure mode this phase exists to close, stated as a property of the resolvers.
 
-    Re-targeted at v0.80: Texas registered both decisions, so the state that registers nothing
-    is Montana for the grain, and `35` for the policy -- a prefix no registration claims at
-    all. An unregistered prefix is not an unregistered *registry*, which is why this is a null
-    and not a refusal (gate-tx H-4).
+    Re-targeted at v0.81: Texas registered both decisions and Montana registered the grain, so
+    every resident registration now declares one and the only null left is `35`, a prefix no
+    registration claims at all. An unregistered prefix is not an unregistered *registry*, which
+    is why this is a null and not a refusal (gate-tx H-4).
     """
     from glasswell.api.routers.production import rollup_rule, stream_basis
 
@@ -392,11 +800,11 @@ def test_a_state_with_no_registered_policy_gets_no_other_states_policy(
     assert stream_basis("gas", "33", registry=registry) is None
     assert stream_basis("oil", "33", registry=registry) == "oil+condensate"
     assert stream_basis("oil", "30", registry=registry) == "oil"
-    # Montana registers a liquids policy and no grain decision, so the grain resolver answers
-    # None for a registration that exists rather than only for one that does not.
-    assert rollup_rule("25", registry=registry) is None
+    # Montana's grain decision was registered on this train, so the resolver answers Montana's
+    # own rule and not North Dakota's, which is the property the assertion was written for.
+    assert rollup_rule("25", registry=registry) == "cr_mt_bogc_pool_rollup_1"
     assert rollup_rule("35", registry=registry) is None
-    assert rollup_rule("30", registry=registry) == "cr_nm_wcproduction_pool_rollup_1"
+    assert rollup_rule("30", registry=registry) == "cr_nm_wcproduction_pool_rollup_2"
     # Texas's own, and its own rule id: the same basis string as North Dakota's is not the
     # same decision, and this is the assertion that tells them apart.
     assert stream_basis("oil", "42", registry=registry) == "oil+condensate"
@@ -523,6 +931,30 @@ def test_the_well_response_links_the_pool_filings_where_the_regulator_files_by_p
     assert envelope["links"]["pools_rule"].startswith("/v1/conformance/cr_nm_")
     codes = {warning["code"] for warning in envelope["meta"]["warnings"]}
     assert "production_reported_at_pool_grain" in codes
+
+
+def test_the_well_a_sum_is_served_for_is_linked_to_the_filings_it_was_summed_from(
+    with_the_rollup: TestClient,
+) -> None:
+    """BLOCKER-1's third state, on a served response.
+
+    `card.ts:544` reads the Production-by-pool section's presence off this envelope's
+    `links.pools` and off nothing else. Two of the three pool-grain states assert that link on
+    a served response -- absent for the well that filed nothing below it, present for the well
+    whose filings the sum admits none of -- and the summed state, which is the one every
+    producing New Mexico well is in, asserted its warning and not its link. The card's own
+    vitest plants the link, so a change that stopped serving it here would take the section
+    holding this well's entire production record off the card, with both suites green.
+    """
+    envelope = body(with_the_rollup, f"/v1/wells/{NM_API10}")
+    codes = {item["code"] for item in envelope["meta"].get("warnings", [])}
+
+    assert "production_summed_over_pools" in codes
+    assert envelope["links"]["pools"] == f"/v1/wells/{NM_API10}/production/pools"
+    assert (
+        envelope["links"]["pools_rule"]
+        == "/v1/conformance/cr_nm_wcproduction_pool_rollup_2"
+    )
 
 
 def test_a_rolled_up_jurisdiction_serves_no_pools_link(with_new_mexico: TestClient) -> None:

@@ -60,6 +60,22 @@ POLICY_RULES = tuple(sorted((
     "cr_eia_geometry_repair_1",
     "cr_eia_well_membership_1",
     "cr_ff_completion_anchor_1",
+    # The status class domain's three: the set every regulator's map targets, what the absence
+    # class means and how a consumer tells its two cases apart, and the share of a spine that
+    # may legitimately resolve to it. All three are declarations the serving path and the host
+    # check read, with no frame for an executor to transform.
+    # Montana's production grain: a decision the promotion has carried out since Montana
+    # landed and the registry never recorded, so the serving path had nothing to name.
+    "cr_mt_bogc_pool_rollup_1",
+    # New Mexico's, one train later and one grain the other way: the successor that admits a
+    # sum glasswell performs in the mart layer, executed by the refresh its spec names. It IS
+    # seeded at the conform stage, so the NM promotion filters it out of the pass the way
+    # Montana's does; this tuple is the registry's own census of code_ref and is asserted as
+    # an equality, so omitting the id only breaks the census (gate-p68 H-1).
+    "cr_nm_wcproduction_pool_rollup_2",
+    "cr_status_class_domain_1",
+    "cr_status_absence_basis_1",
+    "cr_status_absence_share_1",
     # The FracFocus design promotion and the serve-time intensity it feeds: two decisions with
     # measured bounds, kept apart because one runs at promote time and one at request time.
     "cr_ff_design_promote_1",
@@ -582,3 +598,32 @@ def test_the_active_length_method_is_zone_free(db, seeded):
         "geodesic",
         None,
     )
+
+
+# The four this track registers, which is the set the assertion below is about. Named rather
+# than derived, because what it pins is that a rule filed away from its own subject says so.
+CROSS_JURISDICTION_DECLARATIONS = (
+    "cr_status_absence_basis_1",
+    "cr_status_absence_share_1",
+    "cr_status_class_domain_1",
+)
+
+
+def test_a_declaration_filed_under_a_source_it_does_not_interpret_says_so(db, seeded):
+    """`lineage.conformance_rules.source_id` is not null and every one of the 29 registered
+    sources is a regulator or publisher dataset. A policy declaration interprets none of them,
+    so the column is being used as a filing anchor, which works and was undocumented: eight
+    rows already do it, the producing and type-curve decisions under the founding North Dakota
+    source, and nothing on the row said which of the two readings applied.
+
+    `source_is_filing_anchor` is that reading, stated. Whether `lineage.sources` should carry a
+    shape for a decision with no publication to interpret is the registry track's question; what
+    this asserts is that a rule filed away from its own subject says so on the row.
+    """
+    rows = {row["rule_id"]: row for row in registry_rows(db)}
+
+    for rule_id in CROSS_JURISDICTION_DECLARATIONS:
+        assert rows[rule_id]["spec"]["source_is_filing_anchor"] is True, rule_id
+    # And the counterpart: a grain rule's source is the filings it decides about, so it is an
+    # interpretation and says the opposite rather than being silent.
+    assert rows["cr_mt_bogc_pool_rollup_1"]["spec"]["source_is_filing_anchor"] is False

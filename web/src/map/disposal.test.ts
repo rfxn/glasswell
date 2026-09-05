@@ -3,12 +3,12 @@ import { describe, expect, it } from "vitest";
 
 import {
   DISPOSAL_COLOUR,
-  DISPOSAL_RULE,
+  disposalCodebook,
   DISPOSAL_WELL_TYPES,
   disposalFilter,
   disposalType,
 } from "./disposal.ts";
-import { SELECTION_COLOUR, STATUS_CLASSES, UNMAPPED_STATUS } from "./status.ts";
+import { SELECTION_COLOUR, statusVocabulary } from "./status.ts";
 import { TRACE_COLOUR } from "./style.ts";
 
 /** Whether a well carrying this `well_type_reported` is drawn — evaluated, not pattern-matched. */
@@ -32,7 +32,9 @@ describe("the disposal class", () => {
       "MWUI",
       "INJP",
     ]);
-    expect(DISPOSAL_RULE).toBe("cr_nd_well_type_disposal_1");
+    expect(disposalCodebook("3305300001")?.rule).toBe("cr_nd_well_type_disposal_1");
+    // A jurisdiction that publishes no injection codebook has no class and no rule.
+    expect(disposalCodebook("4230100001")).toBeNull();
   });
 
   it("draws every code in the class and nothing outside it", () => {
@@ -50,14 +52,17 @@ describe("the disposal class", () => {
   });
 
   it("extracts the verbatim code for the class, and null for everything else", () => {
-    expect(disposalType({ well_type_reported: "SWD" })).toBe("SWD");
-    expect(disposalType({ well_type_reported: "OG" })).toBe(null);
+    // The api10 is what resolves the registration whose codebook classes the code: the same
+    // letters mean nothing under a regulator that publishes no injection list.
+    expect(disposalType({ api10: "3305300001", well_type_reported: "SWD" })).toBe("SWD");
+    expect(disposalType({ api10: "4230100001", well_type_reported: "SWD" })).toBeNull();
+    expect(disposalType({ api10: "3305300001", well_type_reported: "OG" })).toBe(null);
     expect(disposalType({})).toBe(null);
-    expect(disposalType({ well_type_reported: 7 })).toBe(null);
+    expect(disposalType({ api10: "3305300001", well_type_reported: 7 })).toBe(null);
   });
 
   it("takes a colour no status, the selection and the trace do not already spend", () => {
-    for (const status of [...STATUS_CLASSES, UNMAPPED_STATUS]) {
+    for (const status of statusVocabulary()) {
       expect(status.colour, `${status.id} shares the disposal colour`).not.toBe(DISPOSAL_COLOUR);
     }
     expect(DISPOSAL_COLOUR).not.toBe(SELECTION_COLOUR);

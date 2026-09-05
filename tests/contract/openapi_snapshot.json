@@ -457,7 +457,7 @@
                 "type": "null"
               }
             ],
-            "description": "Wells here whose source reported no status; absent when there are none."
+            "description": "Wells here whose status did not resolve to a class, counted under the absence class; absent when there are none. The same population as the `unmapped` entry in `statuses`, named separately because it is the figure this surface has always served. Not the wells whose source filed no code, which is a wider set."
           },
           "wells": {
             "$ref": "#/components/schemas/FigureModel",
@@ -519,6 +519,11 @@
       },
       "Capabilities": {
         "properties": {
+          "explorer_default": {
+            "description": "Whether the explorer opens on this jurisdiction. A registration rather than a client preference: it is the one whose production history can be walked.",
+            "title": "Explorer Default",
+            "type": "boolean"
+          },
           "land_grid_scope": {
             "description": "Whether land metrics are scoped to it. A state in the grid is always in scope; the reverse does not hold.",
             "title": "Land Grid Scope",
@@ -538,7 +543,8 @@
         "required": [
           "neighbors",
           "land_grid_state",
-          "land_grid_scope"
+          "land_grid_scope",
+          "explorer_default"
         ],
         "title": "Capabilities",
         "type": "object"
@@ -5474,6 +5480,11 @@
             "type": "string",
             "x-glasswell-glossary": "gt_knowledge_time"
           },
+          "rationale": {
+            "description": "Why this jurisdiction is registered as it is, in the registration's words.",
+            "title": "Rationale",
+            "type": "string"
+          },
           "regulator": {
             "$ref": "#/components/schemas/Regulator",
             "description": "Whose filings this jurisdiction is served from.",
@@ -5496,6 +5507,17 @@
             "title": "Source Ids",
             "type": "array",
             "x-glasswell-glossary": "gt_source"
+          },
+          "vocabulary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatusVocabulary"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The status vocabulary this jurisdiction is served under: its rule, when the class is resolved, what an unmapped filed code does, the classes its own map produces and its legend note. Null where no vocabulary rule is registered, which is a defect the status surface reports rather than a state this collection invents."
           },
           "well_count": {
             "anyOf": [
@@ -5530,6 +5552,8 @@
           "capabilities",
           "well_count",
           "well_counts_by_status",
+          "vocabulary",
+          "rationale",
           "measured_on",
           "effective_from",
           "published_at"
@@ -5986,6 +6010,82 @@
             "description": "The swatch colour that layer is drawn with.",
             "title": "Colour"
           },
+          "wells_default_on": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Whether this jurisdiction's wells draw at first paint.",
+            "title": "Wells Default On"
+          },
+          "wells_draw_order": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where the row sits in the layer panel. A real per-row integer rather than a rank over the family: disposal wells sit between two jurisdictions.",
+            "title": "Wells Draw Order",
+            "x-glasswell-not-a-figure": "Where a jurisdiction's Wells row sits in the layer panel. A real per-row integer that ranks layers, not a measurement of anything: disposal wells sit between two of them."
+          },
+          "wells_layer_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The client layer id this jurisdiction's `Wells` row toggles.",
+            "title": "Wells Layer Id"
+          },
+          "wells_snapshot_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Which measured coverage snapshot the row cites, by key. Null where none.",
+            "title": "Wells Snapshot Key"
+          },
+          "wells_style_layer_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The style layers that row toggles, in draw order.",
+            "title": "Wells Style Layer Ids"
+          },
+          "wells_subtitle_template": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The subtitle with `{count}` where the measured well count goes.",
+            "title": "Wells Subtitle Template"
+          },
           "wells_tile_layer_id": {
             "anyOf": [
               {
@@ -6001,7 +6101,13 @@
         },
         "required": [
           "wells_tile_layer_id",
-          "colour"
+          "colour",
+          "wells_layer_id",
+          "wells_style_layer_ids",
+          "wells_draw_order",
+          "wells_default_on",
+          "wells_snapshot_key",
+          "wells_subtitle_template"
         ],
         "title": "MapPresentation",
         "type": "object"
@@ -6052,6 +6158,22 @@
             "description": "Per-source retrieval vintage and state.",
             "title": "Source Freshness",
             "type": "object"
+          },
+          "status_classes": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The canonical well-status class domain, served once by /v1/jurisdictions and omitted everywhere else. Each row carries the class, its label, colour, glyph, zoom floor, legend order, whether it is the absence class, its jurisdiction-neutral note and the rule that declared it. It sits in `meta` because the domain is not a jurisdiction and `data` is a bare array of jurisdictions.",
+            "title": "Status Classes"
           },
           "warnings": {
             "description": "Structured warnings: code, detail, optional pointer.",
@@ -8929,7 +9051,7 @@
       "StatusCount": {
         "properties": {
           "status": {
-            "description": "Canonical status the wells in this bucket carry. Never null: a well the source reported no status for is counted in `unmapped_wells`, not here.",
+            "description": "Canonical status the wells in this bucket carry. Never null: a well whose class does not resolve is served the absence class, and `unmapped_wells` counts that same population under its own name. Neither is the set of wells whose source filed no code, which is wider and holds classed wells too: a promotion can write a class for a well that filed nothing, and on the deployed spine 105,946 Texas wells are in exactly that state. The filed code is served beside the class, so a reader can tell the two apart well by well.",
             "title": "Status",
             "type": "string",
             "x-glasswell-glossary": "gt_well_status"
@@ -9136,6 +9258,70 @@
           "status_rule_id"
         ],
         "title": "StatusHistoryRow",
+        "type": "object"
+      },
+      "StatusVocabulary": {
+        "properties": {
+          "classes": {
+            "description": "The canonical classes this jurisdiction's own registered map can produce, read from that map. A subset of the domain in `meta.status_classes`.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Classes",
+            "type": "array",
+            "x-glasswell-glossary": "gt_status_class_domain"
+          },
+          "legend_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A line the legend renders while this jurisdiction's rule is in view, so no jurisdiction name enters the client. Null where none is registered.",
+            "title": "Legend Note"
+          },
+          "resolved_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "`read_time` where the class is a join against the registry at serve time, absent where the promotion writes it. A property of the registration, not of a request.",
+            "title": "Resolved At"
+          },
+          "rule_id": {
+            "description": "The registered status-vocabulary rule, resolvable at /v1/conformance.",
+            "title": "Rule Id",
+            "type": "string",
+            "x-glasswell-glossary": "gt_conformance_rule"
+          },
+          "unmapped_action": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What this regulator's vocabulary does with a filed code it has no row for: `passthrough` serves the absence class, `quarantine` holds the record back.",
+            "title": "Unmapped Action"
+          }
+        },
+        "required": [
+          "rule_id",
+          "resolved_at",
+          "unmapped_action",
+          "classes",
+          "legend_note"
+        ],
+        "title": "StatusVocabulary",
         "type": "object"
       },
       "StreamCoverage": {
@@ -11043,7 +11229,7 @@
                 "type": "null"
               }
             ],
-            "description": "Wells whose source reported no status at all. Its own bucket, never added to a class \u2014 an absence is not a value, and in the 2026-08-20 Texas load 65,685 wells are in it, which is more than any single class it could have been folded into.",
+            "description": "Wells whose status did not resolve to a class: neither the promotion nor the registered vocabulary produced one, so they are served the absence class. The same population as the `unmapped` entry in `statuses`, and served under its own name because it is what this field has always counted. It is not the set of wells whose source filed no code: that set is wider, because a promotion can write a class for a well that filed nothing, and the filed code is served beside the class so a reader can tell the two apart. The legend's own affordance resolves the class entry's handle rather than this one, because the row it sits on toggles the class; both address the same population and this field keeps its own handle.",
             "x-glasswell-glossary": "gt_well_status"
           },
           "vocabulary_rules": {
@@ -19971,7 +20157,7 @@
     },
     "/v1/wells/status-summary": {
       "get": {
-        "description": "How many wells of each canonical status have geometry inside a bounding box, as of a knowledge-time cut. This is the count a map legend states, asked of the data rather than of what a renderer drew: a tile pyramid thins points as it zooms out and a symbology withdraws its low-salience classes, so a count taken from drawn features falls exactly as the viewed area grows. This one does not move with zoom, with styling or with which tiles have arrived. The population is wells whose recorded geometry \u2014 surface, bottomhole or lateral \u2014 intersects the box, which is the same population `/v1/wells?bbox=` pages, and a well with no geometry at all is in no viewport and in no count here. The box is closed: a well exactly on the edge is inside it. There is no degree cap, because the answer is bounded by the status vocabulary rather than by the population; `links.wells` is published only where the box is inside the collection's own four-degree cap. Every count is a figure with a derivation handle over the rows it counted, so a legend number resolves at /v1/explain to the government file the statuses came from. The box a handle names is the box the query ran over, at full precision \u2014 two viewports a metre apart are two handles. Because each distinct box persists exact response evidence, this operation is capped at 30 requests per principal per UTC minute. Where a box produces more counts than /v1/explain accepts handles in one call, `links.explain` carries as many as it can and a warning says exactly how many it left out; each count still resolves alone. A class no well in the box carries is absent rather than zero. Wells whose source reported no status are their own bucket, `unmapped_wells`, and are never added to a class \u2014 in the 2026-08-20 Texas load 65,685 wells are in it, which is more than any class it could have been folded into. Counts are split per basin with the vocabulary rule that mapped that jurisdiction's codes, because a status class means what its rule says it means and the rules travel with the counts. The same box is classed two more ways: per provenance of the recorded geometry \u2014 canonical geom_type verbatim, under the jurisdiction's classing rule \u2014 and per reported well type code, verbatim. Both are figures with handles, so a coverage statement \u2014 how many wells are traced, how many filed under a disposal code \u2014 derives from this endpoint rather than from a pinned constant. Provenance classes overlap where a well holds several geometry kinds, and they are counted over the geometry itself, which is not effective-dated, so they do not move with as_of. It does not return the wells themselves \u2014 see /v1/wells.",
+        "description": "How many wells of each canonical status have geometry inside a bounding box, as of a knowledge-time cut. This is the count a map legend states, asked of the data rather than of what a renderer drew: a tile pyramid thins points as it zooms out and a symbology withdraws its low-salience classes, so a count taken from drawn features falls exactly as the viewed area grows. This one does not move with zoom, with styling or with which tiles have arrived. The population is wells whose recorded geometry \u2014 surface, bottomhole or lateral \u2014 intersects the box, which is the same population `/v1/wells?bbox=` pages, and a well with no geometry at all is in no viewport and in no count here. The box is closed: a well exactly on the edge is inside it. There is no degree cap, because the answer is bounded by the status vocabulary rather than by the population; `links.wells` is published only where the box is inside the collection's own four-degree cap. Every count is a figure with a derivation handle over the rows it counted, so a legend number resolves at /v1/explain to the government file the statuses came from. The box a handle names is the box the query ran over, at full precision \u2014 two viewports a metre apart are two handles. Because each distinct box persists exact response evidence, this operation is capped at 30 requests per principal per UTC minute. Where a box produces more counts than /v1/explain accepts handles in one call, `links.explain` carries as many as it can and a warning says exactly how many it left out; each count still resolves alone. A class no well in the box carries is absent rather than zero. A well whose status does not resolve is served the absence class like any other class, and `unmapped_wells` counts that same population under the name this surface has always served it as. Whether the source filed a code at all is a different question, served beside the class on the well itself. Counts are split per basin with the vocabulary rule that mapped that jurisdiction's codes, because a status class means what its rule says it means and the rules travel with the counts. The same box is classed two more ways: per provenance of the recorded geometry \u2014 canonical geom_type verbatim, under the jurisdiction's classing rule \u2014 and per reported well type code, verbatim. Both are figures with handles, so a coverage statement \u2014 how many wells are traced, how many filed under a disposal code \u2014 derives from this endpoint rather than from a pinned constant. Provenance classes overlap where a well holds several geometry kinds, and they are counted over the geometry itself, which is not effective-dated, so they do not move with as_of. It does not return the wells themselves \u2014 see /v1/wells.",
         "operationId": "get_well_status_summary",
         "parameters": [
           {
@@ -21404,7 +21590,7 @@
     },
     "/v1/wells/{api10}/production": {
       "get": {
-        "description": "Monthly produced volumes for one well, in the SB-07 \u00a79.1(b) sidecar form: derivation handles in `_lineage`, units in `_units`, the liquids basis in `_basis`, and per-point `report_vintage` and `null_semantics` arrays. ND publishes one workbook a month, so a month is promoted by its own derivation: `_lineage` keys a handle per point (`series.oil_bbl.0`) whenever the points of a column disagree, and each handle explains to the file that carries that month. It keys per point for the same reason where one promotion filed a month more than once: a restatement is a second row and never an edit, so that point's handle also names the report vintage (`&rv=`) it was read at. In North Dakota these are well-level regulator reports, so `granularity` is `well_observed` \u2014 nothing here is allocated. A series never silently mixes vintages: `as_of` selects the greatest report vintage at or before the date and every point says which one it used. `null_semantics` keeps a reported zero, an absent report and a withheld value apart; they are never collapsed into a gap. A month the regulator withheld rides the axis with a null value. A well that filed in more than one pool is served the exact sum of its pool rows, never a serve-time sum: the point's handle resolves to the aggregation derivation over those rows, `*_aggregation` reads `sum_over_pools`, `reporting_level` reads `well_completion_pool`, and `links.pools` carries the per-pool breakdown. Where two filings share one pool label the rule cannot say which is the well, so that point is withdrawn as multi_pool_pending instead. meta.warnings names every case with the rule that decided it. GOR and water cut are deliberately not served in this slice.",
+        "description": "Monthly produced volumes for one well, in the SB-07 \u00a79.1(b) sidecar form: derivation handles in `_lineage`, units in `_units`, the liquids basis in `_basis`, and per-point `report_vintage` and `null_semantics` arrays. ND publishes one workbook a month, so a month is promoted by its own derivation: `_lineage` keys a handle per point (`series.oil_bbl.0`) whenever the points of a column disagree, and each handle explains to the file that carries that month. It keys per point for the same reason where one promotion filed a month more than once: a restatement is a second row and never an edit, so that point's handle also names the report vintage (`&rv=`) it was read at. In North Dakota these are well-level regulator reports, so `granularity` is `well_observed` \u2014 nothing here is allocated. A series never silently mixes vintages: `as_of` selects the greatest report vintage at or before the date and every point says which one it used. `null_semantics` keeps a reported zero, an absent report and a withheld value apart; they are never collapsed into a gap. A month the regulator withheld rides the axis with a null value. A well that filed in more than one pool is served the exact sum of its pool rows, never a serve-time sum: the point's handle resolves to the aggregation derivation over those rows, `*_aggregation` reads `sum_over_pools`, `reporting_level` reads `well_completion_pool`, and `links.pools` carries the per-pool breakdown. Where two filings share one pool label the rule cannot say which is the well, so that point is withdrawn as multi_pool_pending instead. Where the regulator filed no per-well number at all and its grain rule registers a served rollup, the series is read from glasswell's own rollup mart: every point carries the refresh that produced it and its own selector, a production_summed_over_pools warning names the rule, and as_of is refused rather than answered with today's sum, because the mart holds one snapshot per key while the pool filings under it are bitemporal. meta.warnings names every case with the rule that decided it. GOR and water cut are deliberately not served in this slice.",
         "operationId": "get_well_production",
         "parameters": [
           {

@@ -95,7 +95,12 @@ def test_the_refresh_publishes_one_point_layer_and_rebuilds_rather_than_appends(
 
 
 def test_a_geometry_with_no_well_row_still_tiles_unstyled(refreshed):
-    """The left-join property: a point must not disappear between canonical and the map."""
+    """The left-join property: a point must not disappear between canonical and the map.
+
+    Its class is the absence class rather than a null, which is the same answer one layer up:
+    the tile carries the word the legend keys on, and the operator and the well type stay null
+    because those are absences of a value rather than classes with a row behind them.
+    """
     db, _ = refreshed
     row = rows(
         db,
@@ -104,7 +109,7 @@ def test_a_geometry_with_no_well_row_still_tiles_unstyled(refreshed):
         (NM_ORPHAN,),
     )
 
-    assert row == [(None, None, None)]
+    assert row == [(None, "unmapped", None)]
 
 
 def test_no_other_states_geometry_is_in_the_new_mexico_mart(refreshed):
@@ -271,7 +276,8 @@ def test_the_four_documented_codes_reach_the_tile_as_a_class_and_not_as_a_null(r
 
 def test_a_letter_the_registry_does_not_map_passes_through_unclassed(db, lineage_env):
     """`unmapped_action` is passthrough, so an unknown letter keeps its header and its point
-    and arrives at the map as the absence class — it is not quarantined out of the spine."""
+    and arrives at the map as the absence class, named rather than null: the letter is served
+    beside it, which is what says the OCD filed a code its codebook has no row for."""
     seed_all(db)
     manifest = seed_manifest(db, sha256="d" * 64, source_id="nm_ocd_wellhistory")
     seed_well(
@@ -295,7 +301,7 @@ def test_a_letter_the_registry_does_not_map_passes_through_unclassed(db, lineage
         db,
         "select status_reported, status_canonical from marts.nm_wells_tile where api10 = %s",
         ("3001597001",),
-    ) == [("&", None)]
+    ) == [("&", "unmapped")]
 
 
 def test_no_other_states_letters_are_resolved_through_the_new_mexico_map(db, lineage_env):
@@ -341,7 +347,9 @@ def test_no_other_states_letters_are_resolved_through_the_new_mexico_map(db, lin
         )
         served = {row["api10"]: row["status_canonical"] for row in cursor.fetchall()}
 
-    assert served["4232799101"] is None, "a Texas letter was decoded by New Mexico's map"
+    assert served["4232799101"] == "unmapped", (
+        "a Texas letter was decoded by New Mexico's map"
+    )
     assert served["3305399101"] == "inactive", "a promoted class was overwritten by the join"
     assert rows(
         db, "select status_canonical from marts.nd_wells_tile where api10 = %s",

@@ -114,6 +114,27 @@ export function literalsIn(file: string, source: string): ShippedLiteral[] {
   return found;
 }
 
+/**
+ * Template literals, on the same comment-stripped source `literalsIn` reads.
+ *
+ * `literalsIn` extracts quoted strings only, and the card's prose is largely backticked
+ * (`peer.ts`'s caption, `card.ts`'s coverage line), so a quoted-only corpus would miss the
+ * sentences most at risk of making a claim. R-6's fold: the card's vocabulary gate reads it
+ * from here rather than declaring its own, so one module decides what a shipped literal is.
+ */
+export function templatesIn(file: string, source: string): ShippedLiteral[] {
+  const stripped = stripComments(source);
+  const found: ShippedLiteral[] = [];
+  for (const match of stripped.matchAll(/`(?:\\[\s\S]|[^`\\])*`/g)) {
+    found.push({
+      file,
+      line: stripped.slice(0, match.index).split("\n").length,
+      value: match[0].slice(1, -1),
+    });
+  }
+  return found;
+}
+
 function walk(directory: string, out: string[]): string[] {
   for (const entry of readdirSync(directory)) {
     const path = join(directory, entry);

@@ -32,6 +32,7 @@ from glasswell.seed.conformance_nd import GIS_WELLS_URL as ND_GIS_URL
 from glasswell.seed.conformance_nd import MPR_INDEX_URL
 from glasswell.seed.conformance_nm import OCD_FTP_PAGE_URL
 from glasswell.seed.conformance_nm_wells import GIS_LAYER_URL as NM_GIS_LAYER_URL
+from glasswell.seed.conformance_nm_wells import NM_CADENCE_DECISIONS
 from glasswell.seed.conformance_tx import (
     EWA_LINK,
     GIS_LINK,
@@ -320,6 +321,7 @@ DECISIONS: dict[str, dict[str, str]] = {
     **_DECISIONS,
     **CO_CADENCE_DECISIONS,
     **TX_CADENCE_DECISIONS,
+    **NM_CADENCE_DECISIONS,
 }
 
 # One lookup for both generations, so the builder reads a rule id and never guesses an ordinal.

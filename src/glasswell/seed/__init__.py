@@ -31,6 +31,10 @@ from glasswell.seed.conformance_schedules import (
     SCHEDULE_RULES,
     seed_conformance_schedules,
 )
+from glasswell.seed.conformance_status_classes import (
+    STATUS_CLASS_RULES,
+    seed_conformance_status_classes,
+)
 from glasswell.seed.conformance_status_history import (
     HISTORY_RULE_IDS,
     STATUS_HISTORY,
@@ -68,6 +72,7 @@ from glasswell.seed.schedules import (
     SCHEDULES,
     seed_schedules,
 )
+from glasswell.seed.status_classes import STATUS_CLASSES, seed_status_classes
 
 __all__ = [
     "ALLOCATION_RULES",
@@ -99,6 +104,8 @@ __all__ = [
     "SCHEDULES",
     "SCHEDULE_RULES",
     "SOURCES",
+    "STATUS_CLASSES",
+    "STATUS_CLASS_RULES",
     "STATUS_HISTORY",
     "TX_RULES",
     "TYPECURVE_RULES",
@@ -118,6 +125,7 @@ __all__ = [
     "seed_conformance_nm_wells_gis",
     "seed_conformance_producing",
     "seed_conformance_schedules",
+    "seed_conformance_status_classes",
     "seed_conformance_status_history",
     "seed_conformance_tx",
     "seed_conformance_typecurve",
@@ -131,6 +139,7 @@ __all__ = [
     "seed_nm_waste_types",
     "seed_schedules",
     "seed_sources",
+    "seed_status_classes",
     "slug",
 ]
 
@@ -175,6 +184,10 @@ def seed_all(connection: psycopg.Connection) -> dict[str, int]:
         "conformance_rules_co": seed_conformance_co(connection),
         "crs_registry": seed_crs(connection),
         "conformance_rules_fracfocus": seed_conformance_fracfocus(connection),
+        # Before the ND seeder because the domain's own rules carry the founding nd_ source id
+        # and the ND count is a registry total over that prefix; and before every seeder whose
+        # rows the domain constrains, which is why it is not simply last.
+        "status_classes": seed_status_classes(connection),
         # Before the ND seeder for the same reason TX is before everything: these rows carry an
         # nd_ source_id, and the count the ND seeder returns is a registry total over that
         # prefix. Seeded after it, the first run's number would differ from the second's.

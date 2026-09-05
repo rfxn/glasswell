@@ -5,13 +5,11 @@ import type { BasemapVariant } from "./basemap.ts";
 import { DISPOSAL_COLOUR, disposalFilter } from "./disposal.ts";
 import {
   all,
-  any,
   coalesce,
   featureState,
   get,
   inSet,
   interpolate,
-  not,
   step,
   toNumber,
   when,
@@ -20,13 +18,11 @@ import {
 import type { Expr } from "./expr.ts";
 import {
   SELECTION_COLOUR,
-  STATUS_CLASSES,
-  STRUCK_STATUSES,
-  UNMAPPED_STATUS,
   statusColourExpression,
   statusFillExpression,
-  statusIds,
   statusProperty,
+  statusVocabulary,
+  struckStatuses,
 } from "./status.ts";
 import {
   METRICS_HANDOFF_ZOOM,
@@ -252,22 +248,24 @@ export function statusStyledLayerIds(
 }
 
 export function visibleStatusesAt(atZoom: number): string[] {
-  return STATUS_CLASSES.filter((status) => atZoom >= status.minZoom).map((status) => status.id);
+  // Every class the domain holds, absence included: its zoom floor is a row that says 0,
+  // because absence must not be the thing that hides.
+  return statusVocabulary()
+    .filter((status) => atZoom >= status.minZoom)
+    .map((status) => status.id);
 }
 
 /**
- * The rendered set is the zoom gate intersected with the legend's own filter. The unmapped
- * class is never withdrawn by the *zoom* — a defect that disappears at low zoom is worse than
- * one that shows — but the reader can switch it off, because on some slices it is the largest
- * class on the canvas and unfilterable ink is ink nobody can account for.
+ * The rendered set is the zoom gate intersected with the legend's own filter, and nothing else.
+ *
+ * No negation, and none is needed: the domain is served, so every class a well can carry is a
+ * class this set names, and a well with a present but unknown status cannot fall out of the
+ * map, the count and the legend together. Reintroducing one would paint a class the client
+ * could not name as the absence class, and take it off the canvas the moment a reader unticked
+ * that one box.
  */
 export function statusFilter(atZoom: number, on: ReadonlySet<string>): Expr {
-  const named = inSet(statusProperty(), visibleStatusesAt(atZoom).filter((id) => on.has(id)));
-  if (!on.has(UNMAPPED_STATUS.id)) return named;
-  // The absence class is anything the vocabulary cannot name — the rule `statusClass()` applies
-  // when counting. Matching the literal id instead let a well with an unknown *present* status
-  // fall out of the map, the count and the legend at once, with nothing saying so.
-  return any(named, not(inSet(statusProperty(), statusIds())));
+  return inSet(statusProperty(), visibleStatusesAt(atZoom).filter((id) => on.has(id)));
 }
 
 /** One bucket of the Wells-By panel, applied to the canvas. One value: `wb.pick` is one press. */
@@ -295,6 +293,12 @@ export interface FacetLayer {
   source: string;
   /** Whether the status gate owns this layer's filter slot, or the layer's own predicate does. */
   gated: boolean;
+  /**
+   * Whether the layer draws a modifier over a status class rather than a class of its own. The
+   * gate then intersects the layer's own predicate instead of leaving it alone, because a class
+   * switched off has to take its overlay off the canvas with it.
+   */
+  statusOverlay?: boolean;
 }
 
 /**
@@ -309,12 +313,13 @@ export const FACET_FILTERED_LAYERS: readonly FacetLayer[] = [
   { id: "survey-traces", source: TRACES_SOURCE, gated: false },
   { id: "mt-paths", source: MT_PATHS_SOURCE, gated: true },
   { id: "tx-laterals", source: TX_LATERALS_SOURCE, gated: true },
-  // The point layer is gated by the status filter and its struck sibling is not: the strike
-  // marks a class the filter may have just removed, and repainting it would contradict the
-  // press. Two rows per registration, and the disposal ring reads the founding row's source.
+  // The point layer is gated by the status filter and its struck sibling keeps its own set of
+  // terminal classes, narrowed by the gate: the strike marks a class the filter may have just
+  // removed, and repainting it contradicts the press. Two rows per registration, and the
+  // disposal ring reads the founding row's source.
   ...WELLS_ROSTER.flatMap((row) => [
     { id: row.id, source: row.tileLayerId, gated: true },
-    { id: `${row.id}-struck`, source: row.tileLayerId, gated: false },
+    { id: `${row.id}-struck`, source: row.tileLayerId, gated: false, statusOverlay: true },
   ]),
   { id: "disposal-wells", source: DEFAULT_WELLS_SOURCE, gated: false },
 ];
@@ -414,8 +419,13 @@ export function wellFilter(
   facet: FacetSelection | null,
   layerId: string,
 ): Expr | undefined {
-  const gated = FACET_FILTERED_LAYERS.find((layer) => layer.id === layerId)?.gated === true;
-  const gate = gated ? statusFilter(atZoom, on) : declaredFilter(layerId);
+  const layer = FACET_FILTERED_LAYERS.find((entry) => entry.id === layerId);
+  const own = layer?.gated === true ? undefined : declaredFilter(layerId);
+  const status =
+    layer?.gated === true || layer?.statusOverlay === true
+      ? statusFilter(atZoom, on)
+      : undefined;
+  const gate = own && status ? all(own, status) : (own ?? status);
   const press = facetPredicate(layerId, facet);
   if (!press) return gate;
   return gate ? all(gate, press) : press;
@@ -543,7 +553,7 @@ function wellStruckLayer(row: WellsRosterRow, source: string): LayerSpecificatio
     source,
     "source-layer": source,
     minzoom: 11,
-    filter: inSet(statusProperty(), [...STRUCK_STATUSES]),
+    filter: inSet(statusProperty(), [...struckStatuses()]),
     layout: {
       "icon-image": "gw-strike",
       "icon-allow-overlap": true,

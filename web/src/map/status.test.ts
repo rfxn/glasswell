@@ -4,10 +4,10 @@ import { census, censusOf, measuredWellCount, resetCensus } from "./census.ts";
 import { JURISDICTIONS } from "./jurisdictions.generated.ts";
 import {
   SELECTION_COLOUR,
-  STATUS_CLASSES,
+  statusVocabulary,
   STATUS_VOCAB_RULE,
   STATUS_VOCAB_RULES,
-  UNMAPPED_STATUS,
+  absenceStatus,
   statusClass,
   statusColour,
   statusIds,
@@ -46,12 +46,19 @@ describe("the status catalogue", () => {
     // The value is a registry row now, not a literal here: the generated module is rendered
     // from the same seed the parity gate holds to the migration's rows.
     expect(STATUS_VOCAB_RULE).toBe(JURISDICTIONS.ND.rules["status_vocabulary"]);
-    // A class carries the rule that put it in the vocabulary, and every one of those rules is
-    // named in STATUS_VOCAB_RULES, which is what the legend prints.
-    for (const status of STATUS_CLASSES) {
-      expect(STATUS_VOCAB_RULES as readonly string[]).toContain(status.rule);
+    // A class carries the rule that *declared* it, which is the domain's own, not the
+    // per-regulator mapping rule it used to cite. Which codes reach a class is that regulator's
+    // fact and resolves at /conformance; a class is not one jurisdiction's to own.
+    const declaring = new Set(
+      statusVocabulary().map((status) => status.rule),
+    );
+    expect(declaring.size).toBe(2);
+    for (const rule of declaring) {
+      expect(rule).toMatch(/^cr_status_/);
+      expect(STATUS_VOCAB_RULES as readonly string[]).not.toContain(rule);
     }
-    expect(statusClass("service").rule).toBe(JURISDICTIONS.TX.rules["status_vocabulary"]);
+    expect(statusClass("service").rule).toBe(statusClass("active").rule);
+    expect(absenceStatus()!.rule).not.toBe(statusClass("active").rule);
     expect([...STATUS_VOCAB_RULES].sort()).toEqual(
       [
         ...new Set(Object.values(JURISDICTIONS).map((row) => row.rules["status_vocabulary"])),
@@ -63,7 +70,7 @@ describe("the status catalogue", () => {
     // TX has 65,685 wells the regulator gave no status: an absence, not a rule failure. In the
     // old amber it painted 19.7% of the canvas at z12 against active's 8.9%, in the same hue
     // family as ND's `confidential` — the colour for "withheld on purpose".
-    expect(UNMAPPED_STATUS.colour).not.toBe("#B57A18");
+    expect(absenceStatus()!.colour).not.toBe("#B57A18");
     expect(statusClass("confidential").colour).toBe("#E4A33C");
     const hue = (hex: string): number => {
       const [r = 0, g = 0, b = 0] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
@@ -75,27 +82,27 @@ describe("the status catalogue", () => {
         max === r ? (g - b) / d + (g < b ? 6 : 0) : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
       return (h * 60) % 360;
     };
-    expect(Math.abs(hue(UNMAPPED_STATUS.colour) - hue(statusClass("confidential").colour))).
+    expect(Math.abs(hue(absenceStatus()!.colour) - hue(statusClass("confidential").colour))).
       toBeGreaterThan(20);
   });
 
   it("still draws absence at every zoom, because a gap must not be what hides", () => {
-    expect(UNMAPPED_STATUS.minZoom).toBe(0);
+    expect(absenceStatus()!.minZoom).toBe(0);
   });
 
   it("reserves the selection colour: no status may paint with it", () => {
-    for (const status of [...STATUS_CLASSES, UNMAPPED_STATUS]) {
+    for (const status of statusVocabulary()) {
       expect(status.colour.toLowerCase()).not.toBe(SELECTION_COLOUR.toLowerCase());
     }
   });
 
   it("gives every class a distinct colour-and-glyph pair", () => {
-    const seen = STATUS_CLASSES.map((status) => `${status.colour}/${status.glyph}`);
+    const seen = statusVocabulary().filter((s) => !s.isAbsence).map((status) => `${status.colour}/${status.glyph}`);
     expect(new Set(seen).size).toBe(seen.length);
   });
 
   it("labels every class and states its epistemic caveat", () => {
-    for (const status of [...STATUS_CLASSES, UNMAPPED_STATUS]) {
+    for (const status of statusVocabulary()) {
       expect(status.label.length).toBeGreaterThan(0);
       expect(status.note.length).toBeGreaterThan(0);
     }
@@ -107,11 +114,15 @@ describe("the status catalogue", () => {
     expect(statusClass("dry").glyph).toBe("struck-hollow");
   });
 
-  it("routes an unknown status to a labelled quarantine class, never to a silent default", () => {
+  it("routes an unknown status to a labelled absence class, never to a silent default", () => {
     const unknown = statusClass("horizontal-something-new");
-    expect(unknown).toBe(UNMAPPED_STATUS);
+    expect(unknown).toBe(absenceStatus()!);
     expect(unknown.label).toMatch(/unmapped/i);
-    expect(unknown.note).toContain(STATUS_VOCAB_RULE);
+    // The note names no rule and no regulator: it states both cases and says the filed code
+    // beside the class is what tells them apart, which is the served text rather than a
+    // sentence this file wrote about one jurisdiction's codebook.
+    expect(unknown.note).toMatch(/filed no status/i);
+    expect(unknown.note).not.toContain(STATUS_VOCAB_RULE);
   });
 
   it("gates the low-information classes to higher zooms and the rest to basin zoom", () => {
@@ -125,7 +136,7 @@ describe("the status catalogue", () => {
 
   it("resolves a colour for a known status and for anything else", () => {
     expect(statusColour("active")).toBe(statusClass("active").colour);
-    expect(statusColour("")).toBe(UNMAPPED_STATUS.colour);
+    expect(statusColour("")).toBe(absenceStatus()!.colour);
   });
 
   it("takes its census from the served registry rather than from four undated maps", () => {

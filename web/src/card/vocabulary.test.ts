@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { SEED_PATH } from "../test/glossary-seed.ts";
-import { EXCLUDED, literalsIn, stripComments, type ShippedLiteral } from "../test/literals.ts";
+import { EXCLUDED, literalsIn, templatesIn, type ShippedLiteral } from "../test/literals.ts";
 
 /**
  * The vocabulary gate: what glasswell ships must never read as a reserves, resource, inventory
@@ -31,26 +31,6 @@ function walk(directory: string, out: string[] = []): string[] {
 
 const shippedFiles = (): string[] =>
   walk(SRC).filter((file) => !EXCLUDED.some((pattern) => pattern.test(file)));
-
-/**
- * Template literals, read with the shared module's comment stripper and added to what it
- * extracts: `literalsIn` reads quoted strings only, and the card's prose is largely backticked
- * (`peer.ts`'s caption, `card.ts`'s coverage line), so a quoted-only corpus would miss the
- * sentences most at risk of making a claim. The stripping — the half where two gates must not
- * disagree — is the shared one. R-6's fold takes the union.
- */
-function templatesIn(file: string, source: string): ShippedLiteral[] {
-  const stripped = stripComments(source);
-  const found: ShippedLiteral[] = [];
-  for (const match of stripped.matchAll(/`(?:\\[\s\S]|[^`\\])*`/g)) {
-    found.push({
-      file,
-      line: stripped.slice(0, match.index).split("\n").length,
-      value: match[0].slice(1, -1),
-    });
-  }
-  return found;
-}
 
 const corpus = (): ShippedLiteral[] =>
   shippedFiles().flatMap((file) => {

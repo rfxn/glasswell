@@ -43,6 +43,11 @@ ND_POPULATION: tuple[tuple[str, str | None, float], ...] = (
     ("3305300007", None, -103.30),
     ("3305300008", None, -103.20),
 )
+# The case the two populations differ on, and the one no fixture held: the RRC filed no status
+# code and the promotion wrote a class anyway. 105,946 Texas wells are in exactly this state on
+# the deployed spine, so a fixture where "no code" and "no class" coincide cannot tell the
+# absence class from the filed-no-code set, and the P3 fixture did not.
+NO_CODE_BUT_CLASSED = ("3305300010", "active", -101.50)
 OUTSIDE = ("3305300009", "inactive", -101.00)
 TX_WELL = ("4200300001", "service", -102.50, 32.30)
 LATITUDE = 47.50
@@ -53,8 +58,18 @@ def population(db: psycopg.Connection) -> psycopg.Connection:
     """One manifest, one derivation, nine ND wells and a TX well with a surface hole each."""
     seed_all(db)
     manifest = seed_manifest(db, sha256="c" * 64, source_id="nd_gis_wells", source_key="wells.zip")
-    for api10, status, longitude in (*ND_POPULATION, OUTSIDE):
-        seed_well(db, api10=api10, manifest_id=manifest, status_canonical=status)
+    for api10, status, longitude in (*ND_POPULATION, NO_CODE_BUT_CLASSED, OUTSIDE):
+        # A well with no class filed no code either, which is what all 68,186 of the deployed
+        # absence population measure: fact 11 gives null-class ⊆ no-code, and the fixture holds
+        # that direction. `NO_CODE_BUT_CLASSED` is the converse case, which fact 12 measures at
+        # 105,946 Texas wells and which is why the containment does not run both ways.
+        seed_well(
+            db,
+            api10=api10,
+            manifest_id=manifest,
+            status_canonical=status,
+            status_reported=None if status is None or api10 == NO_CODE_BUT_CLASSED[0] else "A",
+        )
         seed_well_spatial(
             db,
             api10=api10,
@@ -102,22 +117,58 @@ def test_every_class_in_the_box_is_counted_once(
     data = summary(api_client)["data"]
 
     assert counts(data) == {"active": 3, "plugged": 2, "dry": 1, "unmapped": 2}
+    assert {row["status"] for row in data["statuses"]} >= {"unmapped"}
     assert data["wells"]["value"] == "8"
 
 
-def test_the_absence_class_is_its_own_bucket_and_never_folded_into_one(
+def test_the_absence_class_is_a_class_and_unmapped_wells_counts_that_same_population(
     population: psycopg.Connection, api_client: TestClient
 ) -> None:
-    """65,685 Texas wells carry no status because the RRC reported none. Adding them to any
-    class would overstate it, and dropping them would make the parts stop summing to the whole.
+    """A well whose status does not resolve is drawn, counted and filtered like any other class,
+    and `unmapped_wells` counts that same population under the name this surface has always
+    served it as. Its value does not move at the deploy: before the resolver's third arm it was
+    the wells whose class was null, and the arm gives exactly those wells the absence class.
     """
     data = summary(api_client)["data"]
+    classes = {row["status"]: int(row["wells"]["value"]) for row in data["statuses"]}
 
-    assert {row["status"] for row in data["statuses"]} == {"active", "plugged", "dry"}
+    assert set(classes) == {"active", "plugged", "dry", "unmapped"}
     assert data["unmapped_wells"]["value"] == "2"
-    assert sum(int(row["wells"]["value"]) for row in data["statuses"]) + 2 == int(
-        data["wells"]["value"]
-    )
+    assert classes["unmapped"] == 2
+    # Every class now sums to the whole, absence included: the bucket is no longer outside it.
+    assert sum(classes.values()) == int(data["wells"]["value"])
+
+
+def test_a_well_that_filed_no_code_and_carries_a_class_is_in_neither_absence_figure(
+    population: psycopg.Connection, api_client: TestClient
+) -> None:
+    """The two populations are not the same set, and this is the well that says so.
+
+    Measured on the deployed spine on 2026-09-03, over the Permian bbox the spec, the challenge
+    and this track all use: 21,972 wells, 5,245 whose class comes from the absence arm, 9,596
+    that filed no code at all, and 4,351 in the second and not the first. Spine-wide for Texas
+    it is 68,186 against 174,132. So `unmapped_wells` predicated on the filed code would have
+    moved a served figure by 4,351 on that one box, and neither set contains the other in
+    general: fact 11 gives null-class inside no-code, and fact 12 is why the converse fails.
+    """
+    served = api_client.get("/v1/wells", params={"api10": NO_CODE_BUT_CLASSED[0]}).json()
+    row = served["data"][0]
+    with population.cursor() as cursor:
+        cursor.execute(
+            "select status_reported from canonical.wells where api10 = %s",
+            (NO_CODE_BUT_CLASSED[0],),
+        )
+        filed = cursor.fetchone()[0]
+    data = summary(api_client, WIDE)["data"]
+    classes = {item["status"]: int(item["wells"]["value"]) for item in data["statuses"]}
+
+    # It filed nothing, and it carries a class the promotion wrote.
+    assert filed is None
+    assert row["status_canonical"] == NO_CODE_BUT_CLASSED[1]
+    # So it is counted in its own class, and in neither of the two absence figures.
+    assert classes[NO_CODE_BUT_CLASSED[1]] == 4
+    assert classes["unmapped"] == 2
+    assert data["unmapped_wells"]["value"] == "2"
 
 
 def test_a_well_outside_the_box_is_not_counted(
@@ -139,7 +190,7 @@ def test_the_count_does_not_move_when_the_box_grows_around_the_same_wells(
     wide = int(summary(api_client, WIDE)["data"]["wells"]["value"])
 
     assert tight == 8
-    assert wide == 10
+    assert wide == 11
 
 
 def test_the_texas_wells_are_counted_under_their_own_vocabulary(
@@ -152,6 +203,7 @@ def test_the_texas_wells_are_counted_under_their_own_vocabulary(
     assert [row["status"] for row in basins["42"]["statuses"]] == ["service"]
     assert basins["33"]["unmapped_wells"]["value"] == "2"
     assert basins["42"]["unmapped_wells"] is None
+    assert "unmapped" in {row["status"] for row in basins["33"]["statuses"]}
 
 
 def test_the_basin_rows_sum_to_the_total(
@@ -292,15 +344,17 @@ def test_a_box_with_more_counts_than_explain_takes_says_how_many_it_left_out(
     )
     carried = explain_handles(body["links"]["explain"])
 
-    # 36 rather than 35 since the producing classes are counted too: this population files no
-    # production, so all of it lands in one class and contributes exactly one more figure.
+    # 39, not the 36 of the train before this one: the producing classes are counted too and
+    # this population files no production so all of it lands in one class, and the wells whose
+    # status does not resolve now carry a class of their own rather than only a bucket, which
+    # is three more counts across the box and its basin rows.
     assert len(carried) == MAX_HANDLES
     assert warning["detail"].startswith(
-        f"This box produced 36 counts and links.explain carries the first {MAX_HANDLES}"
-        f" handles, so {36 - MAX_HANDLES} are absent from it."
+        f"This box produced 39 counts and links.explain carries the first {MAX_HANDLES}"
+        f" handles, so {39 - MAX_HANDLES} are absent from it."
     )
     omitted = sorted(handles(body["data"]) - set(carried))
-    assert len(omitted) == 36 - MAX_HANDLES
+    assert len(omitted) == 39 - MAX_HANDLES
     for handle in omitted:
         resolved = api_client.get("/v1/explain", params={"h": handle, "depth": "full"})
         assert resolved.status_code == 200, handle
@@ -358,3 +412,36 @@ def test_the_box_predicate_can_be_answered_from_the_geometry_index(
         cursor.execute("set enable_seqscan = on")
 
     assert "well_spatial_geom_idx" in plan
+
+
+def test_the_absence_class_is_filterable_and_returns_the_wells_the_legend_counts(
+    population: psycopg.Connection, api_client: TestClient
+) -> None:
+    """`?status=` compares against the same expression the tile, the count and the card read.
+
+    Measured on the deployed instance on 2026-09-03, `GET /v1/wells?state=42&status=unmapped`
+    is HTTP 200 with zero rows while the registry's own count measures 68,186 Texas wells in
+    that class: the filter compared against a column the serving path had already coalesced
+    past, so the one class a reader is most likely to click was the one that returned nothing.
+    """
+    response = api_client.get("/v1/wells", params={"status": "unmapped", "limit": 50})
+    assert response.status_code == 200, response.text
+    served = response.json()["data"]
+
+    assert {row["api10"] for row in served} == {
+        api10 for api10, status, _ in ND_POPULATION if status is None
+    }
+    assert served
+    for row in served:
+        assert row["status_canonical"] == "unmapped"
+
+
+def test_no_well_anywhere_is_served_a_null_class(
+    population: psycopg.Connection, api_client: TestClient
+) -> None:
+    """blueprint §3.0.1a in one assertion. Null is indistinguishable from not-yet-loaded, and
+    the absence class beside the filed code is what says which of the two cases holds."""
+    served = api_client.get("/v1/wells", params={"limit": 50}).json()["data"]
+
+    assert served
+    assert all(row["status_canonical"] is not None for row in served)

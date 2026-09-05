@@ -89,14 +89,23 @@ export async function renderPools(
     const frame = document.createElement("div");
     frame.className = "gw-pools";
 
-    const rule = links["reporting_rule"] ?? links["aggregation_rule"];
+    // The two keys are the two states, and the sentence follows the key rather than the
+    // presence of a rule: both states cite the same rule id, so a sentence chosen by presence
+    // said no sum was served on the card that draws one, under the rule authorising it.
+    const summedRule = links["aggregation_rule"];
+    const rule = summedRule ?? links["reporting_rule"];
     if (rule) {
       const line = note(
-        "This well's regulator files production per completion pool and glasswell rolls" +
-          " nothing up to the well, by ",
+        summedRule
+          ? "This well's regulator files production per completion pool. These are the filings" +
+              " themselves, and the series above is glasswell's sum of them, by "
+          : "This well's regulator files production per completion pool and glasswell rolls" +
+              " nothing up to the well, by ",
       );
       line.appendChild(ruleLink(rule));
-      line.append(". These are the filings themselves, and no sum of them is served.");
+      line.append(
+        summedRule ? "." : ". These are the filings themselves, and no sum of them is served.",
+      );
       frame.appendChild(line);
     }
 

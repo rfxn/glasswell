@@ -57,6 +57,7 @@ from glasswell.lineage.explain import MAX_HANDLES
 from glasswell.lineage.ids import format_handle
 from glasswell.lineage.jurisdictions import NEIGHBORS_SCOPE, JurisdictionRegistry
 from glasswell.lineage.selector_registry import identity_selector_term
+from glasswell.lineage.status_classes import absence_class
 from glasswell.marts.cumulatives import (
     CUMULATIVES_SCOPE,
     LIQUIDS_BASIS,
@@ -370,6 +371,16 @@ select geom_type as geometry_provenance, count(distinct api10) as wells,
  where st_intersects(geom,
                      st_makeenvelope(%(minx)s, %(miny)s, %(maxx)s, %(maxy)s, 4326))
  group by 1
+"""
+
+# Which of the pool-grain disclosure's three states this well is in, in one round trip: whether
+# the regulator filed anything below it, and whether the rollup mart serves a sum of those
+# filings. Both are facts about the well; the registration alone answers neither.
+_POOL_GRAIN_FACTS = """
+select exists(select 1 from canonical.production_monthly
+               where api10 = %(api10)s and entity_type = 'well_completion_pool'
+                 and (%(as_of)s::date is null or report_vintage <= %(as_of)s::date)) as filings,
+       exists(select 1 from marts.well_pool_rollup where api10 = %(api10)s) as summed
 """
 
 _STORAGE_CRS = """
@@ -867,20 +878,52 @@ def pending_allocation(rule: LeaseReportingRule) -> dict[str, Any]:
     }
 
 
-def reported_at_pool_grain(rule: LeaseReportingRule) -> dict[str, Any]:
+def reported_at_pool_grain(
+    rule: LeaseReportingRule, *, filings: bool = True, summed: bool = False
+) -> dict[str, Any] | None:
     """DIR-3 one grain the other way from `pending_allocation`.
 
-    A well whose regulator files per completion pool and rolls nothing up has no well-level
-    series to be absent from, so `producing` is `unknown` — but it filed, and the three causes
-    the field enumerated before this did not include the one that applies. The rule is named so
-    a reader can resolve it at /v1/conformance."""
+    A well whose regulator files per completion pool has no well-level filing to be absent
+    from, so `producing` is `unknown`, and it filed, which is not one of the three causes the
+    field enumerated before this.
+
+    Which sentence it gets is a fact about THIS well and not only about its jurisdiction's
+    registration. `filings` is whether the well has pool rows at all: a registered jurisdiction
+    holds wells that filed nothing, and telling one of those that its filings were summed names
+    a surface the same response declines to link (gate-p68-shots MAJOR-1). `summed` is whether
+    the rollup mart actually serves this well: between a deploy and the first refresh, and for
+    every well whose filings the mart admits none of, there is no sum, and the code that says
+    so is what the card gates its Production-by-pool section on (BLOCKER-1).
+    """
+    if not filings:
+        return None
+    if summed:
+        return {
+            "code": "production_summed_over_pools",
+            "detail": (
+                f"This well's regulator files production at the {rule['reporting_level']} and"
+                " filed no per-well number, so `producing` is unknown because canonical holds"
+                " no well-grain row for it rather than because nothing was filed. The served"
+                f" well series is glasswell's sum of those filings ({rule['rule_id']}), which"
+                " is a mart figure carrying its own derivation and not a filing the regulator"
+                " made. The pool filings are served separately."
+            ),
+            "pointer": "/producing",
+            "rule_id": rule["rule_id"],
+        }
+    rolls_up = (
+        " glasswell sums those filings into a well series, and none of this well's are"
+        f" admitted into that sum ({rule['rule_id']}), so no well-level series is served"
+        if rule["served_rollup"]
+        else f" glasswell performs no rollup to the well ({rule['rule_id']}), so no well-level"
+        " series has been observed"
+    )
     return {
         "code": "production_reported_at_pool_grain",
         "detail": (
             f"This well's regulator files production at the {rule['reporting_level']} and"
-            f" glasswell performs no rollup to the well ({rule['rule_id']}), so no well-level"
-            " series has been observed and `producing` is unknown for that reason rather than"
-            " because nothing was filed. The pool series is served separately."
+            f"{rolls_up} and `producing` is unknown for that reason rather than because"
+            " nothing was filed. The pool series is served separately."
         ),
         "pointer": "/producing",
         # On the warning rather than only inside the sentence: a client that had to parse the
@@ -1455,8 +1498,13 @@ def list_wells(
 class StatusCount(BaseModel):
     status: str = Field(
         description=(
-            "Canonical status the wells in this bucket carry. Never null: a well the source"
-            " reported no status for is counted in `unmapped_wells`, not here."
+            "Canonical status the wells in this bucket carry. Never null: a well whose class"
+            " does not resolve is served the absence class, and `unmapped_wells` counts that"
+            " same population under its own name. Neither is the set of wells whose source"
+            " filed no code, which is wider and holds classed wells too: a promotion can write"
+            " a class for a well that filed nothing, and on the deployed spine 105,946 Texas"
+            " wells are in exactly that state. The filed code is served beside the class, so a"
+            " reader can tell the two apart well by well."
         ),
         json_schema_extra={GLOSSARY_KEY: "gt_well_status"},
     )
@@ -1483,7 +1531,12 @@ class BasinStatusCounts(BaseModel):
     )
     wells: FigureModel = Field(description="Wells in this basin inside the box.")
     unmapped_wells: FigureModel | None = Field(
-        description="Wells here whose source reported no status; absent when there are none."
+        description=(
+            "Wells here whose status did not resolve to a class, counted under the absence"
+            " class; absent when there are none. The same population as the `unmapped` entry in"
+            " `statuses`, named separately because it is the figure this surface has always"
+            " served. Not the wells whose source filed no code, which is a wider set."
+        )
     )
     statuses: list[StatusCount] = Field(description="One entry per class present, largest first.")
 
@@ -1556,9 +1609,15 @@ class WellStatusSummary(BaseModel):
     )
     unmapped_wells: FigureModel | None = Field(
         description=(
-            "Wells whose source reported no status at all. Its own bucket, never added to a"
-            " class — an absence is not a value, and in the 2026-08-20 Texas load 65,685 wells"
-            " are in it, which is more than any single class it could have been folded into."
+            "Wells whose status did not resolve to a class: neither the promotion nor the"
+            " registered vocabulary produced one, so they are served the absence class. The"
+            " same population as the `unmapped` entry in `statuses`, and served under its own"
+            " name because it is what this field has always counted. It is not the set of wells"
+            " whose source filed no code: that set is wider, because a promotion can write a"
+            " class for a well that filed nothing, and the filed code is served beside the"
+            " class so a reader can tell the two apart. The legend's own affordance resolves"
+            " the class entry's handle rather than this one, because the row it sits on toggles"
+            " the class; both address the same population and this field keeps its own handle."
         ),
         json_schema_extra={GLOSSARY_KEY: "gt_well_status"},
     )
@@ -1677,10 +1736,11 @@ def _count(found: list[dict[str, Any]], *, selector: str) -> Figure | None:
 
 
 def _classes(found: list[dict[str, Any]], *, box: str, scope: str = "") -> list[dict[str, Any]]:
+    # No row on this query carries a null class any more, so there is nothing to skip: the
+    # absence class is a class here, with a swatch, a count and a filter that matches it.
     grouped: dict[str, list[dict[str, Any]]] = {}
     for row in found:
-        if row["status_canonical"] is not None:
-            grouped.setdefault(row["status_canonical"], []).append(row)
+        grouped.setdefault(row["status_canonical"], []).append(row)
     ordered = sorted(
         grouped.items(), key=lambda item: (-sum(row["wells"] for row in item[1]), item[0])
     )
@@ -1770,7 +1830,11 @@ def _producing_window(
 
 
 def _basins(
-    found: list[dict[str, Any]], *, box: str, registry: JurisdictionRegistry
+    found: list[dict[str, Any]],
+    *,
+    box: str,
+    registry: JurisdictionRegistry,
+    absence: str,
 ) -> list[dict[str, Any]]:
     grouped: dict[tuple[str | None, str | None], list[dict[str, Any]]] = {}
     for row in found:
@@ -1787,7 +1851,7 @@ def _basins(
                 "status_vocabulary_rule": registry.rule_for(state_code, STATUS_VOCABULARY),
                 "wells": _count(group, selector=f"col=wells{scope}&bbox={box}"),
                 "unmapped_wells": _count(
-                    [row for row in group if row["status_canonical"] is None],
+                    [row for row in group if row["status_canonical"] == absence],
                     selector=f"col=unmapped_wells{scope}&bbox={box}",
                 ),
                 "statuses": _classes(group, box=box, scope=scope),
@@ -1910,10 +1974,11 @@ def _summary_warnings(
         " at 30 requests per principal per UTC minute. Where a box produces more counts than"
         " /v1/explain accepts handles in one call, `links.explain` carries as many as it can"
         " and a warning says exactly how many it left out; each count still resolves alone."
-        " A class no well in the box carries is absent rather than zero. Wells whose source"
-        " reported no status are their own bucket, `unmapped_wells`, and are never added to a"
-        " class — in the 2026-08-20 Texas load 65,685 wells are in it, which is more than any"
-        " class it could have been folded into. Counts are split per basin with the vocabulary"
+        " A class no well in the box carries is absent rather than zero. A well whose status"
+        " does not resolve is served the absence class like any other class, and"
+        " `unmapped_wells` counts that same population under the name this surface has always"
+        " served it as. Whether the source filed a code at all is a different question, served"
+        " beside the class on the well itself. Counts are split per basin with the vocabulary"
         " rule that mapped that jurisdiction's codes, because a status class means what its"
         " rule says it means and the rules travel with the counts. The same box is classed two"
         " more ways: per provenance of the recorded geometry — canonical geom_type verbatim,"
@@ -2007,7 +2072,13 @@ def get_well_status_summary(
     )
     box = _rendered_bbox(envelope, ",")
     selector_box = _rendered_bbox(envelope, ":")
-    basins = _basins(counted, box=selector_box, registry=registry)
+    # Read once per request off the twelve-row domain, not spelled: the figure this predicates
+    # is a served one, and a second spelling of the class name is the defect the domain closes.
+    # Measured on the deployed spine over a relation of the same twelve rows and the same
+    # single-row predicate: 0.07 ms execution, 0.11 ms planning, against 250-350 ms for the
+    # box query it rides beside. Once, not per row and not per group, so no cache.
+    absence = absence_class(connection)
+    basins = _basins(counted, box=selector_box, registry=registry, absence=absence)
     unregistered = sorted(
         {
             row["state_code"] or "unassigned"
@@ -2031,8 +2102,12 @@ def get_well_status_summary(
     data = {
         "bbox": box,
         "wells": _count(counted, selector=f"col=wells&bbox={selector_box}"),
+        # The population the null used to mark, named rather than absent. Before the resolver's
+        # third arm this read `status_canonical is null`; after it no row on this query is null,
+        # so the same wells are found by the class the arm gives them. The figure counts what it
+        # always counted, keeps its address, and does not move at the deploy.
         "unmapped_wells": _count(
-            [row for row in counted if row["status_canonical"] is None],
+            [row for row in counted if row["status_canonical"] == absence],
             selector=f"col=unmapped_wells&bbox={selector_box}",
         ),
         "statuses": _classes(counted, box=selector_box),
@@ -2635,8 +2710,14 @@ def get_well(
     pool_grain = pool_grain_rule(
         connection, row["state_code"], valid_at=as_of, knowledge_at=as_of
     )
+    pool_disclosure: dict[str, Any] | None = None
     if pool_grain and row["producing"] == UNKNOWN:
-        warnings.append(reported_at_pool_grain(pool_grain))
+        facts = rows(connection, _POOL_GRAIN_FACTS, {"api10": api10, "as_of": as_of})[0]
+        pool_disclosure = reported_at_pool_grain(
+            pool_grain, filings=facts["filings"], summed=facts["summed"]
+        )
+        if pool_disclosure:
+            warnings.append(pool_disclosure)
     cumulatives_rule = registry.rule_for(row["state_code"], CUMULATIVES_SCOPE)
     geometry = rows(
         connection,
@@ -2851,13 +2932,15 @@ def get_well(
             ),
             # M-11: the card's section list is built from this envelope, so the pool-grain
             # predicate rides here as a link like every other section's, beside the warning
-            # that says why the well-level chart is absent.
+            # that says why the well-level chart is absent. Beside the warning literally: a
+            # registered well that filed nothing below it gets neither, because the surface
+            # this would link to holds none of its rows (MAJOR-1).
             **(
                 {
                     "pools": f"/v1/wells/{api10}/production/pools",
                     "pools_rule": f"/v1/conformance/{pool_grain['rule_id']}",
                 }
-                if pool_grain and row["producing"] == UNKNOWN
+                if pool_disclosure
                 else {}
             ),
             # WC-P2-4, on the envelope the section list reads: which rule decides whether this

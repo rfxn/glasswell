@@ -187,7 +187,7 @@ capture() {
     done
     # The branch's own tree for the read-back: the profiles name the projections, and the
     # baseline checkout has no such declaration to ask.
-    PYTHONPATH="$BRANCH_ROOT/src" "$PY" - "$DSN" "$WORK" "$label" "$out" <<'READBACK'
+    PYTHONPATH="$BRANCH_ROOT/src" "$PY" - "$DSN" "$WORK" "$label" "$out" "${JURISDICTIONS[@]}" <<'READBACK'
 import json
 import sys
 
@@ -196,6 +196,10 @@ import psycopg
 from glasswell.marts.wells import MART_PROFILES
 
 dsn, work, label, out = sys.argv[1:5]
+# The codes this run actually captured, not every registered profile: Colorado registered a
+# profile with no shim module and no wells in the spine, so reading every profile back looked
+# for a report the loop above never wrote and took the whole comparison down with it.
+ran = sys.argv[5:]
 # Every projection each profile publishes, not just the wells one. Reading back a single table
 # left ND's laterals and survey traces, TX's laterals and MT's paths visible only as a row
 # count, and a row count cannot see a reordered or renamed column -- which is difference #13,
@@ -205,6 +209,7 @@ dsn, work, label, out = sys.argv[1:5]
 tables = {
     profile.jurisdiction_code: [p.table for p in profile.projections]
     for profile in MART_PROFILES
+    if profile.jurisdiction_code in ran
 }
 capture = {}
 with psycopg.connect(dsn) as connection, connection.cursor() as cursor:

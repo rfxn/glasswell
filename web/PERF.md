@@ -547,3 +547,30 @@ was computed, and `all` was under two seconds warm even before this.
 **On the fixture** (contract tier, 36 wells over three jurisdictions, whole request including
 the `api.respond` derivation write): 11–16 ms per dimension. It measures the code path, not
 the data — the deployed table above is the number that means anything.
+
+## 8. The entry chunk's remaining headroom, and what is next against it
+
+Measured at `feat/status-truth` the way `bundle-budget.test.ts` measures it, the sum of the
+script chunks `index.html` names, gzip level 6:
+
+| head | entry chunk | budget | headroom |
+|---|---|---|---|
+| `b27b7b6` | 13,949 B | 14,000 B | 51 B |
+| `9139c94` | 13,946 B | 14,000 B | 54 B |
+
+The status-truth track added roughly nothing: it deleted a twelve-entry class array and a
+twelfth constant from `map/status.ts` and replaced them with a store the census fetch seeds,
+which is a wash on the entry path because `map/status.ts` is not on it. The budget is
+unraised, and 6/6 of the budget cases are green.
+
+**Fifty-four bytes is one literal.** The next thing on the entry path breaks the build, which is
+the budget doing its job and is worth knowing before the work rather than during it.
+
+**What P6 costs, and where it is paid.** New Mexico's served sum adds no entry-path code: the
+mart is Python, the rule is a row, and the client change is one more warning code in the
+production response's `warnings[]`, which the card renders through the same map it already
+uses. The card chunk is where a new warning's copy lands, and the card chunk carries its own
+budget rather than the entry's. If a string does land on the entry path, the honest answer is
+to move the surface that carries it behind the dynamic import the card already uses, not to
+raise the budget: the budget is a claim about what a reader downloads before they have asked
+for anything.

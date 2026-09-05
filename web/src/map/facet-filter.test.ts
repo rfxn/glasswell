@@ -12,7 +12,16 @@ import {
   facetTileProperty,
   facetUnfilteredLayers,
   statusStyledLayerIds,
+  wellFilter,
 } from "./style.ts";
+import { filterableStatusIds } from "./status.ts";
+
+/** Whether a feature with these properties survives the filter written into a layer's slot. */
+const draws = (filter: unknown, properties: Record<string, unknown>, atZoom = 12): boolean =>
+  featureFilter(filter as never).filter({ zoom: atZoom } as never, {
+    type: 1,
+    properties,
+  } as never, undefined as never);
 
 const TILES_PY = fileURLToPath(new URL("../../../src/glasswell/marts/tiles.py", import.meta.url));
 
@@ -172,12 +181,6 @@ describe("the layers a facet press has to reach", () => {
 });
 
 describe("the predicate a press writes", () => {
-  const draws = (filter: unknown, properties: Record<string, unknown>, atZoom = 12): boolean =>
-    featureFilter(filter as never).filter({ zoom: atZoom } as never, {
-      type: 1,
-      properties,
-    } as never, undefined as never);
-
   it("keeps only the pressed value on a layer that carries the column", async () => {
     const { facetPredicate } = await import("./style.ts");
     const filter = facetPredicate("wells", { dimension: "operator", value: "CONTINENTAL" });
@@ -199,5 +202,30 @@ describe("the predicate a press writes", () => {
   it("is null with no press at all", async () => {
     const { facetPredicate } = await import("./style.ts");
     expect(facetPredicate("wells", null)).toBeNull();
+  });
+});
+
+describe("the slot a strike overlay is written", () => {
+  // MINOR-7. The strike is a modifier over a status class, not a class of its own, so the
+  // legend switch that removes the class has to remove its strike with it. It did not: the
+  // overlay carries its own predicate over the same column and the gate replaced nothing, so
+  // unticking `plugged` or `dry` left the strike stroke on the canvas over an absent mark.
+  const struck = (on: ReadonlySet<string>, status: string): boolean =>
+    draws(wellFilter(12, on, null, "wells-struck"), { status_canonical: status });
+
+  it("draws the strike while the class it marks is switched on", () => {
+    expect(struck(new Set(filterableStatusIds()), "plugged")).toBe(true);
+  });
+
+  it("stops drawing it when that class is switched off", () => {
+    const off = new Set(filterableStatusIds().filter((id) => id !== "plugged"));
+
+    expect(struck(off, "plugged")).toBe(false);
+    // The other struck class is untouched by that press: the gate narrows, it does not clear.
+    expect(struck(off, "dry")).toBe(true);
+  });
+
+  it("still strikes no class that carries no strike, with every class on", () => {
+    expect(struck(new Set(filterableStatusIds()), "active")).toBe(false);
   });
 });

@@ -106,3 +106,65 @@ def test_each_refresh_declares_the_state_it_scoped_to(both_basins, seeded) -> No
             ([both_basins["nd"].derivation_id, both_basins["tx"].derivation_id],),
         )
         assert [row[0] for row in cursor.fetchall()] == ["33", "42"]
+
+
+def test_no_wells_tile_serves_a_null_status_class(
+    seeded,  # noqa: F811
+    tx_loaded,  # noqa: F811
+    lineage_env,
+) -> None:
+    """§3.4's fifth surface. The tile, the facet, the filter, the count and the card change
+    together or not at all, and the tile was the one that did not.
+
+    `resolved_status()` was called by two projections of nine, the two whose jurisdictions
+    resolve at read time. The other seven selected `w.status_canonical` raw, so a
+    promotion-time jurisdiction's tile carried a null for a well the serving path had already
+    given the absence class. On screen that read as one class counted in the legend and drawn
+    nowhere: `facetPredicate` matches the tile property, and a null matches nothing.
+
+    Its own refresh rather than the shared fixture's, because the shared one has already run
+    and `reconcile()` refuses a content-addressed id that repeats with a different output --
+    which is the store saying, correctly, that the rows this well adds are new content.
+    """
+    manifest = seed_manifest(seeded, sha256="e" * 64, source_id="nd_gis_wells")
+    # The well the defect is about: the source filed no status code, so no promotion wrote a
+    # class and no map can resolve one. Its class is the absence class, and the tile has to
+    # carry the word rather than a null.
+    for api10, filed in (("3305300098", "A"), ("3305300099", None)):
+        seed_well(
+            seeded,
+            api10=api10,
+            manifest_id=manifest,
+            status_canonical="active" if filed else None,
+            status_reported=filed,
+        )
+        seed_well_spatial(
+            seeded,
+            api10=api10,
+            geom_type="surface",
+            wkt=f"POINT(-103.{api10[-2:]} 47.8)",
+            manifest_id=manifest,
+        )
+    seeded.commit()
+    with lineage_session(recorder=PostgresRecorder(seeded), environment=lineage_env):
+        refresh_for(seeded, "ND")
+        refresh_for(seeded, "TX")
+    seeded.commit()
+
+    with seeded.cursor() as cursor:
+        cursor.execute(
+            "select status_canonical from marts.nd_wells_tile where api10 = %s",
+            ("3305300099",),
+        )
+        assert cursor.fetchone()[0] == "unmapped"
+        cursor.execute(
+            "select status_canonical from marts.nd_wells_tile where api10 = %s",
+            ("3305300098",),
+        )
+        assert cursor.fetchone()[0] == "active"
+        # And nowhere on any wells tile, over the whole loaded population.
+        for table in ("nd_wells_tile", "nd_laterals_tile", "tx_wells_tile", "tx_laterals_tile"):
+            cursor.execute(
+                f"select count(*) from marts.{table} where status_canonical is null"
+            )
+            assert cursor.fetchone()[0] == 0, table

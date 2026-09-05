@@ -14,7 +14,7 @@ import {
 } from "./persist.ts";
 import { censusOf, loadCensus, measuredWellCount, resetCensus } from "./census.ts";
 import { JURISDICTION_LIST } from "./jurisdictions.generated.ts";
-import { STATUS_CLASSES, filterableStatusIds, statusIds } from "./status.ts";
+import { statusVocabulary, filterableStatusIds, statusIds } from "./status.ts";
 
 const noteText = (root: HTMLElement): string =>
   root.querySelector<HTMLElement>(".gw-lg-note")?.textContent ?? "";
@@ -61,8 +61,10 @@ describe("the legend", () => {
 
   it("renders one row per canonical status, with a label on every one", () => {
     const legend = createLegend({ onFilter: () => {} });
+    // Every class the domain holds, in the domain's own order, absence included: it is one of
+    // the classes the canvas paints and it is a row like any other now.
     expect(rows(legend.element).map((row) => row.dataset["status"])).toEqual(
-      STATUS_CLASSES.map((status) => status.id),
+      statusVocabulary().map((status) => status.id),
     );
     for (const row of rows(legend.element)) {
       expect(row.querySelector(".gw-lg-label")?.textContent?.trim().length).toBeGreaterThan(0);
@@ -78,7 +80,7 @@ describe("the legend", () => {
         {
           well_count: { value: "100" },
           measured_on: "2026-09-01",
-          well_counts_by_status: STATUS_CLASSES.map((status) => ({
+          well_counts_by_status: statusVocabulary().map((status) => ({
             status_canonical: status.id,
             wells: { value: "1" },
           })),
@@ -130,7 +132,7 @@ describe("the legend", () => {
         {
           well_count: { value: "100" },
           measured_on: "2026-09-02",
-          well_counts_by_status: [...STATUS_CLASSES.map((status) => status.id), "unmapped"].map(
+          well_counts_by_status: [...statusVocabulary().filter((s) => !s.isAbsence).map((status) => status.id), "unmapped"].map(
             (id) => ({ status_canonical: id, wells: { value: id === "dry" ? "0" : "10" } }),
           ),
         },
@@ -211,7 +213,7 @@ describe("the legend", () => {
     const body = legend.element.querySelector<HTMLElement>(".gw-lg-body")!;
     const order = [...body.children].map((node) => (node as HTMLElement).dataset["status"] ?? node.className);
 
-    expect(order.indexOf("unmapped")).toBe(STATUS_CLASSES.length + order.indexOf("active"));
+    expect(order.indexOf("unmapped")).toBe(statusVocabulary().filter((s) => !s.isAbsence).length + order.indexOf("active"));
     expect(order.indexOf("unmapped")).toBeLessThan(order.indexOf("gw-lg-producing"));
   });
 
@@ -230,11 +232,12 @@ describe("the legend", () => {
     expect(legend.activeStatuses().has("unmapped")).toBe(false);
   });
 
-  it("holds the absence class on before it has listed it, so a defect never hides by default", () => {
-    // The row is only listed once the class is drawn, but its switch exists from the start —
-    // otherwise "None" would leave on the canvas the one class the key had never named.
+  it("lists the absence class from the start, in the domain's order, on by default", () => {
+    // It used to be built and withheld until a count arrived, which made it the one class the
+    // key could not name before the map drew one. It is a row in the served domain now, so it
+    // is listed where the domain puts it and it is on unless the reader said otherwise.
     const legend = createLegend({ onFilter: () => {} });
-    expect(rowFor(legend.element, "unmapped")).toBeUndefined();
+    expect(rowFor(legend.element, "unmapped")).toBeDefined();
     expect(legend.activeStatuses().has("unmapped")).toBe(true);
     legend.setCounts({ unmapped: 4 }, 12);
     expect(boxFor(legend.element, "unmapped").checked).toBe(true);
@@ -257,8 +260,11 @@ describe("the legend", () => {
     // The key's geometry line spoke for a row that was North Dakota's alone. One toggle over
     // two regulators' files may not leave the key saying "regulator GIS" and nothing more.
     const legend = createLegend({ onFilter: () => {} });
-    expect(legend.element.textContent).toContain("ND DMR");
-    expect(legend.element.textContent).toContain("TX RRC");
+    // The sentence names no jurisdiction now: one toggle over two regulators' files says the
+    // geometry is each regulator's own rather than naming one of them and implying the other.
+    expect(legend.element.textContent).toContain(
+      "GIS bore geometry as each regulator filed it",
+    );
   });
 
   it("names the orchid trace beside the thing it says the laterals are not", () => {
@@ -295,10 +301,10 @@ describe("the legend", () => {
     const legend = createLegend({ onFilter: () => {} });
     const order = (root: HTMLElement): void => {
       const text = root.querySelector<HTMLElement>(".gw-lg-note")!.textContent ?? "";
-      const nd = text.indexOf("Every ND feature carries its geometry provenance");
+      const nd = text.indexOf("A registered feature carries its geometry provenance");
       const tx = text.indexOf("TX geometry carries no provenance field");
       const preamble = text.indexOf("Status colours are data colours");
-      const symbology = text.indexOf("Laterals are ND DMR and TX RRC GIS bore geometry");
+      const symbology = text.indexOf("Laterals are GIS bore geometry");
       expect(nd).toBe(0);
       expect(tx).toBeGreaterThan(nd);
       expect(preamble).toBeGreaterThan(tx);
@@ -333,11 +339,11 @@ describe("the legend", () => {
     // The ring is a data colour over a key that opens with "data colours, not severity colours",
     // and the sentence keeps the hue from claiming the class injects only water.
     const legend = createLegend({ onFilter: () => {} });
-    expect(legend.element.textContent).toMatch(/teal ring is NDIC's own well_type/i);
+    expect(legend.element.textContent).toMatch(/teal ring is ND's own well_type/i);
     expect(legend.element.textContent).toMatch(/any injected stream/i);
     expect(legend.element.textContent).toContain("cr_nd_well_type_disposal_1");
     legend.setVocabulary([{ rule: "cr_nd_status_vocab_1", href: null }]);
-    expect(legend.element.textContent).toMatch(/teal ring is NDIC's own well_type/i);
+    expect(legend.element.textContent).toMatch(/teal ring is ND's own well_type/i);
   });
 });
 
@@ -412,7 +418,9 @@ describe("the legend's all/none control", () => {
     expect(title()).toBe("Well status");
     boxFor(legend.element, "unmapped").checked = false;
     boxFor(legend.element, "unmapped").dispatchEvent(new Event("change", { bubbles: true }));
-    expect(title()).toBe(`Well status · ${statusIds().length}/${statusIds().length + 1}`);
+    expect(title()).toBe(
+      `Well status · ${filterableStatusIds().length - 1}/${filterableStatusIds().length}`,
+    );
   });
 
   it("does not enable an out-of-scale row: disabled is the zoom's to say, not the control's", () => {
@@ -542,14 +550,14 @@ describe("the legend's persisted status set", () => {
     expect(title()).toBe("Well status");
     expand(legend.element);
     control(legend.element, "none").click();
-    expect(title()).toBe(`Well status · 0/${statusIds().length}`);
+    expect(title()).toBe(`Well status · 0/${filterableStatusIds().length}`);
     control(legend.element, "all").click();
     expect(title()).toBe("Well status");
     expect(
       createLegend({ on: new Set(["active"]), onFilter: () => {} }).element.querySelector(
         ".gw-lg-title",
       )!.textContent,
-    ).toBe(`Well status · 1/${statusIds().length}`);
+    ).toBe(`Well status · 1/${filterableStatusIds().length}`);
   });
 });
 
@@ -898,7 +906,7 @@ describe("the map-extent filter node (M1-2)", () => {
     boxFor(legend.element, "active").checked = false;
     boxFor(legend.element, "active").dispatchEvent(new Event("change", { bubbles: true }));
     expect(title(legend.element)).toBe(
-      `Well status · ${statusIds().length - 1}/${statusIds().length} · everywhere`,
+      `Well status · ${filterableStatusIds().length - 1}/${filterableStatusIds().length} · everywhere`,
     );
   });
 
@@ -1000,15 +1008,35 @@ describe("the vocabulary the counts were classed by", () => {
   });
 
   it("states an in-view jurisdiction's sentence ahead of the general symbology clauses", () => {
+    // Seeded from the wire, not from the generated module: §3.1(a) put the note on the wire so
+    // a registration can change its sentence without a rebuild, and the module's copy is kept
+    // only for what the layer panel needs before the fetch settles (R-4).
     const co = JURISDICTION_LIST.find((entry) => entry.code === "CO")!;
+    const served = "Colorado's AL code is a vacated permit, not an abandoned well.";
+    resetCensus(
+      censusOf([
+        {
+          jurisdiction_code: "CO",
+          vocabulary: {
+            rule_id: co.rules["status_vocabulary"]!,
+            classes: ["active"],
+            legend_note: served,
+          },
+        },
+      ]),
+    );
     const legend = createLegend({ onFilter: () => {} });
     legend.setVocabulary([{ rule: co.rules["status_vocabulary"]!, href: null }]);
     const note = noteText(legend.element);
 
-    const sentence = note.indexOf(co.legendNote!);
-    const symbology = note.indexOf("Laterals are ND DMR and TX RRC GIS bore geometry");
+    const sentence = note.indexOf(served);
+    const symbology = note.indexOf("Laterals are GIS bore geometry");
     expect(sentence).toBeGreaterThan(-1);
+    // And it is the served sentence, not the module's, which is the whole point: the two differ
+    // here on purpose and the wire wins.
+    expect(note).not.toContain(co.legendNote!);
     expect(symbology).toBeGreaterThan(sentence);
+    resetCensus();
   });
 });
 
@@ -1257,7 +1285,7 @@ describe("the count on the collapsed pill", () => {
       handle: "drv_total#bbox=1",
     });
 
-    expect(title()).toBe(`Well status · 1/${statusIds().length} · 23,977`);
+    expect(title()).toBe(`Well status · 1/${filterableStatusIds().length} · 23,977`);
   });
 
   it("says nothing while the counts are pending rather than leaving the last viewport's sum", () => {
@@ -1279,6 +1307,6 @@ describe("the count on the collapsed pill", () => {
 
     control(legend.element, "none").click();
 
-    expect(title()).toBe(`Well status · 0/${statusIds().length}`);
+    expect(title()).toBe(`Well status · 0/${filterableStatusIds().length}`);
   });
 });

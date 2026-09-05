@@ -12,6 +12,7 @@
  * behind `loadCensus()` rather than run at module scope.
  */
 import { getEnvelope } from "../api/client.ts";
+import { setStatusVocabulary } from "./status.ts";
 
 /** One jurisdiction's measurement: the count, the handle that resolves it, and its date. */
 export interface JurisdictionFigure {
@@ -21,6 +22,14 @@ export interface JurisdictionFigure {
 }
 
 export interface JurisdictionCensus {
+  /**
+   * Each registration's served status vocabulary. The legend's per-jurisdiction sentence is
+   * read from here rather than from the generated module, which is what §3.1(a) put it on the
+   * wire for: a note can change without a rebuild. The generated module keeps the presentation
+   * facts the layer panel needs before this fetch settles (R-4), and
+   * `test_jurisdiction_parity.py` holds the pair equal.
+   */
+  readonly vocabularies: readonly JurisdictionVocabulary[];
   /** Canonical status id → wells measured in it across every registered jurisdiction. */
   readonly byStatus: Readonly<Record<string, number>>;
   /** Registered code → that jurisdiction's own measurement. Absent until one is served. */
@@ -45,14 +54,35 @@ interface CountFigure {
   readonly d?: string;
 }
 
+/** One registration's served status vocabulary, as `/v1/jurisdictions` spells it. */
+interface ServedVocabulary {
+  readonly rule_id?: string;
+  readonly resolved_at?: string | null;
+  readonly unmapped_action?: string | null;
+  readonly classes?: readonly string[];
+  readonly legend_note?: string | null;
+}
+
 interface CensusRow {
   readonly jurisdiction_code?: string;
   readonly well_count?: CountFigure | null;
   readonly well_counts_by_status?: readonly { status_canonical: string; wells: CountFigure }[];
   readonly measured_on?: string | null;
+  readonly vocabulary?: ServedVocabulary | null;
+}
+
+/** What one registration's vocabulary says, keyed by the rule the legend classes a view by. */
+export interface JurisdictionVocabulary {
+  readonly code: string;
+  readonly rule: string;
+  readonly resolvedAt: string | null;
+  readonly unmappedAction: string | null;
+  readonly classes: readonly string[];
+  readonly legendNote: string | null;
 }
 
 export const EMPTY_CENSUS: JurisdictionCensus = {
+  vocabularies: [],
   byStatus: {},
   byJurisdiction: {},
   total: null,
@@ -73,11 +103,24 @@ const figure = (value: CountFigure | null | undefined): number | null => {
 };
 
 export function censusOf(rows: readonly CensusRow[]): JurisdictionCensus {
+  const vocabularies: JurisdictionVocabulary[] = [];
   const byStatus: Record<string, number> = {};
   const byJurisdiction: Record<string, JurisdictionFigure> = {};
   let total: number | null = null;
   let measuredOn: string | null = null;
   for (const row of rows) {
+    // Read before the count guard: a registration with no measurement yet still has a
+    // vocabulary, and the legend's sentence about it does not wait on a refresh.
+    if (row.jurisdiction_code && row.vocabulary?.rule_id) {
+      vocabularies.push({
+        code: row.jurisdiction_code,
+        rule: row.vocabulary.rule_id,
+        resolvedAt: row.vocabulary.resolved_at ?? null,
+        unmappedAction: row.vocabulary.unmapped_action ?? null,
+        classes: [...(row.vocabulary.classes ?? [])],
+        legendNote: row.vocabulary.legend_note ?? null,
+      });
+    }
     const counted = figure(row.well_count);
     // Absent, not zero: a jurisdiction registered and not yet refreshed is not one with no
     // wells, and adding a zero for it would make the total read as if it had been measured.
@@ -99,13 +142,25 @@ export function censusOf(rows: readonly CensusRow[]): JurisdictionCensus {
       byStatus[entry.status_canonical] = (byStatus[entry.status_canonical] ?? 0) + wells;
     }
   }
-  return { byStatus, byJurisdiction, total, measuredOn, degraded: false, resolved: true };
+  return {
+    vocabularies,
+    byStatus,
+    byJurisdiction,
+    total,
+    measuredOn,
+    degraded: false,
+    resolved: true,
+  };
 }
 
 /** Fetch once per session. A refusal is a degraded census, never an empty one. */
 export function loadCensus(): Promise<JurisdictionCensus> {
   pending ??= getEnvelope<readonly CensusRow[]>("/v1/jurisdictions")
     .then((envelope) => {
+      // The same one fetch seeds the status vocabulary. It rides in `meta` because the domain
+      // is not a jurisdiction, and it is seeded before the census is returned so that every
+      // surface awaiting this promise finds a resolved store rather than a race.
+      setStatusVocabulary(envelope.meta?.status_classes ?? []);
       resident = censusOf(envelope.data ?? []);
       return resident;
     })
@@ -130,6 +185,11 @@ export function census(): JurisdictionCensus {
 export function measuredWellCount(id: string): number | null {
   if (resident.total === null) return null;
   return resident.byStatus[id] ?? null;
+}
+
+/** Every served vocabulary. Empty until `/v1/jurisdictions` answers, and empty when it refuses. */
+export function servedVocabularies(): readonly JurisdictionVocabulary[] {
+  return resident.vocabularies;
 }
 
 /** One jurisdiction's measured well count, or null where the registry has served none. */

@@ -140,7 +140,7 @@ Seed rules, drawn from real cross-source gotchas:
 | **Month convention** | Production month versus report month is resolved per source and recorded. |
 | **Formation names** | Current ND MPR pool labels resolve through append-only, knowledge-vintaged `formation_aliases`; ambiguous composites remain `__other__`, and explicit Three Forks never collapses into Bakken. |
 | **Completion anchor** | FracFocus `JobEndDate` is retained as a hydraulic-fracturing completion event. The earliest valid event per API-10 anchors fv1.0; spud and first production are forbidden fallbacks. |
-| **Well status** | Regulator vocabularies map to a small canonical set — as rows, not code. |
+| **Well status** | Regulator vocabularies map to a small canonical set — as rows, not code — and the set itself is rows too: `lineage.status_classes` carries every class with its label, colour, glyph, zoom gate and order, and every registered map targets it through a foreign key. A code that maps to no class is served as its own class carrying the raw code, and a well whose source filed no code at all is served the absence class, never a null. |
 
 **Registry rot is the named risk.** Mitigation: the promotion step reads rules from
 the table at run time wherever feasible, and CI asserts that every canonical field

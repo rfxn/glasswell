@@ -550,7 +550,13 @@ export async function renderWellCard(
 
   const poolsBody = document.createElement("div");
   const peerBody = document.createElement("div");
+  // Two facts off two codes: the regulator filed below the well in both states, so both open
+  // the section, and only the state with no served series replaces the chart with the panel.
+  const poolFilings = well.meta.warnings.find(
+    (warning) => warning.code === POOL_GRAIN || warning.code === SUMMED_OVER_POOLS,
+  );
   const poolGrain = well.meta.warnings.find((warning) => warning.code === POOL_GRAIN);
+  const poolsSummed = well.meta.warnings.some((warning) => warning.code === SUMMED_OVER_POOLS);
   // The warning says why the well-level chart is absent; the link says where the record is.
   // The section is gated on the link, like every other section, and fetches the path served.
   const poolsPath = well.links?.["pools"];
@@ -621,9 +627,9 @@ export async function renderWellCard(
     {
       id: "pools",
       title: "Production by pool",
-      // N-24: expanded where the Production section is in its pool-grain state, because the
-      // record the reader came for is here rather than there.
-      expanded: poolGrain !== undefined,
+      // N-24: expanded wherever the regulator filed below the well, because the filings are
+      // the record the reader came for whether or not a sum of them is served above.
+      expanded: poolFilings !== undefined,
       present: poolsPath !== undefined,
       body: poolsBody,
       load: () =>
@@ -631,7 +637,9 @@ export async function renderWellCard(
           poolsBody,
           poolsPath ?? "",
           query,
-          poolsRule ? { reporting_rule: poolsRule } : {},
+          // Which of the two pool-grain states this well is in, so the section's own sentence
+          // can say it: the rule id is the same either way.
+          poolsRule ? { [poolsSummed ? "aggregation_rule" : "reporting_rule"]: poolsRule } : {},
           {
             onExplain: callbacks.onExplain,
             labelTermFor: (pointer: string) => labelFor(well, pointer),
@@ -1566,6 +1574,8 @@ type ApiWarning = { code: string; detail?: string; pointer?: string; rule_id?: s
 export const PENDING_ALLOCATION = "production_pending_allocation";
 /** The third production state: filed below the well, with nothing rolled up to it. */
 export const POOL_GRAIN = "production_reported_at_pool_grain";
+/** The fourth: filed below the well, and glasswell serves a sum of those filings. */
+export const SUMMED_OVER_POOLS = "production_summed_over_pools";
 
 /** A rule the panel sends the reader to, named by its own id so the link says which. */
 export interface PendingRuleLink {

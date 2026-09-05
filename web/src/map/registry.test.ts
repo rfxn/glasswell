@@ -17,7 +17,7 @@ import {
   layerIds,
   layerRowState,
 } from "./registry.ts";
-import { SELECTION_COLOUR, STATUS_CLASSES, UNMAPPED_STATUS, statusColour } from "./status.ts";
+import { SELECTION_COLOUR, statusVocabulary, absenceStatus, statusColour } from "./status.ts";
 import { TRACE_COLOUR, WELL_POINT_LAYERS, dataLayers } from "./style.ts";
 
 describe("the layer registry", () => {
@@ -90,7 +90,7 @@ describe("the layer registry", () => {
     expect(basins.kind).toBe("outline");
     expect(plays.kind).toBe("line");
     expect(basins.colours).toEqual(plays.colours);
-    for (const status of [...STATUS_CLASSES, UNMAPPED_STATUS]) {
+    for (const status of statusVocabulary()) {
       expect(status.colour, `${status.id} shares the geology frame colour`).not.toBe(
         basins.colours[0],
       );
@@ -234,7 +234,7 @@ describe("the layer registry", () => {
     const swatch = layerDef("survey-traces")!.swatch;
     expect(swatch.kind).toBe("line");
     expect(swatch.colours).toEqual([TRACE_COLOUR]);
-    for (const status of [...STATUS_CLASSES, UNMAPPED_STATUS]) {
+    for (const status of statusVocabulary()) {
       expect(status.colour, `${status.id} shares the trace colour`).not.toBe(TRACE_COLOUR);
     }
     expect(TRACE_COLOUR).not.toBe(SELECTION_COLOUR);
@@ -320,7 +320,7 @@ describe("the layer registry", () => {
     const swatch = layerDef("disposal-wells")!.swatch;
     expect(swatch.kind).toBe("ring");
     expect(swatch.colours).toEqual([DISPOSAL_COLOUR]);
-    for (const status of [...STATUS_CLASSES, UNMAPPED_STATUS]) {
+    for (const status of statusVocabulary()) {
       expect(status.colour, `${status.id} shares the disposal colour`).not.toBe(DISPOSAL_COLOUR);
     }
     expect(DISPOSAL_COLOUR).not.toBe(SELECTION_COLOUR);
@@ -454,8 +454,10 @@ describe("the layer registry", () => {
     // row is keyed to status. The colours are read from status.ts so they cannot drift from it.
     const swatch = layerDef("lateral-bores")!.swatch;
     expect(swatch.kind).toBe("line");
-    expect(swatch.colours).toEqual([statusColour("active"), statusColour("plugged")]);
-    expect(swatch.colours).not.toContain(UNMAPPED_STATUS.colour);
+    const mapped = statusVocabulary().filter((status) => !status.isAbsence);
+    expect(swatch.colours).toEqual([mapped[0]!.colour, mapped[mapped.length - 1]!.colour]);
+    expect(new Set(swatch.colours).size).toBe(2);
+    expect(swatch.colours).not.toContain(absenceStatus()!.colour);
   });
 
   it("keeps a multi-colour swatch to the kinds that can draw one", () => {

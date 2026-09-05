@@ -405,8 +405,10 @@ def naive_expectation(db: psycopg.Connection, *, window_start: date) -> set[tupl
     """
     rules = load_rules(db, source_id=SPINE_SOURCE, as_of=date(2026, 12, 31))
     policy = nm_ocd.PromotionPolicy.from_rules(rules)
-    conform = [rule for rule in rules if rule.stage == "conform"]
-    validate = [rule for rule in rules if rule.stage == "validate"]
+    # Filtered as `promote_all` filters: this is the control for the shipped path, so a
+    # declaration it drops has to be dropped here too or the control raises where it does not.
+    conform = nm_ocd._executable([rule for rule in rules if rule.stage == "conform"])
+    validate = nm_ocd._executable([rule for rule in rules if rule.stage == "validate"])
     partition = nm_ocd.partition_for(db, nm_ocd.head_manifest(db, SPINE_SOURCE).manifest_id)
     heads: dict[tuple, str] = {}
     for entity_key, month, stream, value_hash in query(

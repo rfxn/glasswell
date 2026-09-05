@@ -380,19 +380,23 @@ def test_a_registration_and_its_rules_reach_the_resolver_through_their_own_trigg
 SERVING_ROLES = ("glasswell_api", "glasswell_pipeline")
 
 
-def test_a_registered_mapping_table_is_read_verbatim_into_the_served_status_class(
+def test_a_registered_mapping_table_that_is_not_one_is_refused_by_the_class_domain(
     db: psycopg.Connection,
 ) -> None:
-    """The escalation the grant below is the only thing standing in front of.
+    """The escalation the grant below is the first thing standing in front of, and the class
+    domain is the second.
 
     `refresh_status_resolution()` reads whatever two columns of whatever `lineage` table a rule
-    spec names. The identifiers are `format(%I)`-quoted, so nothing injects — but quoting bounds
+    spec names. The identifiers are `format(%I)`-quoted, so nothing injects -- but quoting bounds
     the *syntax*, not the *choice of table*. Registered against `lineage.conformance_rules`, the
-    refresh copies its rows straight into `lineage.status_resolution_resolved`, which
+    refresh would copy its rows straight into `lineage.status_resolution_resolved`, which
     `glasswell_api` may select and which `resolved_status()` reads as a well's served status
-    class. Any populated two-column `lineage` table is reachable this way.
+    class.
 
-    Asserted rather than argued, so the gate below is load-bearing and not decoration.
+    The status-vocabulary train made that a refusal rather than a leak: every value the resolver
+    materialises has a foreign key to `lineage.status_classes`, so a table that is not a status
+    map cannot reach the wire through it. The grant is still the bound that matters, because a
+    two-column `lineage` table whose values happened to be class names would satisfy the key.
     """
     seed_all(db)
     db.commit()
@@ -409,7 +413,7 @@ def test_a_registered_mapping_table_is_read_verbatim_into_the_served_status_clas
     )
     with db.cursor() as cursor:
         cursor.execute("select count(*) from lineage.conformance_rules")
-        rules = int(cursor.fetchone()[0])
+        assert int(cursor.fetchone()[0]) > 0, "an empty rule set would pass on nothing"
         cursor.execute(
             "insert into lineage.jurisdiction_codes (jurisdiction_code, level)"
             " values (%s, 'state') on conflict do nothing",
@@ -430,23 +434,16 @@ def test_a_registered_mapping_table_is_read_verbatim_into_the_served_status_clas
                 f"^{PLANTED_PREFIX}[0-9]{{8}}$",
             ),
         )
-        cursor.execute(
-            "insert into lineage.jurisdiction_rules (jurisdiction_code, effective_from,"
-            " published_at, decision, rule_id)"
-            " values (%s, %s, %s, 'status_vocabulary', 'cr_fixture_arbitrary_table_1')",
-            (PLANTED_CODE, REGISTERED_ON, REGISTERED_ON),
-        )
-        cursor.execute(
-            "select count(*) from canonical.status_resolution where for_state_code = %s",
-            (PLANTED_PREFIX,),
-        )
-        leaked = int(cursor.fetchone()[0])
+        with pytest.raises(psycopg.errors.ForeignKeyViolation) as refused:
+            cursor.execute(
+                "insert into lineage.jurisdiction_rules (jurisdiction_code, effective_from,"
+                " published_at, decision, rule_id)"
+                " values (%s, %s, %s, 'status_vocabulary', 'cr_fixture_arbitrary_table_1')",
+                (PLANTED_CODE, REGISTERED_ON, REGISTERED_ON),
+            )
     db.rollback()
 
-    # Vacuity guarded by the identity itself rather than by a threshold on fixture content:
-    # a leaner contract fixture must not redden a test that is not about how many rules exist.
-    assert rules > 0, "an empty rule set would let the escalation pass on nothing"
-    assert leaked == rules
+    assert "resolved_status_class_fk" in str(refused.value)
 
 
 def test_no_serving_role_may_append_the_registry_row_that_selects_a_mapping_table(
