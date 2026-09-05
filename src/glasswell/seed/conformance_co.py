@@ -189,6 +189,18 @@ DEVIATION_DOMAIN = {
     "High angle": 3,
 }
 
+# Blank attributes measured in the shipped DBFs, per layer. Only what has been counted appears:
+# the bottomhole archive's blanks have not been measured end to end, and the rule applies to
+# every text attribute regardless of whether a blank has been seen in it yet.
+CO_GIS_BLANK_ATTRIBUTES: dict[str, dict[str, int]] = {
+    WELLS_SOURCE_ID: {"Well_Class": WELL_CLASS_DOMAIN[""]},
+    BOTTOMHOLE_SOURCE_ID: {},
+    LINES_SOURCE_ID: {"Deviation": DEVIATION_DOMAIN[""]},
+}
+# Headers promoted with the empty string for a well type before the staging applied the rule,
+# measured on the deployed canonical.wells 2026-09-05. Read under the rule, never restated.
+PROMOTED_BLANK_WELL_TYPES = 1172
+
 # The rolling production file, measured end to end 2026-09-02.
 PRODUCTION_ROWS = 387813
 PRODUCTION_DISTINCT_KEYS = 387813
@@ -886,6 +898,69 @@ CO_RULES: tuple[dict[str, object], ...] = (
                 " Recorded as a row because it is a cross-source mapping decision (R8), and"
                 " compared with separators removed because the regulator's punctuation is not"
                 " a decision anybody here made."
+            ),
+            "evidence_url": f"{DOWNLOAD_ROOT}/gis/"
+            f"{CO_GIS_MEMBERS[source_id]['source_key']}",
+            "code_ref": "src/glasswell/ingest/co_ecmc_gis.py",
+        }
+        for name, source_id in (
+            ("wells_shp", WELLS_SOURCE_ID),
+            ("directional_bh", BOTTOMHOLE_SOURCE_ID),
+            ("directional_lines", LINES_SOURCE_ID),
+        )
+    ),
+    *(
+        {
+            "rule_id": f"cr_co_{name}_blank_is_absent_1",
+            "source_id": source_id,
+            "stage": "parse",
+            "rule_kind": "parse_directive",
+            "applies_to_fields": ["all"],
+            "spec": {
+                "null_tokens": [""],
+                "normalises_to": None,
+                "scope": "every text attribute the layer stages, not a named column",
+                "module_function": "glasswell.ingest.co_ecmc_gis:stage_layer",
+                "measured_blank_attributes": CO_GIS_BLANK_ATTRIBUTES[source_id],
+                "already_promoted_wells": (
+                    PROMOTED_BLANK_WELL_TYPES if source_id == WELLS_SOURCE_ID else 0
+                ),
+                "already_promoted_applied_at": "glasswell.absence:absent_if_blank",
+                "contract_note": (
+                    "A literal NULL is deliberately not a token here. The rolling production"
+                    " CSV carries one and cr_co_production_schema_drift_1 registers it; no"
+                    " GIS attribute has been measured carrying the four letters, and adding a"
+                    " token nothing has been seen filing would destroy a real value the day"
+                    " ECMC files it."
+                ),
+            },
+            "rule": (
+                "A blank attribute in this archive is an absence and stages as NULL. It is"
+                " never staged, promoted or served as an empty string."
+            ),
+            "rationale": (
+                "ECMC is the only publisher in the registry whose files carry an empty string"
+                " where they carry no value: measured over canonical.wells on 2026-09-05, state"
+                " 05 holds 1,172 rows whose well_type_reported is the empty string and 123,220"
+                " that are not, while 25 holds 40,626 non-empty and none empty, 30 one null and"
+                " 321,509 non-empty, 33 131,505 non-empty and 42 280,078 null and 185,347"
+                " non-empty. An empty string is not a smaller value than an absence, it is a"
+                " different answer: it ranks as a class in a legend that has no name to draw,"
+                " and the selector grammar admits no empty value at all, so"
+                " /v1/wells/status-summary refused every viewport holding one of those 1,172"
+                " wells with selector_ambiguous -- New Mexico's wells as much as Colorado's,"
+                " for any box whose north edge crosses 37.0N. Registered per layer rather than"
+                " per column because the shape is the archive's, not one attribute's: the"
+                " header dbf files 1,176 blank Well_Class, the lines dbf 336 blank Deviation,"
+                " and a rule naming only the column a gate caught would leave the next one to"
+                " be caught the same way. The counterpart already exists for the production"
+                " CSV, whose cr_co_production_schema_drift_1 registers null_tokens; the GIS"
+                " archives had no such row, which is the gap this closes. The 124,392 headers"
+                " promoted before this rule existed are read under it rather than restated:"
+                " canonical.wells is keyed (api10, effective_from) and Colorado's effective_from"
+                " is ECMC's own Stat_Date under cr_co_wells_effective_1, so a corrected row"
+                " collides with the row it corrects, and an effective date the regulator never"
+                " filed is the invention the promotion already refuses for status_canonical."
             ),
             "evidence_url": f"{DOWNLOAD_ROOT}/gis/"
             f"{CO_GIS_MEMBERS[source_id]['source_key']}",
