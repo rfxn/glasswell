@@ -193,7 +193,10 @@ DEVIATION_DOMAIN = {
 # the bottomhole archive's blanks have not been measured end to end, and the rule applies to
 # every text attribute regardless of whether a blank has been seen in it yet.
 CO_GIS_BLANK_ATTRIBUTES: dict[str, dict[str, int]] = {
-    WELLS_SOURCE_ID: {"Well_Class": WELL_CLASS_DOMAIN[""]},
+    WELLS_SOURCE_ID: {
+        "Well_Class": WELL_CLASS_DOMAIN[""],
+        "Loc_Qual": LOC_QUAL_DOMAIN[""],
+    },
     BOTTOMHOLE_SOURCE_ID: {},
     LINES_SOURCE_ID: {"Deviation": DEVIATION_DOMAIN[""]},
 }
@@ -951,7 +954,8 @@ CO_RULES: tuple[dict[str, object], ...] = (
                 " wells with selector_ambiguous -- New Mexico's wells as much as Colorado's,"
                 " for any box whose north edge crosses 37.0N. Registered per layer rather than"
                 " per column because the shape is the archive's, not one attribute's: the"
-                " header dbf files 1,176 blank Well_Class, the lines dbf 336 blank Deviation,"
+                " header dbf files 1,176 blank Well_Class and 62 blank Loc_Qual, the lines"
+                " dbf 336 blank Deviation,"
                 " and a rule naming only the column a gate caught would leave the next one to"
                 " be caught the same way. The counterpart already exists for the production"
                 " CSV, whose cr_co_production_schema_drift_1 registers null_tokens; the GIS"

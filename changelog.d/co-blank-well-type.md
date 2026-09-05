@@ -15,3 +15,6 @@
       rather than a second bucket beside the real ones: /v1/wells/status-summary and the wells
       spine wrap the resolved status the way facets.py already does, so two selectors can no
       longer collide on status_null=1 (gate-cofix M-2)
+- [Fix] the rule's served evidence names both blank columns the header archive measures —
+      Well_Class (1,176) and Loc_Qual (62) — rather than only the one a gate caught
+      (gate-cofix M-3)

@@ -192,3 +192,25 @@ def test_the_member_names_are_registered_rules_with_their_own_publication() -> N
         "cr_co_directional_lines_member_1",
         "cr_co_wells_shp_member_1",
     ]
+
+
+def test_the_blank_evidence_names_every_column_the_module_measured_a_blank_in() -> None:
+    """gate-cofix M-3. `measured_blank_attributes` is served evidence, so it has to hold every
+    blank this module counted rather than the one a gate happened to catch. The header archive
+    measures two: Well_Class (1,176) and Loc_Qual (62). The rule applies to every text attribute
+    either way -- what was wrong is the evidence, which understated what the file carries.
+    """
+    from glasswell.seed.conformance_co import (
+        CO_GIS_BLANK_ATTRIBUTES,
+        DEVIATION_DOMAIN,
+        LINES_SOURCE_ID,
+        LOC_QUAL_DOMAIN,
+        WELL_CLASS_DOMAIN,
+        WELLS_SOURCE_ID,
+    )
+
+    assert CO_GIS_BLANK_ATTRIBUTES[WELLS_SOURCE_ID] == {
+        "Well_Class": WELL_CLASS_DOMAIN[""],
+        "Loc_Qual": LOC_QUAL_DOMAIN[""],
+    }
+    assert CO_GIS_BLANK_ATTRIBUTES[LINES_SOURCE_ID] == {"Deviation": DEVIATION_DOMAIN[""]}
