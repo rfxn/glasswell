@@ -8,9 +8,14 @@
   margin: 0 0 0.4rem;
 }
 
+/* `separate`, not `collapse`: in the collapsed model Chromium paints borders as the table's
+   grid, at the cell's laid-out position, so the pinned month's `border-right` below stayed
+   behind when the cell travelled and the covered edge was unmarked at max scroll. Spacing 0
+   keeps the row hairlines reading as one line. `tests/e2e/table-edge.mjs` reads the pixels. */
 .gw-series-table table {
   width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   font-size: var(--gw-fs-micro);
 }
 
@@ -31,8 +36,8 @@
 /* The month stays readable while the streams scroll past it: a row whose identity has left
    the viewport is a row of numbers about nothing, which at 390 is every row. The right edge
    says "covered", because a figure scrolled half under an opaque month column read as a whole
-   one (`000 mcf` for 10100.000 mcf). It is a border and not a shadow: Chromium paints no
-   box-shadow on the cells of a collapsed-border table, so the shadow drew nothing at all. */
+   one (`000 mcf` for 10100.000 mcf). It is a border on a separated-border table: a shadow drew
+   nothing at all in the collapsed model, and so did this border until the model changed. */
 .gw-series-table tbody th,
 .gw-series-table thead th.gw-table-month {
   position: sticky;

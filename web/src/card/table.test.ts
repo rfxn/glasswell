@@ -140,16 +140,32 @@ describe("what stays put when the streams scroll past", () => {
     expect(sticky).toContain("z-index");
   });
 
-  it("marks the covered edge with something the collapsed border model paints", () => {
-    // Chromium paints no `box-shadow` on the cells of a `border-collapse: collapse` table, so
-    // the shadow that was supposed to say "covered" was measured at 0 differing pixels either
-    // side of the pinned edge, in both themes, and `10100.000 mcf` still read `000 mcf`
-    // (visual M1 residual). Either the border model changes or the marker does.
+  it("marks the covered edge in a border model that travels with the pinned cell", () => {
+    // Twice the marker was declared and twice Chromium painted nothing a reader could see: a
+    // box-shadow, which it does not paint on the cells of a collapsed-border table at all, and
+    // then a border, which it painted as the table's grid at the cell's laid-out position — so
+    // the mark scrolled away with the columns while the cell stayed, and `10100.000 mcf` still
+    // read `000 mcf` beside `May 2023`. The separated model paints the border in the cell's own
+    // box. This assertion is the model; `tests/e2e/table-edge.mjs` reads the pixels, because a
+    // regex over the stylesheet has now passed three times over an invisible mark.
     const pinned = CSS.match(/\.gw-series-table tbody th,[^{]*\{[^}]*\}/)?.[0] ?? "";
     const table = CSS.match(/\.gw-series-table table[^{]*\{[^}]*\}/)?.[0] ?? "";
     expect(pinned).toMatch(/border-right/);
     expect(pinned).not.toMatch(/box-shadow/);
-    expect(table).toContain("border-collapse: collapse");
+    expect(table).toContain("border-collapse: separate");
+    expect(table).toContain("border-spacing: 0");
+  });
+
+  it("keeps the shape the pixel gate's fixture is built to", () => {
+    // `tests/e2e/table-edge.mjs` cannot import this module (plain node ESM, no TS loader), so
+    // it rebuilds the table's shape by hand. These are the four things it addresses; a rename
+    // here without one there would leave the pixel gate measuring an empty selector.
+    const frame = seriesTable(chart, callbacks);
+
+    expect(frame.className).toBe("gw-series-table");
+    expect(frame.querySelector("thead th.gw-table-month")).not.toBeNull();
+    expect(frame.querySelector("tbody tr:first-child > th")).not.toBeNull();
+    expect(frame.querySelector("tbody tr:first-child .gw-table-value")).not.toBeNull();
   });
 });
 
