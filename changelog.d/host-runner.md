@@ -14,7 +14,10 @@
       without it — or without the line `--expect` names — is treated as not done and stops the
       chain, whatever the exit says, with `steps[].judged_by` recording which reading answered.
       Measured 2026-09-05: `systemctl stop` of a running promotion answers `Result=success` and
-      exit 0, and the ad-hoc runner ran the next step over a promotion that had not happened
+      exit 0, and the ad-hoc runner ran the next step over a promotion that had not happened. A
+      step the host ended rather than the step itself — `signal`, `core-dump`, `oom-kill`,
+      `timeout`, `watchdog`, `start-limit-hit`, `resources`, `protocol` — stops the chain even
+      under `--keep-going`, which is for a step that failed and said so
 - [New] `--resume` continues a job whose status says `stopped` under the same job name, log
       and status file, numbering the new steps after the ones already recorded, and
       `--after-job` starts one job behind another by reading that job's status file rather
@@ -23,8 +26,14 @@
       waiting to is in the `waiting` state, so a follower behind a job that never finishes
       stops and says so rather than waiting forever
 - [New] install.sh places the runner at `/usr/local/sbin/host-runner.sh` and creates
-      `/var/lib/glasswell/runs` (0750) and `/var/log/glasswell`; verify.sh asserts both
-      directories and holds the installed runner byte-identical to the tree
+      `/var/lib/glasswell/runs` (root:glasswell 0750, so a step cannot rewrite the verdict on
+      its own work) and `/var/log/glasswell`; verify.sh asserts both directories and holds the
+      installed runner byte-identical to the tree
+- [New] install.sh retires the five ad-hoc runners of 2026-09-05 as it places the tracked one,
+      scripts and status files together, into `/var/lib/glasswell/runs/archive/` — never
+      deleted, because a load's own record is the evidence that it happened. Without it the
+      Colorado runbook's first tracked run refuses: `co-load` is the job name the runbook
+      launches and the ad-hoc verdict already sat under it
 - [Change] of the nineteen `systemd-run` sites in the tree, the thirteen that were
          invocations are jobs on the runner — twelve across six runbooks, each launched
          detached and followed by the command that polls its status file, and `deploy.sh`'s
