@@ -14,6 +14,7 @@ import re
 import subprocess
 import time
 from dataclasses import dataclass
+from itertools import pairwise
 from pathlib import Path
 
 import pytest
@@ -69,6 +70,7 @@ printf '%s\n' "$@" > "$STUB_JOURNAL_DIR/$unit.argv"
 [ -n "${STUB_LAUNCH_ONLY:-}" ] && exit 0
 if [ -n "${STUB_SNAPSHOT_DIR:-}" ] && [ -f "${STUB_STATUS_FILE:-}" ]; then
     cp "$STUB_STATUS_FILE" "$STUB_SNAPSHOT_DIR/$unit.json"
+    stat -c %i "$STUB_STATUS_FILE" >> "$STUB_SNAPSHOT_DIR/inodes"
 fi
 "${command_argv[@]}" > "$STUB_JOURNAL_DIR/$unit.log" 2>&1
 rc=$?
@@ -594,6 +596,44 @@ class TestWrittenAfterEveryTransition:
         assert first["result"] == "running"
         assert first["step_index"] == 1
         assert first["steps_total"] == 2
+
+
+class TestTheStatusFileIsReplacedNotRewritten:
+    """The file is written to `.tmp` and renamed over, so a poller never reads half a document.
+
+    A rename gives the name a new inode every time; a direct write truncates the one a reader
+    may have open. Consecutive transitions are compared rather than all of them, because the
+    inode a rename frees is free for the transition after next to be given.
+    """
+
+    def observed_inodes(self, harness: Harness, job: str) -> list[str]:
+        harness.run(
+            *two_steps(job),
+            STUB_SNAPSHOT_DIR=str(harness.snapshots),
+            STUB_STATUS_FILE=str(harness.runs / f"{job}.json"),
+        )
+        seen = (harness.snapshots / "inodes").read_text(encoding="utf-8").split()
+        return [*seen, str((harness.runs / f"{job}.json").stat().st_ino)]
+
+    def test_no_transition_lands_on_the_document_the_last_one_published(
+        self, harness: Harness
+    ) -> None:
+        observed = self.observed_inodes(harness, "atomic")
+
+        # One per step launch, plus the completed document.
+        assert len(observed) == 3
+        assert all(before != after for before, after in pairwise(observed)), (
+            f"the file a poller has open was rewritten under it: {observed}"
+        )
+
+    def test_nothing_half_written_is_left_beside_the_status_file(self, harness: Harness) -> None:
+        harness.run(*two_steps("tidy"))
+
+        assert sorted(path.name for path in harness.runs.iterdir()) == [
+            "tidy.json",
+            "tidy.stamps",
+            "tidy.steps",
+        ]
 
 
 class TestRefusals:
