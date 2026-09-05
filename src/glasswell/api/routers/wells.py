@@ -157,6 +157,17 @@ STATUS_SUMMARY_LABELS = {
     "/producing_window/liquids_basis": "gt_stream",
 }
 
+# Wrapped for the reason facets.py:54-58 wraps the same expression: a resolver that maps a
+# reported code onto an empty string yields a class named "", which is grouped and served
+# beside the real ones under `status_null=1` -- the handle the absence already carries. Not
+# absent_if_blank: that helper cites Colorado's rule about ECMC's GIS attributes, and a blank
+# in a status map is a different source's blank.
+def _resolved_class(spine: str) -> str:
+    return f"nullif({resolved_status(spine)}, '')"
+
+
+_RESOLVED_CLASS = _resolved_class("w")
+
 _PRODUCING_CLASS = class_expression(api10="ranked.api10", state_code="ranked.state_code")
 
 # The guard is not decoration: with the definition unregistered the classifier would answer
@@ -173,7 +184,7 @@ _REPORTED = ", ".join(
 _COLUMNS = (
     "api10, api14, state_code, ndic_file_no,"
     f" {_REPORTED},"
-    f" {resolved_status('ranked')} as status_canonical,"
+    f" {_resolved_class('ranked')} as status_canonical,"
     " spud_date,"
     " confidential_flag, basin, land_unit_label, total_depth_ft, completion_date,"
     " effective_from, source_manifest_id, derivation_id,"
@@ -261,7 +272,7 @@ with in_view as (
                          st_makeenvelope(%(minx)s, %(miny)s, %(maxx)s, %(maxy)s, 4326))),
      latest as (
     select distinct on (v.api10)
-           v.api10, {resolved_status("w")} as status_canonical, w.basin, w.state_code,
+           v.api10, {_RESOLVED_CLASS} as status_canonical, w.basin, w.state_code,
            {absent_if_blank("w.well_type_reported")} as well_type_reported,
            w.derivation_id, w.effective_from
       from in_view v

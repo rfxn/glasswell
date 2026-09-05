@@ -201,6 +201,54 @@ def test_the_box_cites_the_rule_that_read_its_blanks_and_a_box_without_them_does
     )
 
 
+def test_a_status_the_resolver_leaves_empty_is_the_absence_class_and_not_a_second_one(
+    population: psycopg.Connection, api_client: TestClient
+) -> None:
+    """gate-cofix M-2. STATUS_SUMMARY_SQL guarded one of the two text dimensions it groups by:
+    well_type_reported was wrapped, the status expression was not. facets.py:54-58 wraps exactly
+    this expression for exactly this reason. An empty resolved class is served as a class named
+    "" whose selector is `status_null=1` -- the same handle the absence carries, over a
+    different set. Improvement on the pre-branch 422, still two answers under one handle.
+    """
+    with population.cursor() as cursor:
+        cursor.execute(
+            "insert into lineage.status_resolution_resolved (for_state_code,"
+            " for_status_reported, resolved_status, jurisdiction_code, built_for)"
+            " values ('05', 'UNFILED', '', 'CO', current_date)"
+        )
+    manifest = seed_manifest(
+        population, sha256="e" * 64, source_id="co_ecmc_wells_shp", source_key="wells.zip"
+    )
+    seed_well(
+        population,
+        api10="0512300002",
+        manifest_id=manifest,
+        state_code="05",
+        basin=None,
+        status_canonical=None,
+        status_reported="UNFILED",
+    )
+    seed_well_spatial(
+        population,
+        api10="0512300002",
+        geom_type="surface",
+        wkt=f"POINT(-103.44 {LATITUDE})",
+        manifest_id=manifest,
+    )
+    population.commit()
+
+    data = summary(api_client)["data"]
+    selectors = [row["wells"]["d"] for row in data["statuses"]]
+
+    card = api_client.get("/v1/wells/0512300002")
+
+    assert "" not in [row["status"] for row in data["statuses"]]
+    assert len([term for term in selectors if "status_null=1" in term]) == 0
+    assert data["unmapped_wells"]["value"] == "3"
+    # The spine read is wrapped too: the card and the summary answer the same about this well.
+    assert card.json()["data"]["status_canonical"] is None
+
+
 def test_a_well_outside_the_box_is_not_counted(
     population: psycopg.Connection, api_client: TestClient
 ) -> None:

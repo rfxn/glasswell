@@ -11,3 +11,7 @@
 - [Fix] the model context reads its `area` control feature under the same rule; a blank
       county there is a category of its own and would split one county's peers into two
       cohorts (gate-cofix M-1)
+- [Fix] a status class the read-time resolver maps onto an empty string is the absence class
+      rather than a second bucket beside the real ones: /v1/wells/status-summary and the wells
+      spine wrap the resolved status the way facets.py already does, so two selectors can no
+      longer collide on status_null=1 (gate-cofix M-2)
