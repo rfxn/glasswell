@@ -326,8 +326,10 @@ does not.
 16 GiB resident, PGDATA on the ssd-pool, no swap**. It still sets no `listen_addresses` —
 the running value is `localhost` and martin reaches PostgreSQL over loopback TCP, so
 SB-06 §1.3's `''` would take tiles down. `install.sh` places it only under
-`--with-postgres`, because applying it needs a PostgreSQL restart and martin holds live
-connections.
+`--with-postgres`, and `deploy.sh` runs `install.sh` with no arguments, so a deploy neither
+applies a revision of this file nor reverts one — a changed drop-in reaches the host only
+through runbook step 5c. Most of these settings need a PostgreSQL restart, which martin's live
+connections do not survive; the reload-only ones apply with `select pg_reload_conf()`.
 
 ### What is actually on the host
 
@@ -381,6 +383,7 @@ swapfile so balloon pressure becomes slowdown rather than an OOM kill. The host 
 | `max_connections` | 60 | **80** | There is no pool — one connection per request, plus a second during auth. Twelve tile-proxy requests from one map pan take 12–24, and martin's pool takes 10 of the 57 usable. 80 moves the crossing point without making the cap useless |
 | `wal_buffers` | −1 (→16MB) | **64MB** | The auto-cap is 16MB. NM's promotion is 89 minutes at 10.6 % CPU — "the rest is Postgres writing" |
 | `min_wal_size` / `max_wal_size` | 80MB / 1GB | **1GB / 4GB** | 17.6 M rows × (~335 B heap + 6 index entries) ≈ 12 GB of relation data against a 1GB checkpoint trigger, re-arming full-page writes on six indexes each time |
+| `wal_compression` | off | **lz4** | 43,185,162 full-page images in 15 d 15 h on the running server is what FPI compression is for. Reload-only, so it costs no window. `lz4` over `zstd` because the binding resource during a load is the write path and the eight vCPU the parallel workers contend for, not archive size — revisit with a `pg_stat_wal` delta |
 | `checkpoint_timeout` | 5min | **15min** | A page's full-page image is written once per checkpoint cycle, so tripling the cycle is a bigger WAL-volume lever than `max_wal_size`. Costs crash-recovery time, covered by nightly dump and weekly restore drill |
 | `default_statistics_target` | 100 | **200** | Heavy skew on `state_code` (42 vs 33), `api10` prefixes and `formation`, over a table going to ~24.8 M rows. Needs an `ANALYZE` to take effect |
 | `max_parallel_workers_per_gather` | 2 | **4** | Four workers plus the leader is exactly blueprint C26's five-of-eight-vCPU cap for batch work. `max_parallel_workers` stays at its default 8, which is what bounds the total |
@@ -398,9 +401,16 @@ PG16 — a line that restates a default is an assertion for no behaviour change)
 `max_locks_per_transaction` (the lock pool is `64 × max_connections`, ample for `pg_dump`
 over the partitioned `lineage.audit_events`); `jit = off` (standard PostGIS advice, but
 plan-dependent and unmeasured here — an A/B for the runbook, not a guess);
-`wal_compression` and `shared_preload_libraries = pg_stat_statements` (**both can stop the
-server from starting** if the build lacks LZ4 or the contrib library is absent, and neither
-is verifiable from here — both are runbook steps with a pre-check instead).
+`shared_preload_libraries = pg_stat_statements` (**can stop the server from starting** if the
+contrib library is absent, needs a restart rather than a reload, and is not verifiable from
+here — a runbook step with a pre-check instead).
+
+**Rejected, pre-checked, and now shipped:** `wal_compression` stood in the paragraph above on
+the same grounds until its pre-check was run. `select name, setting,
+array_to_string(enumvals, ',') from pg_settings where name = 'wal_compression'` returned
+`off | pglz,lz4,zstd,on,off` on this server, so the build carries LZ4, and the setting is in
+the table above. It reloads, so it costs no window; `shared_preload_libraries` still needs one
+and still waits.
 
 ### `work_mem` arithmetic
 
@@ -537,7 +547,7 @@ systemctl start glasswell-lineage-retention.service  # prove this release can sw
 systemctl start glasswell-status.service   # block until this release's snapshot is written
 ./verify.sh
 
-# 5. Apply the Postgres tuning. Run whenever the drop-in has moved since the last restart.
+# 5. Apply the Postgres tuning. Run whenever the drop-in has moved since the last apply.
 #    5a. The swapfile SB-06 2.3 asked for and provisioning never created. Do this FIRST:
 #        it is what makes sizing against 16 GiB safe against the 8 GiB balloon floor.
 #        Step 5 reruns whenever the drop-in moves, so both halves are guarded: fallocate
@@ -551,13 +561,23 @@ grep -q '^/swapfile[[:space:]]' /etc/fstab \
     || printf '/swapfile none swap sw 0 0\n' >> /etc/fstab   # survives reboot
 #    5b. Capture the "before" numbers — the Measure section above is the full set.
 sudo -u postgres psql -d glasswell -c 'select * from pg_stat_bgwriter' > /tmp/pg-before.txt
-#    5c. Place and restart. martin's pooled connections do not survive the restart.
+#    5c. Place, then reload. deploy.sh runs ./install.sh with no arguments, so this is the only
+#        step that puts a changed drop-in on the host — and verify.sh compares the tree's
+#        drop-in to the running server at the end of a deploy, after install.sh, the marts and
+#        the service restarts have all happened. Skipping it is a red deploy that deployed.
+#        A revision of reload-only settings (wal_compression) is complete at the end of 5c:
+#        skip 5d, close on this block's ./verify.sh, and martin keeps its connections.
 cd /opt/glasswell/src/infra && ./install.sh --with-postgres
+sudo -u postgres psql -c 'select pg_reload_conf()'
+#    5d. SKIP THIS unless the revision changed a setting that is not reload-only. Both lines
+#        are downtime: martin's pooled connections do not survive the PostgreSQL restart.
+#        `select name, context from pg_settings where name in (…)` says which class a setting
+#        is in — anything but 'sighup' or 'user' needs this sub-step.
 systemctl restart postgresql@16-main
 systemctl restart martin
-#    5d. default_statistics_target only bites after a re-analyze; nothing else needs this.
+#    5e. default_statistics_target only bites after a re-analyze; nothing else needs this.
 sudo -u postgres vacuumdb --analyze-only --all --jobs 4
-#    5e. The bulk path's work_mem, which the global value deliberately does not carry.
+#    5f. The bulk path's work_mem, which the global value deliberately does not carry.
 sudo -u postgres psql -d glasswell \
     -c "alter role glasswell_pipeline set work_mem = '512MB'" \
     -c "alter role glasswell_pipeline set maintenance_work_mem = '2GB'"
@@ -729,8 +749,9 @@ rather than discovered.
                                  # glasswell-api, place the scheduler's pg_ident map and arm
                                  # glasswell-scheduler.timer — all on every run, because
                                  # deploy.sh calls this with no arguments
-./install.sh --with-postgres     # additionally place the tuning drop-in — 22 settings sized
-                                 # for 16 GiB / 8 vCPU; needs a PG restart and a martin restart
+./install.sh --with-postgres     # additionally place the tuning drop-in — 23 settings sized
+                                 # for 16 GiB / 8 vCPU; a restart applies them, except the
+                                 # reload-only ones — runbook step 5c
 ./install.sh --with-caddy        # additionally place the Caddyfile and caddy.service, validated
 ./install.sh --enable-ingest     # additionally arm the monthly NDIC pull
 ./install.sh --enable-backup     # arm nightly backup and weekly logical restore timers
