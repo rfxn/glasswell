@@ -544,7 +544,7 @@ wait_for_job() {
 run_step() {
     local index=$1
     local name=${step_names[index]} unit=${step_units[index]}
-    local started_at ended_at exit_status systemd_result exec_status memory_peak journal summary
+    local started_at ended_at exit_status systemd_result exec_status memory_peak journal payload summary
     local -a command_argv properties step_env=()
     command_argv=("${command_flat[@]:${step_command_offset[index]}:${step_command_count[index]}}")
     if (( step_setenv_count[index] > 0 )); then
@@ -581,7 +581,12 @@ run_step() {
     exec_status=$(systemctl show "$unit" -p ExecMainStatus --value)
     memory_peak=$(systemctl show "$unit" -p MemoryPeak --value)
     journal=$(journalctl -u "$unit" --no-pager -o cat)
-    summary=$(step_summary "$journal")
+    # `-u` answers with systemd's own messages about the unit as well as the step's output, so
+    # the last line of it is "Deactivated successfully." rather than the step's figures
+    # (measured against real systemd, 2026-09-05). `_SYSTEMD_UNIT` is the step's alone.
+    payload=$(journalctl _SYSTEMD_UNIT="$unit.service" --no-pager -o cat)
+    [[ -n $payload ]] || payload=$journal
+    summary=$(step_summary "$payload")
 
     printf -- '-- journal %s --\n%s\n-- end journal %s --\n' "$unit" "$journal" "$unit"
     printf '== %s unit=%s end=%s rc=%s Result=%s ExecMainStatus=%s MemoryPeak=%s\n' \

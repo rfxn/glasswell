@@ -96,14 +96,35 @@ fi
 exit 0
 """
 
+# `journalctl -u X` answers with the payload's output *and* systemd's own messages about the
+# unit; `journalctl _SYSTEMD_UNIT=X.service` answers with the payload's alone. The stub models
+# both, because a stub that emitted only the payload would make the runner's summary look
+# right while the real journal put "Deactivated successfully." where the step's figures are.
 JOURNALCTL_STUB = r"""#!/bin/bash
 unit=""
+payload_only=0
 previous=""
 for argument in "$@"; do
+    case "$argument" in
+        _SYSTEMD_UNIT=*)
+            unit="${argument#_SYSTEMD_UNIT=}"
+            unit="${unit%.service}"
+            payload_only=1
+            ;;
+    esac
     [ "$previous" = -u ] && unit="$argument"
     previous="$argument"
 done
 [ -f "$STUB_JOURNAL_DIR/$unit.log" ] && cat "$STUB_JOURNAL_DIR/$unit.log"
+if [ "$payload_only" = 0 ] && [ -f "$STUB_JOURNAL_DIR/$unit.rc" ]; then
+    rc=$(cat "$STUB_JOURNAL_DIR/$unit.rc")
+    if [ "$rc" = 0 ]; then
+        printf '%s.service: Deactivated successfully.\n' "$unit"
+    else
+        printf '%s.service: Main process exited, code=exited, status=%s/n/a\n' "$unit" "$rc"
+        printf "%s.service: Failed with result 'exit-code'.\n" "$unit"
+    fi
+fi
 exit 0
 """
 
@@ -267,6 +288,28 @@ class TestSummaryIsNeverTruncated:
         source = RUNNER.read_text(encoding="utf-8")
 
         assert not re.search(r"\bcut\b", source), "a machine-readable line must not be cut"
+
+    def test_systemd_own_verdict_is_not_the_step_s_summary(self, harness: Harness) -> None:
+        # Measured against real systemd 2026-09-05: `journalctl -u <unit> -o cat` ends with
+        # "<unit>.service: Deactivated successfully.", which is what the summary reported.
+        harness.run("--job", "verdict", "--", "load", "/bin/echo", "staged 5230000 rows")
+
+        status = harness.status("verdict")
+        assert status["steps"][0]["summary"] == "staged 5230000 rows"
+        # The log keeps systemd's own lines: they are the operator's evidence, not the step's.
+        assert "Deactivated successfully" in harness.log("verdict")
+
+    def test_a_failures_last_payload_line_survives_systemd_talking_over_it(
+        self, harness: Harness
+    ) -> None:
+        harness.run(
+            "--job", "drift", "--", "load", "/bin/sh", "-c",
+            "echo 'cr_tx_pdq_format_2: the header carries FOO'; exit 4",
+        )
+
+        status = harness.status("drift")
+        assert status["steps"][0]["summary"] == "cr_tx_pdq_format_2: the header carries FOO"
+        assert "Failed with result" in harness.log("drift")
 
     def test_the_last_json_line_wins_over_chatter_around_it(self, harness: Harness) -> None:
         harness.run(
