@@ -515,10 +515,12 @@ JURISDICTION_RULES: tuple[dict[str, object], ...] = (
     *COLORADO_DECISIONS,
 )
 
-# The nine decisions the Texas registration carries after the supersession. Five are carried
-# forward: dropping length_source or basin_scope would silently remove Texas's lateral-length
-# measurement and its basin CRS from the tile mart, which no test would catch because the mart
-# would go on running with a default.
+# The ten decisions the Texas registration carries after the supersession, six of them carried
+# forward from the registration it supersedes. The loader joins decisions to the resolved
+# registration on its exact (code, effective_from, published_at) triple, so a decision left out
+# here is served as no rule at all -- which is what became of basin_context between v0.80 and
+# this train, and what test_marts_basin_context.py now asserts for every registered
+# jurisdiction rather than for North Dakota alone.
 TX_SUPERSEDED_RULES: tuple[dict[str, object], ...] = (
     {"jurisdiction_code": "TX", "decision": "status_vocabulary",
      "rule_id": "cr_tx_status_vocab_1"},
@@ -528,6 +530,8 @@ TX_SUPERSEDED_RULES: tuple[dict[str, object], ...] = (
     {"jurisdiction_code": "TX", "decision": "basin_scope", "rule_id": "cr_tx_basin_scope_1"},
     {"jurisdiction_code": "TX", "decision": "length_source",
      "rule_id": "cr_tx_length_source_1"},
+    {"jurisdiction_code": "TX", "decision": BASIN_CONTEXT,
+     "rule_id": "cr_tx_basin_context_1"},
     {"jurisdiction_code": "TX", "decision": "production_grain",
      "rule_id": "cr_tx_production_grain_1"},
     {"jurisdiction_code": "TX", "decision": "liquids", "rule_id": "cr_tx_liquids_basis_1"},

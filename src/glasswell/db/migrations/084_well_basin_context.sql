@@ -24,7 +24,7 @@
 --      079_scheduler_observe and 080_tx_lease_production on main, and merging them made two
 --      079s, which discover_migrations refuses; then 084 at the v0.82 train, behind v0.81's 081–083. No test and no fixture names
 --      the integer, so nothing moved with it.
---   5. The rule ids are immutable and must not change during the repoint: seven ids seeded by
+--   5. The rule ids are immutable and must not change during the repoint: eight ids seeded by
 --      seed/conformance_basin_context.py, seed/conformance_status_history.py and
 --      seed/conformance_schedules.py read them back from the publication rows this file
 --      writes, and 049's trigger refuses any rule whose id has no row here.

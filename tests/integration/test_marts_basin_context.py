@@ -17,6 +17,7 @@ import pytest
 
 import glasswell
 from glasswell.lineage.capture import lineage_session
+from glasswell.lineage.jurisdictions import load_jurisdictions
 from glasswell.lineage.store import PostgresRecorder
 from glasswell.marts.well_basin_context import (
     IN_BOUNDARY,
@@ -24,7 +25,7 @@ from glasswell.marts.well_basin_context import (
     refresh_well_basin_context,
 )
 from glasswell.seed import seed_all
-from glasswell.seed.conformance_basin_context import OUTSIDE
+from glasswell.seed.conformance_basin_context import BASIN_CONTEXT, OUTSIDE
 from tests.support.layers import schema_reads_in
 from tests.support.seed import (
     FIXTURE_ENV,
@@ -246,3 +247,49 @@ def test_a_second_run_replaces_rather_than_appends(spine: psycopg.Connection) ->
         cursor.execute("select count(*) from marts.well_basin_context")
         assert int(cursor.fetchone()[0]) == second.rows
     assert first.rows == second.rows
+
+
+# The registry is only knowable once the database is seeded, so these two read it at run time
+# rather than through `parametrize`: a list written at collection time would be a copy of the
+# registration table, and would shrink in step with the very drop it is meant to catch.
+
+
+def test_every_registered_jurisdiction_resolves_a_basin_rule(spine: psycopg.Connection) -> None:
+    """R8, as a class rather than as one jurisdiction.
+
+    Texas served its basin decision with a null rule for the life of the v0.80 supersession:
+    the loader joins decisions to the resolved registration on the exact
+    (code, effective_from, published_at) triple, the supersession carried nine decisions
+    forward, and `basin_context` was not among them. The tuple's own comment names the hazard
+    -- a mart that "would go on running with a default" -- and the only rule_id assertion in
+    the suite named ND, so nothing failed.
+    """
+    registry = load_jurisdictions(spine)
+
+    silent = sorted(row.identity_prefix for row in registry if row.rule(BASIN_CONTEXT) is None)
+
+    assert silent == [], (
+        f"registered jurisdictions with no basin_context rule: {silent}."
+        " A decision that exists only in code fails review (R8); the usual cause is a"
+        " supersession that did not carry the rule forward."
+    )
+
+
+def test_every_jurisdictions_wells_carry_the_rule_that_decided_them(
+    spine: psycopg.Connection,
+) -> None:
+    """The same property one layer down, where a reader meets it: the mart's own rows."""
+    prefixes = sorted(row.identity_prefix for row in load_jurisdictions(spine))
+    assert len(prefixes) >= 5, prefixes
+    for prefix in prefixes:
+        api10 = f"{prefix}05300001"
+        seed_well(spine, api10=api10, state_code=prefix, basin=None)
+        seed_well_spatial(spine, api10=api10, geom_type="surface", wkt=INSIDE_POINT)
+    spine.commit()
+
+    refresh(spine)
+    rows = mart_rows(spine)
+
+    silent = sorted(api10 for api10, row in rows.items() if row["rule_id"] is None)
+
+    assert silent == [], f"mart rows naming no basin_context rule: {silent}"
