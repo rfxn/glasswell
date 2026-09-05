@@ -27,7 +27,7 @@ Measured on the deployed database (VM 111) and host, read-only, 2026-09-02.
 
 ## Shipped baseline per state
 
-All four states are resident. Rows and distinct API-10 differ where a state carries bitemporal
+All five states are resident; Colorado landed 2026-09-05 (run 2, 6 min 55 s on the host runner, every gate exact). Rows and distinct API-10 differ where a state carries bitemporal
 vintages; geometry is distinct API-10 per `geom_type`. Montana is a Williston extension rather
 than a phase; ROADMAP's N3 owns its exit criteria.
 
@@ -37,6 +37,7 @@ than a phase; ROADMAP's N3 owns its exit criteria.
 | **TX** 42 | 359,421 / 359,421 | **none** — `tx_pdq_dsv` is not a registered source; allocation and both validators unbuilt | surface 355,463 · bottomhole 355,545 · lateral 68,331 | 291,235 of 359,421 · `cr_tx_status_vocab_1` | `TOTAL_DEPTH`, `COMPLETION_DATE` · `cr_tx_ewa_measures_1`, the only TX withholding rule. Operator absence is not withholding · `cr_tx_operator_absence_1` |
 | **NM** 30 | 321,510 / 142,000 | 17,597,960 · `nm_ocd_wcproduction`, completion-pool grain | surface 141,778 | **0 of 321,510 promoted, by design** — the column stays null and `cr_nm_wellhistory_status_vocab_2` resolves the class at read time: ten of fourteen OCD codes to canonical classes, `I`/`J`/`Q`/`Z` to a distinct `documented_unmapped` class, `unmapped_action = passthrough`. Tile-grain classes active 54,325 · plugged 50,935 · permitted 18,161 · expired 17,056 (`work-output/nm-status-status.md`, 2026-09-01) | lateral geometry `data-unreachable` · `cr_nm_wellhistory_geometry_scope_1`. No well-level rollup · `cr_nm_wcproduction_pool_rollup_1` |
 | **MT** 25 | 40,626 / 40,626 | 17,547,951 well grain + 4,808,814 PRU lease grain · `mt_bogc_*` | surface 42,026 · lateral 2,835 | 40,626 of 40,626 · `cr_mt_gis_status_vocab_1` | lateral length · `cr_mt_paths_length_scope_1`. No basin tag · `cr_mt_basin_scope_1` |
+| **CO** 05 | 124,392 / 124,392 | 1,261,665 · `co_ecmc_production` rolling file, 244,491 pool + 1,017,174 well grain, 98,226 disclosed `sum_over_pools` | surface 124,392 · bottomhole 39,048 · lateral 39,048 (staged 124,410 / 39,048 / 39,048; 18 `duplicate_row` quarantined) | 124,392 of 124,392 via the resolver (G-3) · `cr_co_wells_status_vocab_1` | 1,172 wells carry a blank `well_type_reported` — F-3, `fix/co-blank-well-type` in flight (the status summary refuses their bbox until it lands) |
 
 ### Basin context, measured before it ships
 
