@@ -10,7 +10,12 @@ const ENTRY = "src/main.ts";
 
 // `import type` is erased before it reaches the bundler, so it is not an edge in this graph —
 // which is what lets main.ts name MapHandle while the module stays out of the entry chunk.
-const NAMED_IMPORT = /(?:^|\n)\s*(?:import|export)\s+(?!type\s)([\s\S]*?)\sfrom\s+["']([^"']+)["']/g;
+// The body is `[^;]*?` and not `[\s\S]*?` because a statement terminator is the one character
+// that cannot appear inside one: with the wider class a side-effect `import "x";` followed by
+// an `import type ... from "y"` matched across both and reported `y` as a static edge. It did
+// that here the moment the lineage drawer's import left main.ts and stopped sitting between
+// the two, and reported src/map/map.ts as statically imported when nothing imports it.
+const NAMED_IMPORT = /(?:^|\n)\s*(?:import|export)\s+(?!type\s)([^;]*?)\sfrom\s+["']([^"']+)["']/g;
 const SIDE_EFFECT_IMPORT = /(?:^|\n)\s*import\s+["']([^"']+)["']/g;
 
 function moduleEdges(source: string): string[] {
@@ -343,5 +348,70 @@ describe("every glyph this product renders comes from a face it ships", () => {
 
     // The em dash, the disclosure triangles, ⌾, ✕ and the cursor block's arrow, at least.
     expect(nonAscii.length).toBeGreaterThan(5);
+  });
+});
+
+// The em dash left the copy the app speaks at v0.76 and the absent-value mark followed at
+// v0.81, and both passes were greps rather than gates — so the class reopened twice and eight
+// literals were still on the wire at v0.81. `--` is the absent mark, a colon or a full stop is
+// the punctuation, and this arm is what makes the ninth red. Comments are prose in source and
+// keep theirs: `literalsOf` strips them.
+const EM_DASH = "—";
+
+// Emptied at the v0.82 train once feat/well-card-2 closed its three; asserted in both
+// directions below, so it can neither be widened quietly nor outlive its reason.
+const EM_DASH_CARRIED: string[] = [];
+
+function emDashLiterals(): { path: string; literal: string }[] {
+  return RENDERED.flatMap((file) =>
+    literalsOf(file.path, file.source)
+      .filter((literal) => literal.includes(EM_DASH))
+      .map((literal) => ({ path: file.path, literal })),
+  );
+}
+
+describe("no em dash reaches a shipped literal", () => {
+  it("finds none outside the entries another branch is closing", () => {
+    const offenders = emDashLiterals()
+      .filter((hit) => !EM_DASH_CARRIED.includes(hit.path))
+      .map((hit) => `${hit.path}: ${hit.literal}`);
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("carries exactly the files that still have one, so the list cannot outlive them", () => {
+    const carrying = [...new Set(emDashLiterals().map((hit) => hit.path))].sort();
+
+    expect(
+      carrying,
+      "the carried list and the tree disagree: if the card track's fix has landed here, delete" +
+        " the names it closed from EM_DASH_CARRIED rather than leaving them declared",
+    ).toEqual([...EM_DASH_CARRIED].sort());
+  });
+
+  it("scans the files it is meant to have cleared, so a green run is not an empty walk", () => {
+    const paths = RENDERED.map((file) => file.path);
+
+    expect(RENDERED.length).toBeGreaterThan(100);
+    for (const cleared of [
+      "src/accounts/section.ts",
+      "src/chrome/status.ts",
+      "src/explore/detail/figures.ts",
+      "src/explore/grid/cells.ts",
+      "src/map/hover-card.ts",
+    ]) {
+      expect(paths, cleared).toContain(cleared);
+    }
+  });
+
+  it("can fail, on every quote form the corpus reads", () => {
+    const probe = [
+      `const double = "a ${EM_DASH} b";`,
+      `const single = 'a ${EM_DASH} b';`,
+      `const template = \`a ${EM_DASH} b\`;`,
+    ].join("\n");
+
+    expect(literalsOf("probe.ts", probe).filter((one) => one.includes(EM_DASH))).toHaveLength(3);
+    expect(literalsOf("probe.ts", `// a ${EM_DASH} comment`)).toEqual([]);
   });
 });

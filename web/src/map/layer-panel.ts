@@ -1,7 +1,7 @@
 import "./layer-panel.css";
 
 import { readState } from "../app/state.ts";
-import { explainHandle, setExplainHandle } from "../chrome/handle.ts";
+import { explainHandle, setExplainHandle, setHandleCaption } from "../chrome/handle.ts";
 import { registerOverlay } from "../chrome/overlays.ts";
 import { applyCrossing, cross, whatsBehindThisLayer } from "../explore/bridge.ts";
 import type { Bbox, Crossing } from "../explore/bridge.ts";
@@ -763,8 +763,9 @@ function buildRow(layer: LayerDef, options: LayerPanelOptions, family?: LayerFam
     },
     setProvenance(derivationId) {
       setExplainHandle(derivation, derivationId);
-      // The row spells the affordance out rather than wearing the bare glyph (map.css).
-      derivation.textContent = `⌾ geometry build ${derivationId}`;
+      // The row spells the affordance out rather than wearing the bare glyph (map.css); the
+      // mark itself stays chrome/handle.ts's, which is what style.css pins the face for.
+      setHandleCaption(derivation, `geometry build ${derivationId}`);
     },
     setCrossing(box, resolved, extentOff) {
       // Rebuilt rather than patched: the box is half the destination, so a stale href would be

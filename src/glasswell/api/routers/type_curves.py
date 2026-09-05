@@ -74,6 +74,13 @@ CURVE_LABELS = {
     "/control_version": "gt_type_curve",
     "/cumulative_at_horizon": "gt_cum12_cum24",
     "/series/peer_count": "gt_training_support",
+    # The peer table's own axis and the facts the card prints above it: the card asks the
+    # labels block for these pointers, and a pointer it does not carry is a plain-text header
+    # beside one that is a term (gate-wellcard-p57 M3).
+    "/series/month_index": "gt_producing_month",
+    "/stream": "gt_stream",
+    "/normalization": "gt_normalised_volume",
+    "/relation": "gt_peer_control",
 }
 
 class TypeCurveHorizon(IntEnum):

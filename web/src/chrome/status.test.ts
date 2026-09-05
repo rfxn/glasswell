@@ -126,7 +126,7 @@ describe("the four status channels are not interchangeable (harvest item 10)", (
   it("says so honestly when no vintage has been resolved yet", () => {
     setVintage(null);
 
-    expect(vintage.textContent).toContain("as_of —");
+    expect(vintage.textContent).toContain("as_of --");
   });
 
   it("keeps the session channel apart from the status channel", () => {

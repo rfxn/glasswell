@@ -431,7 +431,7 @@ jobs:
           exit 0
 
   map-chrome:
-    name: UI chrome — map fold and Status geometry
+    name: UI chrome — map fold, the table's pinned edge, and Status geometry
     needs: changes
     if: needs.changes.outputs.web == 'true' && needs.changes.outputs.covered != 'true'
     runs-on: ubuntu-latest
@@ -481,6 +481,7 @@ jobs:
           done
           curl -sf "$GLASSWELL_BASE_URL/" >/dev/null || { echo "static server never came up"; exit 1; }
           node tests/e2e/chrome-fold.mjs
+          node tests/e2e/table-edge.mjs
           node tests/e2e/status-surface.mjs
           node tests/e2e/hidden-display.mjs
 

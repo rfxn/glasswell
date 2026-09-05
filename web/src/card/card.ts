@@ -1,3 +1,4 @@
+import "./card.css";
 import "./gw-figure.ts";
 
 import { ApiError, getEnvelope } from "../api/client.ts";
@@ -12,7 +13,7 @@ import { focusPanel } from "../chrome/overlays.ts";
 import { crossingLink, openThisSeries, rowsForThisWell } from "../explore/bridge.ts";
 import { labelElement } from "../glossary/gw-term.ts";
 import { highlight } from "../glossary/index.ts";
-import { termIndex } from "../glossary/store.ts";
+import { onGlossaryReady, termIndex } from "../glossary/store.ts";
 import {
   absentValue,
   formatMonth,
@@ -21,6 +22,23 @@ import {
   nullSemantics,
   roundTo,
 } from "./format.ts";
+import { cardQuery } from "./requests.ts";
+import { renderBasin } from "./basin.ts";
+import type { WellBasin } from "./basin.ts";
+import { renderIdentity } from "./identity.ts";
+import { renderPeerControl } from "./peer.ts";
+import { renderPools } from "./pools.ts";
+import { exportControls } from "./export.ts";
+import type { WellIdentity } from "./identity.ts";
+import type { NormalizationControl } from "../chart/chart.ts";
+import {
+  SECTION_OPEN_EVENT,
+  applySection,
+  mountSections,
+  sectionLink,
+  sectionsSettled,
+} from "./sections.ts";
+import type { SectionSpec } from "./sections.ts";
 
 export interface WellDetail {
   api10: string;
@@ -145,36 +163,54 @@ const FACT_GROUPS: { title: string; fields: [keyof WellDetail, string, string][]
   {
     title: "Location",
     fields: [
-      ["basin", "Basin", "/basin"],
       ["county_code_at_permit", "County", "/county_code_at_permit"],
-      ["land_unit_label", "Land unit", "/land_unit_label"],
     ],
   },
   {
+    // No `well_type_reported` here: the Identity section renders it as `<code> · as <regulator>
+    // filed it`, and §2.3 replaces the bare code rather than printing both five rows apart.
     title: "Drilling",
-    fields: [
-      ["spud_date", "Spud", "/spud_date"],
-      ["well_type_reported", "Well type", "/well_type_reported"],
-    ],
+    fields: [["spud_date", "Spud", "/spud_date"]],
   },
   { title: "Record", fields: [] },
 ];
+
+// The newest card's own re-count, and the one listener that calls it.
+let recountLineage: (() => void) | null = null;
+let recounting = false;
 
 export async function renderWellCard(
   container: HTMLElement,
   api10: string,
   callbacks: CardCallbacks,
 ): Promise<void> {
-  container.replaceChildren(placeholder(`Loading well ${api10}…`));
+  // A re-land is a control the reader pressed, not a card they opened. Tearing it down to a
+  // placeholder would take the disclosures they opened and their place in the scroll — the
+  // cost `showWell`'s own guard refuses to pay on a replay.
+  const kept = standing(container, api10);
+  if (!kept) container.replaceChildren(placeholder(`Loading well ${api10}…`));
   container.hidden = false;
   const state = readState();
-  const pinnedAsOf = state.extra["as_of"]?.[0];
-  const asOfQuery: Record<string, string> = pinnedAsOf ? { as_of: pinnedAsOf } : {};
+  // Every request this card makes carries the same bag, built in one place. It used to pick
+  // `as_of` out by name and forward nothing else, so a brushed window and a normalisation
+  // basis had no route from the URL into the request that would have to answer for them.
+  const query = cardQuery(state);
 
   let well: Envelope<WellDetail>;
   try {
-    well = await getEnvelope<WellDetail>(`/v1/wells/${api10}`, asOfQuery);
+    well = await getEnvelope<WellDetail>(`/v1/wells/${api10}`, query);
   } catch (error) {
+    // A refusal of a re-land is the answer to one control the reader pressed, so it costs them
+    // that control's own surface and not the card: `Read at …` at a vintage nothing resolves at
+    // took every section, every disclosure and the window bar with it.
+    const standingCard =
+      kept && refusedThisRequest(error) ? container.querySelector<HTMLElement>(".gw-card") : null;
+    const chart = standingCard?.querySelector<HTMLElement>(".gw-production-chart .gw-frame-body");
+    if (standingCard && chart) {
+      chart.replaceChildren(errorPanel(error, { onSignIn: callbacks.onSignIn }));
+      standingCard.removeAttribute("aria-busy");
+      return;
+    }
     container.replaceChildren(errorPanel(error, callbacks));
     return;
   }
@@ -182,6 +218,8 @@ export async function renderWellCard(
   const detail = unwrap(well);
   const card = document.createElement("article");
   card.className = "gw-card";
+  // What `standing` reads to know the container is showing this well already.
+  card.dataset["api10"] = api10;
   card.addEventListener(EXPLAIN_EVENT, (event) => {
     event.stopPropagation();
     callbacks.onExplain((event as CustomEvent<{ handle: string }>).detail.handle);
@@ -365,10 +403,11 @@ export async function renderWellCard(
     record.appendChild(definition);
   }
 
-  // The reading order the card is built in, and the change that matters most about it:
-  // production is what a reader opened the card for, and it used to sit at 49% of a 1,600px
-  // scroll behind two sections that are empty for most wells. Slots are placed first and
-  // filled by their own requests, so the order cannot drift with which response lands first.
+  // Ten named sections in one order, three of them expanded. The order is the order an
+  // engineer reads a well; the split is that a section is expanded when its content is why a
+  // reader opens a well, and collapsed when it is why they open this particular one. The
+  // frames are built first and handed to their sections, so the order cannot drift with which
+  // response lands first.
   const cumulativeSlot = document.createElement("div");
   const factsSlot = document.createElement("div");
   factsSlot.className = "gw-card-facts";
@@ -377,13 +416,8 @@ export async function renderWellCard(
   const notesSlot = document.createElement("div");
   notesSlot.className = "gw-notes gw-card-notes";
 
-  // Title outside the swappable body: the placeholder, the plot and an error all land in
-  // .gw-frame-body, so none of them can take the frame's label down with them.
   const chartFrame = document.createElement("section");
   chartFrame.className = "gw-card-chart gw-production-chart";
-  const chartTitle = document.createElement("h3");
-  chartTitle.className = "gw-frame-title";
-  chartTitle.textContent = "Monthly production";
   const chartHost = document.createElement("div");
   chartHost.className = "gw-frame-body";
   chartHost.appendChild(placeholder("Loading production…"));
@@ -391,11 +425,7 @@ export async function renderWellCard(
   // the series' warnings — R8's disclosure of the derivations behind a column — sit beside it.
   const chartNotes = document.createElement("div");
   chartNotes.className = "gw-chart-notes gw-notes";
-  chartFrame.append(chartTitle, chartHost, chartNotes);
-
-  // Directly under the chart: the total belongs beside the series it is a total of, and a
-  // reader who came for production should not have to scroll past the fact bands to find it.
-  body.append(chartFrame, cumulativeSlot, factsSlot, contextSlot, neighborSlot, notesSlot);
+  chartFrame.append(chartHost, chartNotes);
 
   // A band whose every field was absent is a heading over nothing: dropped, not left standing.
   for (const { title } of FACT_GROUPS) {
@@ -412,29 +442,26 @@ export async function renderWellCard(
 
   // Everything except the codes a dedicated panel already renders, or the card shows the raw
   // internal warning line immediately above the polished version of the same sentence.
-  const panelled = new Set([PENDING_ALLOCATION]);
+  const panelled = new Set([PENDING_ALLOCATION, POOL_GRAIN]);
   const generic = well.meta.warnings.filter((warning) => !panelled.has(warning.code));
   for (const note of warningNotes(generic)) notesSlot.appendChild(note);
 
   const contextFrame = document.createElement("section");
   contextFrame.className = "gw-card-chart gw-completion-context";
-  const contextTitle = document.createElement("h3");
-  contextTitle.className = "gw-frame-title";
-  contextTitle.textContent = "Completions & formations";
   const contextHost = document.createElement("div");
   contextHost.className = "gw-frame-body";
   contextHost.dataset["state"] = "loading";
   contextHost.setAttribute("aria-busy", "true");
   contextHost.setAttribute("aria-live", "polite");
   contextHost.appendChild(placeholder("Loading completions…"));
-  contextFrame.append(contextTitle, contextHost);
+  contextFrame.append(contextHost);
   contextSlot.appendChild(contextFrame);
 
-  const contextRequest = loadCompletionContext(
+  const loadContext = (): Promise<void> => loadCompletionContext(
     contextHost,
     well.links?.["completions"] ?? `/v1/wells/${api10}/completions`,
     api10,
-    asOfQuery,
+    query,
     // Said once per card, and only for the two codes that say it twice. The header and the
     // completion design are two surfaces and both rightly disclose a withheld length, but on
     // one screen the reader gets the sentence under two headings and reads the second as a
@@ -452,26 +479,24 @@ export async function renderWellCard(
   // Absent outside the mart's states: the API declines to offer a link it would 404, and a
   // section headed "no cumulative" would say the well produced nothing rather than that this
   // jurisdiction is not summed here.
-  let cumulativeRequest: Promise<void> = Promise.resolve();
+  let loadCumulative: (() => Promise<void>) | undefined;
   const cumulativePath = well.links?.["cumulatives"];
   if (cumulativePath) {
     const cumulativeFrame = document.createElement("section");
     cumulativeFrame.className = "gw-card-chart gw-well-cumulatives";
-    const cumulativeTitle = document.createElement("h3");
-    cumulativeTitle.className = "gw-frame-title";
-    cumulativeTitle.textContent = "Cumulative";
     const cumulativeHost = document.createElement("div");
     cumulativeHost.className = "gw-frame-body";
     cumulativeHost.dataset["state"] = "loading";
     cumulativeHost.setAttribute("aria-busy", "true");
     cumulativeHost.setAttribute("aria-live", "polite");
     cumulativeHost.appendChild(placeholder("Loading cumulative…"));
-    cumulativeFrame.append(cumulativeTitle, cumulativeHost);
+    cumulativeFrame.append(cumulativeHost);
     cumulativeSlot.appendChild(cumulativeFrame);
-    cumulativeRequest = loadWellCumulatives(cumulativeHost, cumulativePath, api10, asOfQuery);
+    loadCumulative = (): Promise<void> =>
+      loadWellCumulatives(cumulativeHost, cumulativePath, api10, query);
   }
 
-  let neighborRequest: Promise<void> = Promise.resolve();
+  let loadNeighbours: (() => Promise<void>) | undefined;
   const neighborPath = well.links?.["neighbors"];
   // A third case beside served and absent: the jurisdiction registers laterals and the mart's
   // measured domain does not reach it. Rendering nothing at all reads as "this well has no
@@ -479,35 +504,203 @@ export async function renderWellCard(
   if (!neighborPath && detail.neighbors_reason) {
     const refusalFrame = document.createElement("section");
     refusalFrame.className = "gw-card-chart gw-neighbor-context";
-    const refusalTitle = document.createElement("h3");
-    refusalTitle.className = "gw-frame-title";
-    refusalTitle.textContent = "Physical neighbours";
     const refusalHost = document.createElement("div");
     refusalHost.className = "gw-frame-body";
     refusalHost.dataset["state"] = "not_covered";
-    refusalFrame.append(refusalTitle, refusalHost);
+    refusalFrame.append(refusalHost);
     neighborSlot.appendChild(refusalFrame);
-    neighborRequest = import("./neighbors.ts").then(({ renderNeighborRefusal }) => {
-      refusalHost.replaceChildren(renderNeighborRefusal(detail.neighbors_reason as string));
-    });
+    loadNeighbours = (): Promise<void> =>
+      import("./neighbors.ts").then(({ renderNeighborRefusal }) => {
+        refusalHost.replaceChildren(renderNeighborRefusal(detail.neighbors_reason as string));
+      });
   }
   if (neighborPath) {
     const neighborFrame = document.createElement("section");
     neighborFrame.className = "gw-card-chart gw-neighbor-context";
-    const neighborTitle = document.createElement("h3");
-    neighborTitle.className = "gw-frame-title";
-    neighborTitle.textContent = "Physical neighbours";
     const neighborHost = document.createElement("div");
     neighborHost.className = "gw-frame-body";
     neighborHost.dataset["state"] = "loading";
     neighborHost.setAttribute("aria-busy", "true");
     neighborHost.setAttribute("aria-live", "polite");
     neighborHost.appendChild(placeholder("Loading neighbours…"));
-    neighborFrame.append(neighborTitle, neighborHost);
+    neighborFrame.append(neighborHost);
     neighborSlot.appendChild(neighborFrame);
-    neighborRequest = import("./neighbors.ts").then(({ loadNeighborContext }) =>
-      loadNeighborContext(neighborHost, neighborPath, api10, { ...asOfQuery, limit: "5" }),
-    );
+    loadNeighbours = (): Promise<void> =>
+      import("./neighbors.ts").then(({ loadNeighborContext }) =>
+        loadNeighborContext(neighborHost, neighborPath, api10, { ...query, limit: "5" }),
+      );
+  }
+
+  // Land and basin leave the Location band for sections of their own: the land unit becomes a
+  // link in v0.81 and basin becomes a served polygon answer with a handle at P4, and neither
+  // is a fact row once it has a rule behind it.
+  const landBody = document.createElement("dl");
+  landBody.className = "gw-facts";
+  if (detail.land_unit_label) {
+    landBody.appendChild(term("Land unit", labelFor(well, "/land_unit_label")));
+    const value = document.createElement("dd");
+    value.textContent = detail.land_unit_label;
+    landBody.appendChild(value);
+  }
+
+  // The served polygon answer, its plays, the ingest label beside it and their agreement.
+  // Rendered on expansion rather than at mount because the section is collapsed by default and
+  // its content is the reason a reader opens this particular well.
+  const basinBody = document.createElement("div");
+
+  const poolsBody = document.createElement("div");
+  const peerBody = document.createElement("div");
+  const poolGrain = well.meta.warnings.find((warning) => warning.code === POOL_GRAIN);
+  // The warning says why the well-level chart is absent; the link says where the record is.
+  // The section is gated on the link, like every other section, and fetches the path served.
+  const poolsPath = well.links?.["pools"];
+  const poolsRule = well.links?.["pools_rule"];
+  const lineageBody = document.createElement("div");
+  const identityHost = document.createElement("div");
+
+  // Ten ids in one fixed order. A section absent for this well is not rendered at all, but it
+  // stays in the list so a link that named it is answered with its own name and rule rather
+  // than with silence. Only three are expanded, and the rule behind that split is that a
+  // section is expanded when its content is why a reader opens a well, and collapsed when it
+  // is why they open this particular one.
+  const specs: SectionSpec[] = [
+    { id: "production", title: "Production", expanded: true, body: chartFrame },
+    {
+      id: "cumulative",
+      title: "Cumulative",
+      expanded: true,
+      body: cumulativeSlot,
+      present: loadCumulative !== undefined,
+      ...(loadCumulative ? { load: loadCumulative } : {}),
+      ...(well.links?.["cumulatives_rule"]
+        ? { absentRule: well.links["cumulatives_rule"] }
+        : {}),
+    },
+    {
+      id: "identity",
+      title: "Identity and status",
+      expanded: true,
+      body: identityHost,
+      // Whose well it is, plus the status history where the jurisdiction's clock has one.
+      // The request rides the section rather than the card, so it is inside the same bound.
+      load: () =>
+        renderIdentity(
+          identityHost,
+          well as unknown as Envelope<WellIdentity>,
+          factsSlot,
+          query,
+        ),
+    },
+    {
+      id: "completions",
+      title: "Completions and fluids",
+      expanded: false,
+      body: contextSlot,
+      load: loadContext,
+    },
+    {
+      id: "neighbours",
+      title: "Neighbours and spacing",
+      expanded: false,
+      body: neighborSlot,
+      present: loadNeighbours !== undefined,
+      ...(loadNeighbours ? { load: loadNeighbours } : {}),
+      ...(well.links?.["neighbors_rule"] ? { absentRule: well.links["neighbors_rule"] } : {}),
+    },
+    { id: "land", title: "Land and lease", expanded: false, body: landBody },
+    {
+      id: "basin",
+      title: "Basin and geology",
+      expanded: false,
+      body: basinBody,
+      load: () => {
+        renderBasin(basinBody, well as unknown as Envelope<WellBasin>);
+        return Promise.resolve();
+      },
+    },
+    {
+      id: "pools",
+      title: "Production by pool",
+      // N-24: expanded where the Production section is in its pool-grain state, because the
+      // record the reader came for is here rather than there.
+      expanded: poolGrain !== undefined,
+      present: poolsPath !== undefined,
+      body: poolsBody,
+      load: () =>
+        renderPools(
+          poolsBody,
+          poolsPath ?? "",
+          query,
+          poolsRule ? { reporting_rule: poolsRule } : {},
+          {
+            onExplain: callbacks.onExplain,
+            labelTermFor: (pointer: string) => labelFor(well, pointer),
+          },
+        ),
+    },
+    {
+      id: "peer",
+      title: "Peer control",
+      expanded: false,
+      present: well.links?.["type_curve"] !== undefined,
+      body: peerBody,
+      load: () =>
+        renderPeerControl(peerBody, well.links?.["type_curve"] ?? "", query, {
+          onExplain: callbacks.onExplain,
+        }),
+
+    },
+    {
+      id: "lineage",
+      title: "Lineage",
+      expanded: false,
+      body: lineageBody,
+      load: () => fillLineage(),
+    },
+  ];
+
+  const sections = mountSections(body, api10, specs);
+  body.appendChild(notesSlot);
+
+  // The index is a count of what is rendered, so it has to be taken again when more renders:
+  // opened by deep link before Production had drawn, it listed Identity alone and read as a
+  // card carrying two handles (gate N7). One document listener, re-pointed at the newest card.
+  recountLineage = () => {
+    const host = sections.get("lineage");
+    if (!host || host.toggle.getAttribute("aria-expanded") !== "true") return;
+    // After the queue drains, not at the moment of expansion: a section's handles are drawn
+    // by its own load, so counting on the click counts the body it has not rendered yet.
+    void sectionsSettled().then(() => fillLineage());
+  };
+  if (!recounting) {
+    recounting = true;
+    document.addEventListener(SECTION_OPEN_EVENT, () => recountLineage?.());
+  }
+
+  // "What can I check here", and it costs a request of zero. The counts are read off what is
+  // rendered at the moment the reader looks, so they are not served figures and carry no
+  // handle of their own; the sentence says so, in the shape the running total will use.
+  async function fillLineage(): Promise<void> {
+    const list = document.createElement("dl");
+    list.className = "gw-facts gw-lineage-index";
+    for (const spec of specs) {
+      const host = sections.get(spec.id);
+      if (!host || spec.id === "lineage") continue;
+      const count = host.body.querySelectorAll("gw-figure[handle], .gw-handle").length;
+      if (count === 0) continue;
+      const name = document.createElement("dt");
+      name.appendChild(sectionLink(spec.id, spec.title));
+      const value = document.createElement("dd");
+      value.setAttribute("data-no-glossary", "");
+      value.textContent = `${count} handle${count === 1 ? "" : "s"}`;
+      list.append(name, value);
+    }
+    const note = document.createElement("p");
+    note.className = "gw-note";
+    note.textContent = list.childElementCount
+      ? "Counted on this page from what is rendered now, so these counts are not served figures and carry no handle of their own. Each handle's own is beside it."
+      : "This card is carrying no derivation handles yet.";
+    lineageBody.replaceChildren(list, note);
   }
 
   // A lease-reporting jurisdiction has no observed well-level series, so the card says that
@@ -515,23 +708,32 @@ export async function renderWellCard(
   // a Texas well whose lease reports every month (DIR-3, cr_tx_allocation_scope_1).
   const pending = well.meta.warnings.find((warning) => warning.code === PENDING_ALLOCATION);
   if (pending) {
+    // Texas's two rule links, landed through P2's section machinery: the panel names the grain
+    // decision and the model rule, and the card is still mounted by `land` so the reader's
+    // deep-linked section is the one that opens.
     chartFrame.replaceWith(pendingProductionPanel(pending, ruleLinks(well.links)));
-    container.replaceChildren(card);
-    highlight(card, termIndex());
-    focusPanel(container);
-    await Promise.all([statusRequest, contextRequest, cumulativeRequest, neighborRequest]);
+    land(container, card, state.section, kept);
+    await settled([statusRequest, sectionsSettled()], card, kept);
     return;
   }
 
-  container.replaceChildren(card);
-  highlight(card, termIndex());
-  focusPanel(container);
+  // The third production state (§2.1a): filed below the well, with nothing rolled up to it.
+  // A titled panel that names the rule and points down at the section carrying the record,
+  // rather than a generic note under an empty chart frame.
+  if (poolGrain) {
+    chartFrame.replaceWith(poolGrainPanel(poolGrain));
+    land(container, card, state.section, kept);
+    await settled([statusRequest, sectionsSettled()], card, kept);
+    return;
+  }
+
+  land(container, card, state.section, kept);
 
   const productionRequest = (async () => {
     try {
       const production = await getEnvelope<ProductionData>(
         `/v1/wells/${api10}/production`,
-        asOfQuery,
+        query,
       );
       const data = unwrap(production);
       // The disclosure the API serves while the allocated mart is empty. It arrives on THIS
@@ -551,40 +753,213 @@ export async function renderWellCard(
         chartHost.replaceChildren(emptyState("No production reported."));
         return;
       }
-      chartTitle.replaceChildren(
-        labelElement("Monthly production", labelFor(production, "/series")),
-      );
-      // SB-08 §2.6 row 2, in the chart's own header and after that replaceChildren rather
+      const head = sections.get("production");
+      head?.title.replaceChildren(labelElement("Production", labelFor(production, "/series")));
+      // SB-08 §2.6 row 2, in the section's own head and after that replaceChildren rather
       // than before it: the title is rebuilt when the series lands, so an earlier append
       // goes with the placeholder. The vintage pinned is the series' own, not the card's.
       const series = openThisSeries(detail.api10, {
         state,
         resolved: production.meta.as_of.resolved,
       });
-      if (series) chartTitle.appendChild(crossingLink(series));
+      if (series) head?.aside.appendChild(crossingLink(series));
       // Loaded here rather than at module scope: the plot is drawn only once a series has
       // arrived, and the entry chunk carries every reader who never opens a card. The budget
       // test in explore/bundle-budget.test.ts is what holds this to it.
       const { renderChart } = await import("../chart/chart.ts");
-      renderChart(chartHost, toChartSeries(data), {
-        onExplain: callbacks.onExplain,
-        labelTermFor: (pointer) => labelFor(production, pointer),
-      });
+      renderChart(
+        chartHost,
+        toChartSeries(data),
+        {
+          onExplain: callbacks.onExplain,
+          labelTermFor: (pointer) => labelFor(production, pointer),
+          // main.ts is the single writer of app state, so a brush is announced rather than
+          // written here; `card/requests.ts` carries `from`/`to` into the next request.
+          onBrush: (from, to) => setParams({ from, to }),
+          // The `as_of` arm of the request seam: the same parameter the route already
+          // forwards, used by a control rather than only by a URL somebody typed.
+          onVintage: (asOf) => setParams({ as_of: asOf }, true),
+        },
+        {
+          normalization: normalizationControl(detail, well, state),
+          // R-20: a reloaded link carried `from`/`to`, so the server answered the window and
+          // the months on hand are all of it. The bar says so and offers the record back by
+          // dropping both parameters through the same seam a brush writes them through.
+          ...(state.extra["from"]?.[0] || state.extra["to"]?.[0]
+            ? {
+                span: "served" as const,
+                onWiden: () => setParams({ from: null, to: null }, true),
+              }
+            : {}),
+        },
+      );
       for (const note of warningNotes(production.meta.warnings)) chartNotes.appendChild(note);
       highlight(chartFrame, termIndex());
+      // The chart's own handles arrive here, outside the section queue: the production request
+      // runs beside it and `sectionsSettled()` is long resolved by the time the plot draws, so
+      // an index counted on the queue alone still missed the section with the most handles
+      // on the card (gate N7's other half).
+      recountLineage?.();
+      // Export lives with the series it exports, so what leaves the page is exactly the
+      // window on it, handles and all.
+      const drawn = toChartSeries(data);
+      chartNotes.appendChild(
+        exportControls({
+          series: () => drawn,
+          envelope: () => production,
+          context: () => ({
+            api10,
+            url: window.location.href,
+            asOfResolved: production.meta.as_of.resolved,
+            normalization: state.extra["normalization"]?.[0] ?? null,
+            grain: unwrap(production).granularity,
+          }),
+        }),
+      );
     } catch (error) {
-      chartHost.replaceChildren(errorPanel(error, callbacks));
+      // Scoped for the same reason the re-land's refusal is: this panel is the chart's frame,
+      // not the card.
+      chartHost.replaceChildren(errorPanel(error, { onSignIn: callbacks.onSignIn }));
     }
   })();
 
-  await Promise.all([
-    statusRequest,
-    contextRequest,
-    cumulativeRequest,
-    neighborRequest,
-    productionRequest,
-  ]);
+  await settled([statusRequest, productionRequest, sectionsSettled()], card, kept);
 }
+
+/**
+ * Whether this well can be normalised, and what to say when it cannot. Every fact here is
+ * served: the length figure, the method it was computed by, and the rule link a jurisdiction
+ * that withholds the length carries. Nothing is inferred from a state code.
+ */
+function normalizationControl(
+  detail: WellDetail,
+  well: Envelope<WellDetail>,
+  state: { extra: Record<string, string[]> },
+): NormalizationControl {
+  const withheld = well.links?.["length_rule"];
+  return {
+    on: state.extra["normalization"]?.[0] === PER_LATERAL_FT,
+    available: Boolean(detail.lateral_length_ft) && detail.length_method !== "not_served",
+    reason: withheld
+      ? "This jurisdiction withholds the lateral length by rule, so there is no divisor to" +
+        " normalise by."
+      : "No lateral length is served for this well, so there is nothing to divide by.",
+    ...(withheld ? { rule: withheld } : {}),
+    onChange: (next) => setParams({ normalization: next ? PER_LATERAL_FT : null }, true),
+  };
+}
+
+/**
+ * main.ts is the single writer of app state, so the card announces rather than writes.
+ * `refetch` marks a parameter the *server* answers -- the normalisation basis, the vintage,
+ * the served window -- which the card cannot honour by redrawing what it holds.
+ */
+function setParams(params: Record<string, string | null>, refetch = false): void {
+  document.dispatchEvent(new CustomEvent("gw-param-set", { detail: { params, refetch } }));
+}
+
+/** The previous card's subscription, released when the next card lands. */
+let releaseHighlight: (() => void) | null = null;
+
+/**
+ * Mount, highlight, and land focus. With `?section=` present the landing target is that
+ * section's disclosure rather than the card heading, so a deep-linked reader lands on the
+ * thing the link named; `applySection` carries the same quiet-focus rule `focusPanel` does.
+ */
+function land(
+  container: HTMLElement,
+  card: HTMLElement,
+  section: string | null,
+  kept: Standing | null,
+): void {
+  container.replaceChildren(card);
+  // Once now, and again when the glossary lands: the section titles are built statically and
+  // were painted before the vocabulary arrived on almost every cold load, so a title that is
+  // a term (`Peer control`) was marked on one load in ten.
+  releaseHighlight?.();
+  releaseHighlight = onGlossaryReady(() => highlight(card, termIndex()));
+  // A re-land moves neither the reader's focus nor their scroll: they are already reading
+  // this card, and the section a deep link named was scrolled to when it first landed.
+  if (kept) return;
+  if (section) applySection(section);
+  else focusPanel(container);
+}
+
+/**
+ * The reader's own state in a card, which belongs to them rather than to the response: the
+ * disclosures they opened and their place in the scroll. Which sections are open is
+ * `sections.ts`'s memory, keyed by api10, and survives a re-mount on its own.
+ */
+interface Standing {
+  scrollTop: number;
+  open: Set<string>;
+}
+
+/**
+ * A `<details>` has no id, so it is addressed by where it sits and *what it is* — never by what
+ * it says. The chart's vintages disclosure writes its summary from the served figures ("Report
+ * vintages · 2, 2026-06-01 to 2026-08-01"), which `Read at …` and `Widen` are exactly the
+ * controls that change, so a key built from the text missed the one disclosure the re-land
+ * affects. `data-code` is the warning's own identity, already stamped by `warningNotes`; the
+ * class carries the rest. The ordinal is the tiebreak for two of a kind under one heading.
+ */
+function disclosureKeys(card: HTMLElement): Map<HTMLDetailsElement, string> {
+  const seen = new Map<string, number>();
+  const keys = new Map<HTMLDetailsElement, string>();
+  for (const details of card.querySelectorAll<HTMLDetailsElement>("details")) {
+    const section = details.closest<HTMLElement>(".gw-section")?.dataset["section"] ?? "";
+    const base = `${section}/${details.dataset["code"] ?? details.className}`;
+    const nth = (seen.get(base) ?? 0) + 1;
+    seen.set(base, nth);
+    keys.set(details, `${base}#${nth}`);
+  }
+  return keys;
+}
+
+function standing(container: HTMLElement, api10: string): Standing | null {
+  const card = container.querySelector<HTMLElement>(".gw-card");
+  if (!card || card.dataset["api10"] !== api10) return null;
+  // The one sign the figures are being re-asked for, since nothing is torn down to say so.
+  card.setAttribute("aria-busy", "true");
+  const open = new Set<string>();
+  for (const [details, key] of disclosureKeys(card)) if (details.open) open.add(key);
+  return {
+    scrollTop: card.querySelector<HTMLElement>(".gw-panel-body")?.scrollTop ?? 0,
+    open,
+  };
+}
+
+/**
+ * After the sections have drained, not at `land`: a disclosure inside a lazily loaded section
+ * does not exist yet when the card is swapped in, and a scroll offset restored over a body
+ * that is still filling clamps to the height it had at that moment.
+ */
+async function settled(
+  requests: Promise<unknown>[],
+  card: HTMLElement,
+  kept: Standing | null,
+): Promise<void> {
+  await Promise.all(requests);
+  if (!kept) return;
+  for (const [details, key] of disclosureKeys(card)) if (kept.open.has(key)) details.open = true;
+  const body = card.querySelector<HTMLElement>(".gw-panel-body");
+  if (body) body.scrollTop = kept.scrollTop;
+}
+
+/**
+ * Whether the server answered about the request this control made. A 4xx problem is that answer
+ * -- a vintage nothing resolves at, a parameter the API will not take -- and belongs to the
+ * section that asked for it. A lost session, a 5xx or a dropped connection is not: it says
+ * nothing about the ask, and a card of the previous reading left standing under it reads live.
+ */
+function refusedThisRequest(error: unknown): boolean {
+  if (!(error instanceof ApiError)) return false;
+  const status = error.problem.status;
+  return status >= 400 && status < 500 && status !== 401 && status !== 403;
+}
+
+/** The one served normalisation arm, named where the control and the request both read it. */
+const PER_LATERAL_FT = "per_lateral_ft";
 
 const CUMULATIVE_STREAMS: [keyof NonNullable<WellCumulatives["cumulative"]>, string, string][] = [
   ["oil_bbl", "Oil", "/cumulative/oil_bbl"],
@@ -687,9 +1062,17 @@ function cumulativesBody(
         ` reported figure (${data.allocation?.rule_id ?? ""}).`;
       value.appendChild(chip);
     }
+    // Readable text, not a tooltip: a count that only a hovering mouse can reach is a count
+    // a keyboard reader and a phone reader do not have (the QUEUE-DISPATCH:1790 debt).
     const record = coverageTitle(data.coverage[key]);
-    if (record) cell.title = record;
     cell.append(term_, value);
+    if (record) {
+      const coverage = document.createElement("p");
+      coverage.className = "gw-note gw-coverage-line";
+      coverage.setAttribute("data-no-glossary", "");
+      coverage.textContent = record;
+      cell.appendChild(coverage);
+    }
     row.appendChild(cell);
   }
   fragment.appendChild(row);
@@ -1177,15 +1560,13 @@ export function placeholder(text: string): HTMLElement {
   return element;
 }
 
-type ApiWarning = { code: string; detail?: string; pointer?: string };
+type ApiWarning = { code: string; detail?: string; pointer?: string; rule_id?: string };
 
 /** The one warning code the card renders as its own panel rather than as a warning line. */
 export const PENDING_ALLOCATION = "production_pending_allocation";
+/** The third production state: filed below the well, with nothing rolled up to it. */
+export const POOL_GRAIN = "production_reported_at_pool_grain";
 
-/**
- * The production slot for a well whose regulator reports at the lease. It is a state, not an
- * absence: the section is titled for what is pending and links to the rule that says so.
- */
 /** A rule the panel sends the reader to, named by its own id so the link says which. */
 export interface PendingRuleLink {
   href: string;
@@ -1212,6 +1593,50 @@ export function ruleLinks(links: Links | undefined): PendingRuleLink[] {
   });
 }
 
+/**
+ * New Mexico's state, and Montana's absence is deliberately not this: a registered decision
+ * that nothing rolls up is a different fact from a jurisdiction with no grain decision at all,
+ * and one panel for both would erase the difference.
+ */
+export function poolGrainPanel(warning: ApiWarning): HTMLElement {
+  const frame = document.createElement("section");
+  frame.className = "gw-card-chart gw-pending gw-pool-grain";
+  frame.dataset["state"] = "production_reported_at_pool_grain";
+  const title = document.createElement("h3");
+  title.className = "gw-frame-title";
+  title.textContent = "Production is filed by pool";
+  const body = document.createElement("p");
+  body.className = "gw-note";
+  body.textContent =
+    warning.detail ??
+    "This well's regulator files production per completion pool and glasswell rolls nothing" +
+      " up to the well.";
+  frame.append(title, body);
+  if (warning.rule_id) {
+    const rule = document.createElement("p");
+    rule.className = "gw-note";
+    rule.append("The rule that decided that: ");
+    const link = document.createElement("a");
+    link.className = "gw-identity-rule";
+    link.href = `/v1/conformance/${warning.rule_id}`;
+    link.setAttribute("data-no-glossary", "");
+    link.textContent = warning.rule_id;
+    rule.appendChild(link);
+    frame.appendChild(rule);
+  }
+  const down = document.createElement("p");
+  down.className = "gw-note";
+  down.append("The filings themselves are in ");
+  down.appendChild(sectionLink("pools", "Production by pool"));
+  down.append(", which is open below.");
+  frame.appendChild(down);
+  return frame;
+}
+
+/**
+ * The production slot for a well whose regulator reports at the lease. It is a state, not an
+ * absence: the section is titled for what is pending and links to the rule that says so.
+ */
 export function pendingProductionPanel(
   warning: ApiWarning,
   links: PendingRuleLink[] = [],
@@ -1248,14 +1673,21 @@ export function pendingProductionPanel(
 
 export function errorPanel(
   error: unknown,
-  callbacks: { onClose(): void; onSignIn?(): void },
+  callbacks: { onClose?(): void; onSignIn?(): void },
 ): HTMLElement {
   const element = document.createElement("div");
   element.className = "gw-error";
   const heading = document.createElement("h3");
   const body = document.createElement("p");
   if (error instanceof ApiError) {
-    heading.textContent = `${error.problem.title} (${error.code})`;
+    // RFC 7807's `about:blank` is "no further information", which the client fills in when the
+    // API named no type — a 500 from an unhandled exception serves plain text. It is not a
+    // problem code: printing it as one and linking `/v1/errors/about:blank` sent the reader to
+    // a page that does not exist, over the one failure they most need to report accurately.
+    const named = error.problem.type !== BLANK_PROBLEM;
+    heading.textContent = named
+      ? `${error.problem.title} (${error.code})`
+      : `${error.problem.title} (HTTP ${error.problem.status})`;
     body.textContent = error.problem.detail ?? "";
     if (error.problem.status === 403) {
       body.textContent = "This browser has no live session, so the API served nothing.";
@@ -1272,20 +1704,38 @@ export function errorPanel(
     } else {
       element.append(heading, body);
     }
-    element.appendChild(errorLink(error.code));
+    // The request it failed on, where the API served one: with no type to look up, the path is
+    // what makes the failure reportable.
+    if (named) element.appendChild(errorLink(error.code));
+    else if (error.problem.instance) element.appendChild(failedRequest(error.problem.instance));
   } else {
     heading.textContent = "Request failed";
     body.textContent = String(error);
     element.append(heading, body);
   }
-  const close = document.createElement("button");
-  close.type = "button";
-  close.className = "gw-close";
-  close.setAttribute("aria-label", "Dismiss this error");
-  close.textContent = "×";
-  close.addEventListener("click", callbacks.onClose);
-  element.appendChild(close);
+  // Only where the panel is the whole card: a dismiss inside a panel scoped to one section
+  // reads as "clear this error" and closed the card the scoping exists to keep.
+  if (callbacks.onClose) {
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "gw-close";
+    close.setAttribute("aria-label", "Dismiss this error");
+    close.textContent = "×";
+    close.addEventListener("click", callbacks.onClose);
+    element.appendChild(close);
+  }
   return element;
+}
+
+/** RFC 7807's "no further information" type, which the client fills in for a typeless body. */
+const BLANK_PROBLEM = "about:blank";
+
+function failedRequest(instance: string): HTMLElement {
+  const line = document.createElement("p");
+  line.className = "gw-error-instance";
+  line.setAttribute("data-no-glossary", "");
+  line.textContent = `The request that failed: ${instance}`;
+  return line;
 }
 
 /**

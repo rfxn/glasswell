@@ -111,6 +111,7 @@ test-e2e:
 	@[ -d tests/e2e/node_modules ] || npm --prefix tests/e2e ci --no-audit --no-fund
 	node tests/e2e/smoke.mjs
 	node tests/e2e/chrome-fold.mjs
+	node tests/e2e/table-edge.mjs
 	node tests/e2e/map-key-hit.mjs
 	node tests/e2e/status-surface.mjs
 

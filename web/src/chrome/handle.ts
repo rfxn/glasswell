@@ -6,6 +6,10 @@
 
 export const EXPLAIN_EVENT = "gw-explain";
 
+/** The one spelling of the mark. `style.css` pins U+233E to the GW Symbols face because
+ * Inter carries neither it nor `✕`; a second literal is a second thing to keep in step. */
+export const HANDLE_GLYPH = "⌾";
+
 const NAME_PREFIX = "Lineage for ";
 
 // The same discipline `gw-figure.ts:6` applies to a naked number: dev logs the defect, the test
@@ -41,7 +45,7 @@ export function explainHandle(options: ExplainHandleOptions): HTMLButtonElement 
   const button = document.createElement("button");
   button.type = "button";
   button.className = options.className ? `gw-handle ${options.className}` : "gw-handle";
-  button.textContent = "⌾";
+  button.textContent = HANDLE_GLYPH;
   // Set once and never blanked: a nameless ⌾ reads as the bare glyph to a screen reader.
   button.setAttribute("aria-label", `${NAME_PREFIX}${options.label}`);
   labels.set(button, options.label);
@@ -53,6 +57,15 @@ export function explainHandle(options: ExplainHandleOptions): HTMLButtonElement 
     else dispatchExplain(button, handle);
   });
   return button;
+}
+
+/**
+ * A handle that reads as a line rather than a bare mark, for the few hosts whose row spells the
+ * affordance out. The glyph stays this module's, and `aria-label` is untouched — the caption is
+ * for the eye, the label is what a screen reader gets.
+ */
+export function setHandleCaption(button: HTMLButtonElement, caption: string): void {
+  button.textContent = `${HANDLE_GLYPH} ${caption}`;
 }
 
 /** Visible exactly when it has a derivation to resolve — a ⌾ that explains nothing is a dead end. */

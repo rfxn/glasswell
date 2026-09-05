@@ -16,6 +16,13 @@ vi.mock("../chart/chart.ts", () => ({ renderChart: () => {} }));
 
 const { renderWellCard } = await import("./card.ts");
 const { renderNeighborRefusal } = await import("./neighbors.ts");
+const { resetSections, sectionsSettled } = await import("./sections.ts");
+
+/** A collapsed lazy section makes no request until a reader opens it. */
+async function expand(host: HTMLElement, id: string): Promise<void> {
+  host.querySelector<HTMLButtonElement>(`#gw-section-${id} .gw-section-toggle`)?.click();
+  await sectionsSettled();
+}
 
 const API10 = "3305310451";
 
@@ -24,6 +31,7 @@ describe("a jurisdiction the neighbour mart's domain does not reach", () => {
 
   beforeEach(() => {
     document.body.replaceChildren();
+    resetSections();
     host = document.createElement("div");
     document.body.appendChild(host);
   });
@@ -35,6 +43,7 @@ describe("a jurisdiction the neighbour mart's domain does not reach", () => {
     vi.stubGlobal("fetch", vi.fn(stubFetch({ [`/v1/wells/${API10}`]: excluded })));
 
     await renderWellCard(host, API10, { onExplain: vi.fn(), onClose: vi.fn() });
+    await expand(host, "neighbours");
 
     const frame = host.querySelector(".gw-neighbor-context .gw-frame-body") as HTMLElement;
     expect(frame).not.toBeNull();
@@ -67,6 +76,7 @@ describe("a refusal both endpoints disclose", () => {
 
   beforeEach(() => {
     document.body.replaceChildren();
+    resetSections();
     host = document.createElement("div");
     document.body.appendChild(host);
   });
@@ -133,6 +143,7 @@ describe("what the dedup is allowed to swallow", () => {
 
   beforeEach(() => {
     document.body.replaceChildren();
+    resetSections();
     host = document.createElement("div");
     document.body.appendChild(host);
   });
@@ -148,6 +159,7 @@ describe("what the dedup is allowed to swallow", () => {
 
     await renderWellCard(host, API10, { onExplain: vi.fn(), onClose: vi.fn() });
 
+    await expand(host, "completions");
     expect(host.textContent).toContain("the completions half is stale too");
   });
 

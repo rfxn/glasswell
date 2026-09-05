@@ -32,6 +32,26 @@ describe("URL state codec", () => {
     expect(new URLSearchParams(serializeState(parsed)).get("as_of")).toBe("2026-08-01");
   });
 
+  it("carries the card's section, and carries it opaquely", () => {
+    // Copied from ds/row/slug rather than from tab: validating it here would put ten section
+    // ids on the entry path, and it would be wrong -- which sections exist depends on the
+    // well's jurisdiction, and this module knows nothing about wells. The card validates it
+    // against the list its own response made knowable.
+    const parsed = parseState("?well=3305307342&section=neighbours");
+    expect(parsed.section).toBe("neighbours");
+    expect(parsed.extra).toEqual({});
+    expect(new URLSearchParams(serializeState(parsed)).get("section")).toBe("neighbours");
+    expect(parseState("?section=nonsense").section).toBe("nonsense");
+  });
+
+  it("keeps the section out of `extra`, which is what its KNOWN entry buys", () => {
+    // Without the entry an unrecognised key round-trips through state.extra and is
+    // re-serialised into the URL, so the card could not drop an invalid section on the next
+    // commit. It was never forwarded to a request either way: the card picks its bag by name.
+    expect(parseState("?section=land").extra["section"]).toBeUndefined();
+    expect(serializeState({ ...DEFAULT_STATE, section: null })).not.toContain("section");
+  });
+
   it("ignores a malformed viewport instead of throwing", () => {
     expect(parseState("?map=not-a-viewport").map).toEqual(DEFAULT_STATE.map);
   });

@@ -249,3 +249,13 @@ describe("gw-figure's digits attribute", () => {
     expect(mount(raw)).toContain("21,000.456 bbl");
   });
 });
+
+describe("sumDecimal", () => {
+  it("sums on the decimal string at the widest scale it was handed, exactly", async () => {
+    const { sumDecimal } = await import("./format.ts");
+    expect(sumDecimal(["7.462", "10.113", "81.876"])).toBe("99.451");
+    expect(sumDecimal(["1000", "1001", null, ""])).toBe("2001");
+    expect(sumDecimal(["0.5", "-0.75", "2"])).toBe("1.75");
+    expect(sumDecimal([])).toBe("0");
+  });
+});
