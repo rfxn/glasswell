@@ -197,8 +197,6 @@ def _resolved_class(spine: str) -> str:
     return f"nullif({resolved_status(spine)}, '')"
 
 
-_RESOLVED_CLASS = _resolved_class("w")
-
 _PRODUCING_CLASS = class_expression(api10="ranked.api10", state_code="ranked.state_code")
 
 # The guard is not decoration: with the definition unregistered the classifier would answer
@@ -361,7 +359,7 @@ with in_view as (
                          st_makeenvelope(%(minx)s, %(miny)s, %(maxx)s, %(maxy)s, 4326))),
      latest as (
     select distinct on (v.api10)
-           v.api10, {_RESOLVED_CLASS} as status_canonical, w.basin, w.state_code,
+           v.api10, {_resolved_class('w')} as status_canonical, w.basin, w.state_code,
            {absent_if_blank("w.well_type_reported")} as well_type_reported,
            w.derivation_id, w.effective_from
       from in_view v
