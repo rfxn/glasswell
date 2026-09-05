@@ -22,6 +22,7 @@ from glasswell.ingest.tx_pdq import SOURCE_KEY
 from glasswell.lineage.capture import lineage_session
 from glasswell.lineage.store import PostgresRecorder
 from glasswell.seed import seed_all
+from tests.conftest import install_lineage_env
 from tests.support.fakes import FixedClock
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "tx_pdq"
@@ -54,13 +55,6 @@ def rows(db, sql: str, parameters: tuple = ()) -> list[tuple]:
         return cursor.fetchall()
 
 
-@pytest.fixture
-def seeded(db: psycopg.Connection) -> psycopg.Connection:
-    seed_all(db)
-    db.commit()
-    return db
-
-
 def _load(connection, payload: Path, raw_root: Path, lineage_env, *, clock=None):
     with lineage_session(
         recorder=PostgresRecorder(connection), environment=lineage_env, clock=clock
@@ -77,13 +71,52 @@ def _load(connection, payload: Path, raw_root: Path, lineage_env, *, clock=None)
     return result
 
 
+@pytest.fixture(scope="module")
+def restated_template(module_template, module_raw_root: Path) -> tuple[str, tuple]:
+    """Two dumps a month apart, run once into a template every test here clones.
+
+    Nothing is backdated by hand: canonical is append-only, so the only honest way to have two
+    vintages is to run the load under two clocks. Six tests read the same pair, and building it
+    per test was 5.4-7.4 s of setup against a 0.00 s body on each (A-timing.md 1).
+    """
+    loads = []
+
+    def seed(connection: psycopg.Connection) -> None:
+        seed_all(connection)
+        connection.commit()
+        environment = install_lineage_env(connection)
+        loads.append(
+            _load(connection, FIRST, module_raw_root, environment, clock=FixedClock(AUGUST))
+        )
+        loads.append(
+            _load(connection, SECOND, module_raw_root, environment, clock=FixedClock(SEPTEMBER))
+        )
+
+    return module_template("tx_restatement", seed), tuple(loads)
+
+
 @pytest.fixture
-def restated(seeded, raw_root: Path, lineage_env):
-    """Two dumps a month apart. Nothing is backdated by hand: canonical is append-only, so the
-    only honest way to have two vintages is to run the load under two clocks."""
-    first = _load(seeded, FIRST, raw_root, lineage_env, clock=FixedClock(AUGUST))
-    second = _load(seeded, SECOND, raw_root, lineage_env, clock=FixedClock(SEPTEMBER))
-    return first, second
+def seeded(clone, restated_template: tuple[str, tuple]) -> psycopg.Connection:
+    """This test's own copy of the restated database."""
+    return clone(restated_template[0])
+
+
+@pytest.fixture
+def restated(seeded: psycopg.Connection, restated_template: tuple[str, tuple]) -> tuple:
+    """The two load reports. `seeded` is what they landed in."""
+    return restated_template[1]
+
+
+@pytest.fixture
+def raw_root(shared_raw_root: Path) -> Path:
+    """The module's zone: both vintages' archives are already in it."""
+    return shared_raw_root
+
+
+@pytest.fixture
+def lineage_env(seeded: psycopg.Connection):
+    """Overrides the tier fixture, which would clone a second database for the row."""
+    return install_lineage_env(seeded)
 
 
 def test_a_revised_volume_appends_a_second_row_and_edits_none(restated, seeded) -> None:

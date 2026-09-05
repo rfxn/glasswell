@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import subprocess
 import time
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -412,6 +412,59 @@ def _restart_scope(connection: psycopg.Connection, *, release: bool) -> None:
     connection.execute(f"savepoint {SCOPE_SAVEPOINT}")
 
 
+def build_template(dsn_template: str, name: str, seed: Callable[[psycopg.Connection], None]) -> str:
+    """A database seeded once and left closed, for other databases to be cloned from.
+
+    Postgres refuses to clone a template anything is connected to, so the connection is closed
+    before the name is returned.
+    """
+    drop_database(dsn_template, name)
+    dsn = create_database(dsn_template, name, template=worker_scoped(TEMPLATE_DATABASE))
+    with psycopg.connect(dsn) as connection:
+        seed(connection)
+        connection.commit()
+    return name
+
+
+@pytest.fixture(scope="module")
+def module_template(
+    migrated_template: str,
+) -> Iterator[Callable[[str, Callable[[psycopg.Connection], None]], str]]:
+    """Build a module's shared data once, into a template its tests clone per test.
+
+    A fixture that inserts the same rows into an empty clone for every test in a file pays the
+    whole build per test: A-timing measured 2.7-7.4 s of it on each Texas load, against the
+    145 ms the clone itself costs.
+    """
+    built: list[str] = []
+
+    def build(label: str, seed: Callable[[psycopg.Connection], None]) -> str:
+        name = build_template(migrated_template, worker_scoped(f"gw_tpl_{label}"), seed)
+        built.append(name)
+        return name
+
+    yield build
+    for name in built:
+        drop_database(migrated_template, name)
+
+
+@pytest.fixture
+def clone(migrated_template: str) -> Iterator[Callable[[str], psycopg.Connection]]:
+    """A database of this test's own, cloned from a named template and dropped after it."""
+    opened: list[tuple[str, psycopg.Connection]] = []
+
+    def make(template: str) -> psycopg.Connection:
+        name = f"gw_test_{uuid4().hex[:12]}"
+        connection = psycopg.connect(create_database(migrated_template, name, template=template))
+        opened.append((name, connection))
+        return connection
+
+    yield make
+    for name, connection in opened:
+        connection.close()
+        drop_database(migrated_template, name)
+
+
 @pytest.fixture(scope="session")
 def shared_database(migrated_template: str) -> Iterator[psycopg.Connection]:
     """One migrated database, and one connection to it, for the whole worker."""
@@ -476,10 +529,26 @@ def raw_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return root
 
 
+@pytest.fixture(scope="module")
+def module_raw_root(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """One raw zone for a whole module, for the files whose load runs once into a template.
+
+    A second load a test makes then addresses the same content-addressed store the first one
+    wrote to, which is where it wrote when both ran inside a single test.
+    """
+    return tmp_path_factory.mktemp("raw")
+
+
 @pytest.fixture
-def lineage_env(db: psycopg.Connection) -> DeriveEnvironment:
-    """A pinned environment row, so derive()'s NOT NULL env_id FK is satisfiable."""
-    with db.cursor() as cursor:
+def shared_raw_root(module_raw_root: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """`module_raw_root`, with the env var pointed at it for the length of the test."""
+    monkeypatch.setenv(RAW_ROOT_ENV, str(module_raw_root))
+    return module_raw_root
+
+
+def install_lineage_env(connection: psycopg.Connection) -> DeriveEnvironment:
+    """The pinned environment row derive()'s NOT NULL env_id FK needs, and its handle."""
+    with connection.cursor() as cursor:
         cursor.execute(
             "insert into lineage.environments (env_id, python_version, threads, lockfile_sha256)"
             " values (%s, '3.12.10', 1, %s) on conflict (env_id) do nothing",
@@ -488,6 +557,12 @@ def lineage_env(db: psycopg.Connection) -> DeriveEnvironment:
     return DeriveEnvironment(
         code_version="git:0000test", code_dirty=False, env_id=LINEAGE_FIXTURE_ENV_ID
     )
+
+
+@pytest.fixture
+def lineage_env(db: psycopg.Connection) -> DeriveEnvironment:
+    """A pinned environment row, so derive()'s NOT NULL env_id FK is satisfiable."""
+    return install_lineage_env(db)
 
 
 @pytest.fixture
