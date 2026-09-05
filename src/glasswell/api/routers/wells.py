@@ -2710,13 +2710,14 @@ def get_well(
     pool_grain = pool_grain_rule(
         connection, row["state_code"], valid_at=as_of, knowledge_at=as_of
     )
+    pool_disclosure: dict[str, Any] | None = None
     if pool_grain and row["producing"] == UNKNOWN:
         facts = rows(connection, _POOL_GRAIN_FACTS, {"api10": api10, "as_of": as_of})[0]
-        disclosure = reported_at_pool_grain(
+        pool_disclosure = reported_at_pool_grain(
             pool_grain, filings=facts["filings"], summed=facts["summed"]
         )
-        if disclosure:
-            warnings.append(disclosure)
+        if pool_disclosure:
+            warnings.append(pool_disclosure)
     cumulatives_rule = registry.rule_for(row["state_code"], CUMULATIVES_SCOPE)
     geometry = rows(
         connection,
@@ -2931,13 +2932,15 @@ def get_well(
             ),
             # M-11: the card's section list is built from this envelope, so the pool-grain
             # predicate rides here as a link like every other section's, beside the warning
-            # that says why the well-level chart is absent.
+            # that says why the well-level chart is absent. Beside the warning literally: a
+            # registered well that filed nothing below it gets neither, because the surface
+            # this would link to holds none of its rows (MAJOR-1).
             **(
                 {
                     "pools": f"/v1/wells/{api10}/production/pools",
                     "pools_rule": f"/v1/conformance/{pool_grain['rule_id']}",
                 }
-                if pool_grain and row["producing"] == UNKNOWN
+                if pool_disclosure
                 else {}
             ),
             # WC-P2-4, on the envelope the section list reads: which rule decides whether this
