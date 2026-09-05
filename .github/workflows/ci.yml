@@ -480,13 +480,40 @@ jobs:
     needs: [changes, python-lint, python-db, harness-hygiene, web, e2e-guards, shell, collateral, map-chrome]
     runs-on: ubuntu-latest
     steps:
-      - name: Every needed job succeeded or was skipped
+      - name: Every needed job succeeded, or was skipped for its declared reason
         env:
           RESULTS: ${{ toJSON(needs) }}
+          COVERED: ${{ needs.changes.outputs.covered }}
+          DB: ${{ needs.changes.outputs.db }}
+          WEB: ${{ needs.changes.outputs.web }}
+          SHELL_: ${{ needs.changes.outputs.shell }}
+          COLLATERAL: ${{ needs.changes.outputs.collateral }}
         run: |
           set -euo pipefail
           printf '%s\n' "$RESULTS"
           bad=$(printf '%s' "$RESULTS" \
             | jq -r 'to_entries[] | select(.value.result != "success" and .value.result != "skipped") | "\(.key)=\(.value.result)"')
           if [ -n "$bad" ]; then printf 'not green:\n%s\n' "$bad"; exit 1; fi
+
+          # A skip is a pass only when its declared cause holds. Accepting every skip is what
+          # made the missing tests/conftest.py entry in the filter silent: four shards stood
+          # down and the aggregate had no way to tell that from "nothing database-shaped
+          # changed". Each verdict below names the jobs it obliges to run.
+          if [ "$COVERED" != true ]; then
+            required=""
+            [ "$DB" = true ]         && required="$required python-db harness-hygiene"
+            [ "$WEB" = true ]        && required="$required web e2e-guards map-chrome"
+            [ "$SHELL_" = true ]     && required="$required shell"
+            [ "$COLLATERAL" = true ] && required="$required collateral"
+            required="$required python-lint"
+            wrongly=""
+            for job in $required; do
+              result=$(printf '%s' "$RESULTS" | jq -r --arg j "$job" '.[$j].result // "absent"')
+              [ "$result" = skipped ] || [ "$result" = absent ] && wrongly="$wrongly $job=$result"
+            done
+            if [ -n "$wrongly" ]; then
+              printf 'the classifier said these must run and they did not:%s\n' "$wrongly"
+              exit 1
+            fi
+          fi
           echo "all green"

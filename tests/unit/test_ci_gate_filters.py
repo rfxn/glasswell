@@ -1,4 +1,4 @@
-"""The gate's diff classifier and `make test`'s selection read the same list, or neither is safe.
+"""The gate's own self-checks: the diff classifier, and what the aggregate does with a skip.
 
 `tests/conftest.py` was in `scripts/test-scope.py`'s tier-reaching fallback and absent from
 `ci.yml`'s `db` regex, so a pull request that changed only the harness — which is most of this
@@ -8,6 +8,7 @@ green. The workflow now asks the script for the pattern; these hold the two ends
 
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 import sys
@@ -91,3 +92,82 @@ def test_the_workflow_derives_the_filter_rather_than_restating_it() -> None:
 
     assert "scripts/test-scope.py --db-filter" in body
     assert "tests/(contract|integration" not in body, "the regex is back in the workflow"
+
+
+JOBS = (
+    "changes",
+    "python-lint",
+    "python-db",
+    "harness-hygiene",
+    "web",
+    "e2e-guards",
+    "shell",
+    "collateral",
+    "map-chrome",
+)
+
+
+def aggregate_step() -> str:
+    document = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    return document["jobs"]["ci"]["steps"][0]["run"].replace("${{ toJSON(needs) }}", "")
+
+
+def run_aggregate(results: dict[str, str], **verdicts: str) -> subprocess.CompletedProcess:
+    """The shipped `CI complete` step, run verbatim against a planted `needs` context."""
+    environment = {
+        "RESULTS": json.dumps({job: {"result": result} for job, result in results.items()}),
+        "COVERED": verdicts.get("covered", "false"),
+        "DB": verdicts.get("db", "false"),
+        "WEB": verdicts.get("web", "false"),
+        "SHELL_": verdicts.get("shell", "false"),
+        "COLLATERAL": verdicts.get("collateral", "false"),
+        "PATH": "/usr/bin:/bin",
+    }
+    return subprocess.run(
+        ["bash", "-c", aggregate_step()], env=environment, capture_output=True, text=True
+    )
+
+
+ALL_RAN = dict.fromkeys(JOBS, "success")
+SHARDS_SKIPPED = {**ALL_RAN, "python-db": "skipped", "harness-hygiene": "skipped"}
+
+
+def test_the_aggregate_is_green_when_every_job_ran() -> None:
+    assert run_aggregate(ALL_RAN, db="true", web="true").returncode == 0
+
+
+def test_the_aggregate_is_red_on_a_failed_shard() -> None:
+    completed = run_aggregate({**ALL_RAN, "python-db": "failure"}, db="true")
+
+    assert completed.returncode == 1
+    assert "python-db=failure" in completed.stdout
+
+
+def test_a_shard_skipped_though_the_diff_reached_a_database_tier_is_red() -> None:
+    """The hole that made the missing `tests/conftest.py` filter entry silent: a skip was a pass
+    whatever its cause, so four shards standing down read the same as nothing to run."""
+    completed = run_aggregate(SHARDS_SKIPPED, db="true")
+
+    assert completed.returncode == 1
+    assert "python-db=skipped" in completed.stdout
+    assert "harness-hygiene=skipped" in completed.stdout
+
+
+def test_a_shard_skipped_because_nothing_database_shaped_changed_is_green() -> None:
+    assert run_aggregate(SHARDS_SKIPPED, db="false").returncode == 0
+
+
+def test_every_skip_is_accepted_when_the_tree_is_already_green() -> None:
+    """`covered` skips the whole gate deliberately; the obligation to run does not apply."""
+    assert run_aggregate(dict.fromkeys(JOBS, "skipped"), covered="true", db="true").returncode == 0
+
+
+@pytest.mark.parametrize(
+    ("verdict", "job"),
+    [("web", "map-chrome"), ("shell", "shell"), ("collateral", "collateral")],
+)
+def test_each_filter_verdict_obliges_the_jobs_it_names(verdict: str, job: str) -> None:
+    completed = run_aggregate({**ALL_RAN, job: "skipped"}, **{verdict: "true"})
+
+    assert completed.returncode == 1
+    assert f"{job}=skipped" in completed.stdout
