@@ -71,7 +71,7 @@ printf '%s\n' "$@" > "$STUB_JOURNAL_DIR/$unit.argv"
 if [ -n "${STUB_SNAPSHOT_DIR:-}" ] && [ -f "${STUB_STATUS_FILE:-}" ]; then
     cp "$STUB_STATUS_FILE" "$STUB_SNAPSHOT_DIR/$unit.json"
     stat -c %i "$STUB_STATUS_FILE" >> "$STUB_SNAPSHOT_DIR/inodes"
-    ln "$STUB_STATUS_FILE" "$STUB_SNAPSHOT_DIR/$unit.held"
+    ln "$STUB_STATUS_FILE" "$STUB_SNAPSHOT_DIR/$unit.held" || exit 97  # an unpinned inode is no proof
 fi
 "${command_argv[@]}" > "$STUB_JOURNAL_DIR/$unit.log" 2>&1
 rc=$?
