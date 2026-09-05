@@ -120,6 +120,46 @@ def test_the_absence_class_is_its_own_bucket_and_never_folded_into_one(
     )
 
 
+def test_a_well_whose_type_the_source_left_blank_is_answered_rather_than_refused(
+    population: psycopg.Connection, api_client: TestClient
+) -> None:
+    """F-3, in the suite: one blank well type refused the whole viewport, for every state in it.
+
+    1,172 Colorado headers reached canonical with the empty string for a well type before
+    cr_co_wells_shp_blank_is_absent_1 existed, and the selector grammar admits no empty value,
+    so `well_type_b64=` refused with selector_ambiguous and the box served no summary at all --
+    including the New Mexico wells in it, for any box whose north edge crosses 37.0N. Those
+    rows cannot be restated, so the read applies the rule: the blank is the absence it always
+    was, counted in the total and named by no class.
+    """
+    manifest = seed_manifest(
+        population, sha256="d" * 64, source_id="co_ecmc_wells_shp", source_key="wells.zip"
+    )
+    seed_well(
+        population,
+        api10="0512300001",
+        manifest_id=manifest,
+        state_code="05",
+        basin=None,
+        status_canonical="active",
+        well_type_reported="",
+    )
+    seed_well_spatial(
+        population,
+        api10="0512300001",
+        geom_type="surface",
+        wkt=f"POINT(-103.45 {LATITUDE})",
+        manifest_id=manifest,
+    )
+    population.commit()
+
+    data = summary(api_client)["data"]
+
+    assert "" not in [row["well_type_reported"] for row in data["well_types"]]
+    assert data["wells"]["value"] == "9"
+    assert sum(int(row["wells"]["value"]) for row in data["well_types"]) == 8
+
+
 def test_a_well_outside_the_box_is_not_counted(
     population: psycopg.Connection, api_client: TestClient
 ) -> None:

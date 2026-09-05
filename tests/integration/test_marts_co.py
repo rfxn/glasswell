@@ -159,6 +159,62 @@ def test_the_refresh_records_its_scope_and_the_rules_it_read(refreshed, db) -> N
     assert refreshed.to_dict()["layers"] == ["co_wells"]
 
 
+def test_a_blank_well_type_promoted_before_the_rule_reaches_the_tile_as_absent(
+    db: psycopg.Connection, lineage_env
+) -> None:
+    """The 1,172 headers promoted with an empty Well_Class, read under the rule at the mart.
+
+    canonical.wells is append-only and Colorado's effective_from is ECMC's own Stat_Date, so
+    those rows cannot be restated -- a corrected row carries the key of the row it corrects.
+    The mart is one of the three reads that apply cr_co_wells_shp_blank_is_absent_1 instead,
+    and the map has to agree with the well card and the legend about the same well.
+    """
+    seed_all(db)
+    manifest = seed_manifest(db, sha256="d" * 64, source_id="co_ecmc_wells_shp")
+    blank_api10 = "0512300001"
+    seed_well(
+        db,
+        api10=blank_api10,
+        state_code="05",
+        status_canonical=None,
+        status_reported="PR",
+        well_type_reported="",
+        operator_name_reported="",
+        county_code_at_permit="123",
+        manifest_id=manifest,
+        basin=None,
+    )
+    seed_well_spatial(
+        db,
+        api10=blank_api10,
+        geom_type="surface",
+        wkt="POINT(-104.9 40.1)",
+        manifest_id=manifest,
+        location_qualifier="actual",
+    )
+    db.commit()
+    with lineage_session(recorder=PostgresRecorder(db), environment=lineage_env):
+        refresh = wells.refresh_for(db, "CO")
+    db.commit()
+
+    with db.cursor() as cursor:
+        cursor.execute(
+            "select well_type_reported, operator_name"
+            "  from marts.co_wells_tile where api10 = %s",
+            (blank_api10,),
+        )
+        well_type, operator = cursor.fetchone()
+        cursor.execute(
+            "select rule_id from lineage.derivation_rules where derivation_id = %s",
+            (refresh.derivation_id,),
+        )
+        cited = {row[0] for row in cursor.fetchall()}
+
+    assert well_type is None
+    assert operator is None
+    assert "cr_co_wells_shp_blank_is_absent_1" in cited
+
+
 def test_no_resident_mart_address_moved_because_a_fifth_state_arrived(db, lineage_env) -> None:
     """The seam track measured the four addresses before Colorado existed and wrote them down.
 

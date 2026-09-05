@@ -23,6 +23,7 @@ from datetime import date
 
 import psycopg
 
+from glasswell.absence import BLANK_IS_ABSENT_RULE_ID, absent_if_blank
 from glasswell.db.dsn import add_dsn_argument, resolve_dsn
 from glasswell.ingest.base import resolve_environment
 from glasswell.lengths import LengthMethod, resolve_length_method
@@ -233,13 +234,16 @@ select s.api10,
  where s.geom_type = 'surface' and left(s.api10, 2) = %(state_code)s
 """
 
+# The four source-reported text columns are read under cr_co_wells_shp_blank_is_absent_1: the
+# 1,172 headers promoted with an empty Well_Class cannot be restated, and the tile has to agree
+# with the well card and the legend about the same well.
 _CO_WELLS = f"""
 select s.api10,
-       w.operator_name_reported as operator_name,
+       {absent_if_blank("w.operator_name_reported")} as operator_name,
        {resolved_status("w")} as status_canonical,
-       w.status_reported,
-       w.well_type_reported,
-       w.county_code_at_permit as county_code,
+       {absent_if_blank("w.status_reported")} as status_reported,
+       {absent_if_blank("w.well_type_reported")} as well_type_reported,
+       {absent_if_blank("w.county_code_at_permit")} as county_code,
        extract(year from w.spud_date)::int as spud_year,
        s.location_qualifier as loc_qual_class,
        s.geom_type as geometry_provenance,
@@ -410,6 +414,7 @@ MART_PROFILES: tuple[MartProfile, ...] = (
             "cr_co_wells_location_qualifier_1",
             "cr_co_wells_source_selection_1",
             "cr_co_wells_status_vocab_1",
+            BLANK_IS_ABSENT_RULE_ID,
         ),
         emit_extra=(("state", "CO"), ("geometry_scope", "surface_only")),
     ),

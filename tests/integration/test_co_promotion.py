@@ -147,6 +147,45 @@ def test_the_valid_time_is_the_status_date_and_a_second_run_appends_nothing(
     assert after == before
 
 
+def test_a_blank_left_in_staging_by_an_earlier_generation_promotes_as_absent(
+    staged_gis, seeded, lineage_env
+) -> None:
+    """The rule applied where the promotion reads, not only where the staging writes.
+
+    staging.co_ecmc_wells holds two generations written before
+    cr_co_wells_shp_blank_is_absent_1 existed, and staging is not edited in place -- so the
+    empty strings in them are still there. A promotion that read them verbatim would put the
+    empty string back into canonical the next time it ran. The update below reconstructs what
+    the earlier generation staged.
+    """
+    with seeded.cursor() as cursor:
+        cursor.execute("update staging.co_ecmc_wells set well_class = '' where well_class is null")
+        assert cursor.rowcount == 10
+    seeded.commit()
+
+    with open_ingest_run(seeded, source_id=co_wells.SOURCE_ID, environment=lineage_env) as run:
+        report = co_wells.promote_headers(run)
+    seeded.commit()
+
+    with seeded.cursor() as cursor:
+        cursor.execute(
+            "select count(*) filter (where well_type_reported = ''),"
+            "       count(*) filter (where well_type_reported is null)"
+            "  from canonical.wells where source_manifest_id = %s",
+            (report.manifest_id,),
+        )
+        empty, absent = cursor.fetchone()
+        cursor.execute(
+            "select rule_id from lineage.derivation_rules where derivation_id = %s",
+            (report.derivation_id,),
+        )
+        cited = {row[0] for row in cursor.fetchall()}
+
+    assert empty == 0
+    assert absent > 0
+    assert "cr_co_wells_shp_blank_is_absent_1" in cited
+
+
 def test_the_promotion_reads_no_mart_and_writes_no_staging(promoted) -> None:
     from pathlib import Path
 

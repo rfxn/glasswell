@@ -10,6 +10,7 @@ from fastapi import APIRouter, Path, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.responses import JSONResponse
 
+from glasswell.absence import SOURCE_REPORTED_TEXT_COLUMNS, absent_if_blank
 from glasswell.api.deps import (
     AsOf,
     Connection,
@@ -159,11 +160,17 @@ _PRODUCING_CLASS = class_expression(api10="ranked.api10", state_code="ranked.sta
 # registry. Short-circuiting to NULL is what lets the response say it does not know.
 _PRODUCING_COLUMN = f"case when %(producing_registered)s::boolean then {_PRODUCING_CLASS} end"
 
+# The source-reported text columns are read under cr_co_wells_shp_blank_is_absent_1. The 1,172
+# Colorado headers promoted with an empty Well_Class before the staging applied it cannot be
+# restated -- see glasswell/absence.py for why -- so every read applies the rule instead.
+_REPORTED = ", ".join(
+    f"{absent_if_blank(name)} as {name}" for name in SOURCE_REPORTED_TEXT_COLUMNS
+)
 _COLUMNS = (
-    "api10, api14, state_code, county_code_at_permit, ndic_file_no, operator_name_reported,"
-    " operator_id, well_name,"
+    "api10, api14, state_code, ndic_file_no,"
+    f" {_REPORTED},"
     f" {resolved_status('ranked')} as status_canonical,"
-    " status_reported, well_type_reported, spud_date,"
+    " spud_date,"
     " confidential_flag, basin, land_unit_label, total_depth_ft, completion_date,"
     " effective_from, source_manifest_id, derivation_id,"
     " greatest(effective_from, manifest_vintage,"
@@ -251,7 +258,8 @@ with in_view as (
      latest as (
     select distinct on (v.api10)
            v.api10, {resolved_status("w")} as status_canonical, w.basin, w.state_code,
-           w.well_type_reported, w.derivation_id, w.effective_from
+           {absent_if_blank("w.well_type_reported")} as well_type_reported,
+           w.derivation_id, w.effective_from
       from in_view v
       left join canonical.wells w
              on w.api10 = v.api10
