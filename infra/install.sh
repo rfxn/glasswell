@@ -169,7 +169,7 @@ install -o root -g root -m 0755 "$INFRA_DIR/bin/host-runner.sh" "$SBIN_DIR/host-
 # runs the script and the state the job published, never the shape of the document. Keyed on the
 # script, so a job name the tracked runner reuses later is not this migration's business.
 retire_adhoc_runs() {
-    local archive="$RUNS_DIR/archive" script job status sidecar unit live
+    local archive="$RUNS_DIR/archive" script job status sidecar unit live published
     local -a active_units
     # No -o: install.sh is root-only (line 65). -g, so reading the archive is not root-only,
     # which is what runbook-co-tier2.md tells an operator to do.
@@ -194,8 +194,9 @@ retire_adhoc_runs() {
             esac
         done
         if [[ -z $live && -f $status ]]; then
-            case "$(sed -n 's/.*"result":"\([^"]*\)".*/\1/p' "$status")" in
-                running|waiting) live="$job.json is running" ;;
+            published=$(sed -n 's/.*"result":"\([^"]*\)".*/\1/p' "$status")
+            case "$published" in
+                running|waiting) live="$job.json reads $published" ;;
             esac
         fi
         if [[ -n $live ]]; then

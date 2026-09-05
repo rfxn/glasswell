@@ -81,17 +81,23 @@ ADHOC_RUNNERS = (
 
 
 # `systemctl list-units` names the active services and `systemctl show -p ExecStart --value`
-# says what each one runs. The stub answers both from one mapping, because the question the
-# retirement asks — is a unit running this script right now — is answered by the pair.
+# says what each one runs. The stub answers both from one mapping, in the shapes VM 111
+# answers them in: a five-column row (UNIT LOAD ACTIVE SUB DESCRIPTION), which is why the
+# retirement pipes it through `awk`, and a braced ExecStart record rather than a bare path.
+# Copied from the host, 2026-09-05.
 SYSTEMCTL_UNITS_STUB = """#!/bin/bash
 if [ "$1" = list-units ]; then
-    for pair in $STUB_ACTIVE; do printf '%s\\n' "${pair%%=*}"; done
+    for pair in $STUB_ACTIVE; do
+        printf '%s loaded active running glasswell job %s\\n' "${pair%%=*}" "${pair%%=*}"
+    done
     exit 0
 fi
 if [ "$1" = show ]; then
     for pair in $STUB_ACTIVE; do
         [ "$pair" = "${2}=${pair#*=}" ] || continue
-        printf '%s\\n' "${pair#*=}"
+        printf '{ path=%s ; argv[]=%s ; ignore_errors=no ; start_time=[n/a] ; ' \\
+            "${pair#*=}" "${pair#*=}"
+        printf 'stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }\\n'
     done
     exit 0
 fi
@@ -672,19 +678,20 @@ class TestALiveRunnerIsNeverArchived:
         assert (runs / "archive" / "co-load.json").exists()
         assert not (sbin / "co-load-runner.sh").exists()
 
-    def test_a_status_that_reads_running_defers_with_no_unit_to_name(
-        self, tmp_path: Path
+    @pytest.mark.parametrize("word", ["running", "waiting"])
+    def test_a_status_that_says_it_is_going_defers_with_no_unit_to_name(
+        self, tmp_path: Path, word: str
     ) -> None:
         # The unit may already be gone from `list-units` while the job is still going — the
         # file it published is the other half of the same question.
         runs, sbin = self.host(tmp_path)
-        (runs / "co-load.json").write_text(self.FINISHED.replace("complete", "running"), "utf-8")
+        (runs / "co-load.json").write_text(self.FINISHED.replace("complete", word), "utf-8")
 
         printed = retire_adhoc_runs(tmp_path)
 
         assert (runs / "co-load.json").exists()
         assert (sbin / "co-load-runner.sh").exists()
-        assert "deferred: live (co-load" in printed
+        assert f"deferred: live (co-load.json reads {word})" in printed
 
     def test_the_deferred_one_is_retired_by_the_next_deploy_once_it_has_finished(
         self, tmp_path: Path
