@@ -768,7 +768,6 @@ function distinctVintages(column: SeriesColumn): string[] {
   return [...new Set(present)].sort();
 }
 
-/** Without a key the band is a strip of colour, and the gap it explains stays ambiguous. */
 /**
  * The four the API distinguishes, drawn whether or not this well hit them -- they are the
  * vocabulary, and a reader learns it from the key -- plus any state a served series actually
@@ -783,6 +782,7 @@ function keyStates(chart: ChartSeries): string[] {
   return [...states];
 }
 
+/** Without a key the band is a strip of colour, and the gap it explains stays ambiguous. */
 function stateKey(chart: ChartSeries, callbacks: ChartCallbacks): HTMLElement {
   const wrapper = document.createElement("p");
   wrapper.className = "gw-state-key";

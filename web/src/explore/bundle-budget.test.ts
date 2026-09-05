@@ -171,12 +171,12 @@ describe("what the explorer's shell costs the reader", () => {
     const sheet = named("sheet");
     // The chart's table alternative, cut on the drawer's own ruling: it is fetched when a
     // reader presses `Table` and by nobody who lands. Left uncut the walked total rises by the
-    // table chunk's own 786 B, which is the split artifact the paragraph above describes, and
+    // table chunk's own weight, which is the split artifact the paragraph above describes, and
     // it is the difference between this route passing and failing: PERF.md §6 records both
-    // walks, and the cut stands on the owner's ruling recorded there, not on this file's.
-    // 786 is this walk's own measurement at `GZIP_LEVEL` on `c492358`. The 788 and 791 the
-    // record carried before it were a level-1 figure and a shell `gzip -9` whose 18-byte
-    // header carries the filename; neither is what any budget here is measured with.
+    // walks against the head each was measured at, and the cut stands on the owner's ruling
+    // recorded there, not on this file's. No byte count is quoted here on purpose: the chunk
+    // statically imports the stamped entry chunk, so its own gzip moves with every commit and
+    // a figure in a source file read at a later head is a figure that disagrees with the tree.
     const table = named("table");
     const route = reach(
       [...entryChunks(), named("shell")],
