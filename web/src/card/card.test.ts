@@ -1710,3 +1710,87 @@ describe("the third production state, and the sections it opens", () => {
     expect(host.querySelector("#gw-section-pools")).toBeNull();
   });
 });
+
+describe("the fourth production state: filed by pool, and summed to the well", () => {
+  // BLOCKER-1's remaining state. The mart serves this well a sum, so the chart is real and
+  // must stay; the regulator still filed below the well, so the section carrying those
+  // filings must be there too. One code decided both facts, and could only answer one.
+  const summed = {
+    ...wellEnvelope,
+    links: {
+      ...wellEnvelope.links,
+      pools: "/v1/wells/3305310451/production/pools?from=served",
+      pools_rule: "/v1/conformance/cr_nm_wcproduction_pool_rollup_2",
+    },
+    meta: {
+      ...wellEnvelope.meta,
+      warnings: [
+        {
+          code: "production_summed_over_pools",
+          detail:
+            "This well's regulator files production at the well_completion_pool and filed no" +
+            " per-well number, so `producing` is unknown. The served well series is" +
+            " glasswell's sum of those filings (cr_nm_wcproduction_pool_rollup_2).",
+          pointer: "/producing",
+          rule_id: "cr_nm_wcproduction_pool_rollup_2",
+        },
+      ],
+    },
+  };
+
+  it("draws the summed chart rather than replacing it with the pool-grain panel", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        stubFetch({
+          [`/v1/wells/${API10}/production`]: productionEnvelope,
+          [`/v1/wells/${API10}`]: summed,
+        }),
+      ),
+    );
+
+    await renderWellCard(host, API10, callbacks);
+
+    expect(renderChart).toHaveBeenCalled();
+    expect(host.querySelector('[data-state="production_reported_at_pool_grain"]')).toBeNull();
+  });
+
+  it("keeps the Production-by-pool section, and opens it, because the filings are the record", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        stubFetch({
+          [`/v1/wells/${API10}/production`]: productionEnvelope,
+          [`/v1/wells/${API10}`]: summed,
+        }),
+      ),
+    );
+
+    await renderWellCard(host, API10, callbacks);
+
+    const pools = host.querySelector("#gw-section-pools");
+    expect(pools).not.toBeNull();
+    expect(pools?.querySelector(".gw-section-toggle")?.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("keeps the sentence saying the series is a sum, which nothing else on the card says", async () => {
+    // The chart here is a mart figure, not a filing the regulator made, and this note is the
+    // only place the card says so: no panel is drawn for this code and no scope line carries
+    // it. Suppressing it the way POOL_GRAIN is suppressed would leave the number naked.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        stubFetch({
+          [`/v1/wells/${API10}/production`]: productionEnvelope,
+          [`/v1/wells/${API10}`]: summed,
+        }),
+      ),
+    );
+
+    await renderWellCard(host, API10, callbacks);
+
+    const note = host.querySelector('[data-code="production_summed_over_pools"]');
+    expect(note?.textContent).toContain("glasswell's sum of those filings");
+    expect((host.textContent ?? "").match(/cr_nm_wcproduction_pool_rollup_2/g)?.length).toBe(1);
+  });
+});
