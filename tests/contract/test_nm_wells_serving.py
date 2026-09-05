@@ -933,6 +933,30 @@ def test_the_well_response_links_the_pool_filings_where_the_regulator_files_by_p
     assert "production_reported_at_pool_grain" in codes
 
 
+def test_the_well_a_sum_is_served_for_is_linked_to_the_filings_it_was_summed_from(
+    with_the_rollup: TestClient,
+) -> None:
+    """BLOCKER-1's third state, on a served response.
+
+    `card.ts:544` reads the Production-by-pool section's presence off this envelope's
+    `links.pools` and off nothing else. Two of the three pool-grain states assert that link on
+    a served response -- absent for the well that filed nothing below it, present for the well
+    whose filings the sum admits none of -- and the summed state, which is the one every
+    producing New Mexico well is in, asserted its warning and not its link. The card's own
+    vitest plants the link, so a change that stopped serving it here would take the section
+    holding this well's entire production record off the card, with both suites green.
+    """
+    envelope = body(with_the_rollup, f"/v1/wells/{NM_API10}")
+    codes = {item["code"] for item in envelope["meta"].get("warnings", [])}
+
+    assert "production_summed_over_pools" in codes
+    assert envelope["links"]["pools"] == f"/v1/wells/{NM_API10}/production/pools"
+    assert (
+        envelope["links"]["pools_rule"]
+        == "/v1/conformance/cr_nm_wcproduction_pool_rollup_2"
+    )
+
+
 def test_a_rolled_up_jurisdiction_serves_no_pools_link(with_new_mexico: TestClient) -> None:
     from glasswell.api.examples import EXAMPLE_API10
 
