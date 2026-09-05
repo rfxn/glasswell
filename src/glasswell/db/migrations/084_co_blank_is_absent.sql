@@ -25,7 +25,7 @@
 -- RENUMBER (integrator, at the merge train): this file is 084 because fix/co-blank-well-type
 -- branches from main 80fb09d, whose last migration is 083, and db/migrate.py:63-66 refuses both
 -- a gap and a duplicate. release/v0.82 already carries 084_well_basin_context.sql, so rename
--- this to 085_co_blank_is_absent.sql when it merges after that train.
+-- this to 086_co_blank_is_absent.sql at the v0.83 train (085 is the status-truth vocabulary migration).
 --
 -- REPOINT CHECKLIST (integrator, at the merge train):
 --   1. evidence_tag UNRELEASED -> the tag that first carries these three rule ids. It appears
