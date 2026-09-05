@@ -18,3 +18,6 @@
       roles: a migration that loses a cluster-global race is retried inside the runner,
       which is one transaction, so the second attempt takes the branch the winner
       committed. The first sharded CI run errored 843 tests on `pg_authid_rolname_index`
+- [New] docs/ci-gate.md states which assertions no workflow can make: a GitHub runner has no
+      route to the deployed instance, no owner key and no host filesystem, so `verify.sh` and
+      `smoke.sh` own every deployed-instance probe, run per deploy rather than per day
