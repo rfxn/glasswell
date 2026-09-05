@@ -365,3 +365,21 @@ def test_an_instance_whose_mart_is_empty_says_so_instead_of_serving_an_empty_ser
     assert ALLOCATION_RULE in warning["detail"]
     assert "cr_tx_production_grain_1" in warning["detail"]
     assert body["links"]["allocation_rule"] == "/v1/conformance/cr_tx_production_grain_1"
+
+
+def test_two_windows_of_the_allocated_series_are_two_derivations(client: TestClient) -> None:
+    """The same class as the normalised arm's: `api.tx_production` is a response derivation
+    whose partition named the well and the streams and not the window, so the second window of
+    one lease-reported well was refused by the store's determinism guard and answered 500."""
+    path = f"/v1/wells/{TX_API10}/production"
+
+    windowed = client.get(path, params={"from": "2024-01", "to": "2024-02"})
+    whole = client.get(path)
+
+    assert windowed.status_code == 200, windowed.text
+    assert whole.status_code == 200, whole.text
+    assert windowed.json()["data"]["series"]["pm"] == ["2024-01", "2024-02"]
+    assert (
+        windowed.json()["data"]["_lineage"]["series.oil_bbl"]
+        != whole.json()["data"]["_lineage"]["series.oil_bbl"]
+    )

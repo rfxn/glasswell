@@ -878,10 +878,17 @@ def get_well_production(
             dataset="api.well_production",
             operation_id="get_well_production",
             locator=request.url.path,
+            # Every request parameter that changes what was computed, or one derivation id
+            # carries two outputs and `store.reconcile`'s determinism guard refuses the second
+            # for the life of the store — a 500 on the card's second press. The window and the
+            # stream set are named as *served* rather than as asked: two windows that clip to
+            # the same months are the same figures and rightly share an id.
             partition={
                 "api10": api10,
                 "normalization": PER_LATERAL_FT,
                 "as_of": iso(resolved) or "latest",
+                "window": _window_term(months),
+                "streams": "+".join(data["streams"]) or "none",
             },
             input_derivations=sorted(
                 {row["derivation_id"] for row in observed} | set(divisor.derivations)
@@ -1192,7 +1199,14 @@ def _allocated_response(
         dataset="api.tx_production",
         operation_id="get_well_production",
         locator=request.url.path,
-        partition={"api10": api10, "streams": "+".join(sorted(requested))},
+        # The window joins it for the reason the normalised arm's does: without it the second
+        # window of one well asks one derivation id to carry two outputs, and the store's
+        # determinism guard refuses it for the life of the store.
+        partition={
+            "api10": api10,
+            "streams": "+".join(sorted(requested)),
+            "window": _window_term(months),
+        },
         input_derivations=sorted({row["derivation_id"] for row in points}),
         correlation_id=request.state.request_id,
         rule_ids=[rule["rule_id"], *([error_rule] if error_rule else [])],
@@ -1584,6 +1598,11 @@ def _point_semantics(
 
 def _point_aggregation(point: dict[str, Any] | None) -> str | None:
     return None if point is None else point["aggregation"]
+
+
+def _window_term(months: Sequence[date]) -> str:
+    """The served span, for a response derivation's partition. Absent months are a span too."""
+    return f"{month_label(months[0])}:{month_label(months[-1])}" if months else "none"
 
 
 def _aggregation_warning(

@@ -182,3 +182,69 @@ def test_the_pool_grain_arm_gates_the_pools_section_on_a_link(
     # WC-P2-4: the rule that decides whether this jurisdiction carries a per-well cumulative
     # at all is a link rather than a sentence the client would have to write.
     assert body["links"]["cumulatives_rule"].startswith("/v1/conformance/cr_")
+
+
+# The months the fixture's default well carries, so a window can name a strict subset of them.
+FIRST_WINDOW = {"from": "2026-01", "to": "2026-03"}
+
+
+def _normalised(client: TestClient, **params: str) -> tuple[int, dict]:
+    response = client.get(PATH, params={"normalization": "per_lateral_ft", **params})
+    return response.status_code, response.json()
+
+
+def test_two_windows_of_one_normalised_series_are_two_derivations(client: TestClient) -> None:
+    """The response derivation is addressed by what it computed, or the store refuses it.
+
+    `api.respond` is registered with an output hash, and `lineage.store.reconcile` raises
+    DeterminismViolation when one derivation id is asked to carry two different outputs — the
+    guard that exists to catch exactly this. The partition named the well, the basis and the
+    vintage and not the window, so every window of one normalised well shared an id: the first
+    asked was recorded, and every other window answered 500 for the life of the store. Two
+    presses on the card reached it (`Per 1,000 ft` inside a window, then `Widen`).
+    """
+    windowed_status, windowed = _normalised(client, **FIRST_WINDOW)
+    whole_status, whole = _normalised(client)
+
+    assert windowed_status == 200, windowed
+    assert whole_status == 200, whole
+    windowed_handle = windowed["data"]["_lineage"]["series.oil_bbl"]
+    whole_handle = whole["data"]["_lineage"]["series.oil_bbl"]
+    assert windowed_handle != whole_handle
+    assert len(windowed["data"]["series"]["pm"]) < len(whole["data"]["series"]["pm"])
+
+
+def test_the_widened_series_is_asked_after_the_window_and_still_answers(
+    client: TestClient,
+) -> None:
+    """The reader's own order, which is the order the card presses them in."""
+    assert _normalised(client, **FIRST_WINDOW)[0] == 200
+    assert _normalised(client)[0] == 200
+    assert _normalised(client, **{"from": "2026-02", "to": "2026-04"})[0] == 200
+
+
+def test_two_stream_sets_of_one_normalised_series_are_two_derivations(
+    client: TestClient,
+) -> None:
+    """The same defect on the other request parameter that changes what is computed: a series
+    of one stream carries fewer response outputs than a series of three, so a partition that
+    does not name the streams asks one derivation id to carry both."""
+    all_status, every = _normalised(client)
+    one_status, oil = _normalised(client, stream="oil")
+
+    assert all_status == 200, every
+    assert one_status == 200, oil
+    assert every["data"]["_lineage"]["series.oil_bbl"] != oil["data"]["_lineage"]["series.oil_bbl"]
+
+
+def test_every_point_of_a_windowed_normalised_series_still_resolves(client: TestClient) -> None:
+    """A partition that changes with the window has to keep the points addressable under it."""
+    status, body = _normalised(client, **FIRST_WINDOW)
+
+    assert status == 200, body
+    handle = body["data"]["_lineage"]["series.oil_bbl"]
+    for index, month in enumerate(body["data"]["series"]["pm"]):
+        if body["data"]["series"]["oil_bbl"][index] is None:
+            continue
+        answer = client.get("/v1/explain", params={"h": f"{handle}&pm={month}", "depth": "1"})
+        assert answer.status_code == 200, f"{month}: {answer.text}"
