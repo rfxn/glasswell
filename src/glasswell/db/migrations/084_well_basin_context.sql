@@ -22,7 +22,7 @@
 --   4. This file's version integer lives in its filename and nowhere else, so a renumber is a
 --      rename. It has already happened once: the file was 079 until the v0.80 train landed
 --      079_scheduler_observe and 080_tx_lease_production on main, and merging them made two
---      079s, which discover_migrations refuses. It is 081 now. No test and no fixture names
+--      079s, which discover_migrations refuses; then 084 at the v0.82 train, behind v0.81's 081–083. No test and no fixture names
 --      the integer, so nothing moved with it.
 --   5. The rule ids are immutable and must not change during the repoint: seven ids seeded by
 --      seed/conformance_basin_context.py, seed/conformance_status_history.py and

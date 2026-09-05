@@ -19,7 +19,6 @@ PENDING = "production_pending_allocation"
 # served: lineage.conformance_rules is append-only and an as_of before this train still
 # resolves the sentence the card used to show.
 SUPERSEDED_DISCLOSURE = "cr_tx_allocation_scope_1"
-GRAIN_RULE = "cr_tx_production_grain_1"
 ALLOCATION_RULE = "cr_tx_allocation_v0_1"
 # The successor: the rule that admits a well-level figure, and whose published vintage is the
 # knowledge cut the card's answer turns on.
