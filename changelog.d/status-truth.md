@@ -51,3 +51,6 @@
       the whole well's maximum
 - [Fix] `?normalization=per_lateral_ft` is refused on the summed series for the reason the
       allocated arm gives, where it was accepted and silently ignored
+- [Fix] The well card opens Production by pool on whether the regulator filed below the well,
+      not on whether a sum is missing, so a well the rollup mart serves keeps both its summed
+      chart and the section holding the filings that chart is a sum of
