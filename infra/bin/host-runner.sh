@@ -659,8 +659,13 @@ run_step() {
         if [[ $evidence == found ]]; then step_failed=0; else step_failed=1; fi
     fi
 
+    # The words systemd itself answers with when the step did not end on its own terms
+    # (`systemd.service(5)` Result). A SIGKILLed unit says `signal`, a dumped one `core-dump`;
+    # `killed` and `abort` were in this list and systemd says neither, so a signal-killed step
+    # did not hard-stop and --keep-going ran the chain on over it.
     case "$systemd_result" in
-        killed|oom-kill|timeout|abort|watchdog|start-limit-hit) step_hard_stop=1 ;;
+        signal|core-dump|oom-kill|timeout|watchdog|start-limit-hit|resources|protocol)
+            step_hard_stop=1 ;;
     esac
     if (( step_failed )) && [[ $judged_by == summary ]]; then step_hard_stop=1; fi
 

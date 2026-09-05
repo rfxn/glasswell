@@ -488,18 +488,69 @@ class TestAStepIsJudgedByWhatItWrote:
         assert len(status["steps"]) == 2
         assert status["steps"][0]["judged_by"] == "exit"
 
-    def test_a_killed_step_stops_the_chain_even_under_keep_going(
-        self, harness: Harness
+    # The words systemd answers `Result` with when the step did not end on its own terms.
+    # Measured 2026-09-05: SIGKILLing a transient unit gives Result=signal, ExecMainCode=2,
+    # ExecMainStatus=9 — neither `killed` nor `abort`, which systemd never says at all.
+    @pytest.mark.parametrize(
+        "systemd_result",
+        [
+            "signal",
+            "core-dump",
+            "oom-kill",
+            "timeout",
+            "watchdog",
+            "start-limit-hit",
+            "resources",
+            "protocol",
+        ],
+    )
+    def test_a_step_the_host_ended_stops_the_chain_even_under_keep_going(
+        self, harness: Harness, systemd_result: str
     ) -> None:
         result = harness.run(
             "--job", "culled", "--keep-going", "--",
             "one", "/bin/sh", "-c", "exit 137",
             "--", "two", "/bin/echo", '{"ran": 1}',
-            STUB_FORCE_RESULT="oom-kill",
+            STUB_FORCE_RESULT=systemd_result,
         )
 
         assert result.returncode == 137
-        assert len(harness.status("culled")["steps"]) == 1
+        assert len(harness.status("culled")["steps"]) == 1, (
+            f"the chain ran on past a step that ended with Result={systemd_result}"
+        )
+
+    def test_the_hard_stop_words_are_the_ones_systemd_answers_with(self) -> None:
+        # A word systemd never produces is a hard stop that cannot fire, and reads in review
+        # as though it does. `systemd.service(5)` Result: success, protocol, timeout,
+        # exit-code, signal, core-dump, watchdog, start-limit-hit, resources, oom-kill.
+        source = RUNNER.read_text(encoding="utf-8")
+        arm = re.search(r"^\s*([a-z|-]+)\)\s*step_hard_stop=1 ;;", source, re.MULTILINE)
+
+        assert arm, "the hard-stop list is not where the chain reads it"
+        assert set(arm.group(1).split("|")) == {
+            "signal",
+            "core-dump",
+            "oom-kill",
+            "timeout",
+            "watchdog",
+            "start-limit-hit",
+            "resources",
+            "protocol",
+        }
+
+    def test_a_step_that_failed_and_said_so_is_what_keep_going_carries_on_past(
+        self, harness: Harness
+    ) -> None:
+        # The control for the parametrisation above: `exit-code` is the step's own answer, and
+        # --keep-going exists for exactly that case.
+        result = harness.run(
+            "--job", "orderly", "--keep-going", "--",
+            "one", "/bin/sh", "-c", "echo broke; exit 3",
+            "--", "two", "/bin/echo", '{"ran": 1}',
+        )
+
+        assert result.returncode == 3
+        assert len(harness.status("orderly")["steps"]) == 2
 
     def test_expect_names_the_evidence_a_step_that_prints_no_json_writes(
         self, harness: Harness
