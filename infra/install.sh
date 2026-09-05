@@ -161,29 +161,54 @@ done
 # holds the installed copy equal to the tree.
 install -o root -g root -m 0755 "$INFRA_DIR/bin/host-runner.sh" "$SBIN_DIR/host-runner.sh"
 
-# The five ad-hoc runners of 2026-09-05, scripts and status files together: `co-load` is the
-# Colorado runbook's job name and the ad-hoc verdict under it refuses the first tracked run.
-# Archived, never deleted — a load's own record is the evidence it happened. `"log":` is the
-# tracked grammar, so a live job is never archived by a deploy that lands mid-load.
+# The five ad-hoc runners of 2026-09-05, retired with the status files they wrote: `co-load` is
+# the Colorado runbook's job name and the ad-hoc verdict under it refuses the first tracked run.
+# Archived, never deleted — a load's own record is the evidence it happened. Never while it is
+# live: a deploy lands during a load, and moving a running runner's status file takes the
+# operator's poll path and the stamps its verdict is assembled from. Liveness is the unit that
+# runs the script and the state the job published, never the shape of the document. Keyed on the
+# script, so a job name the tracked runner reuses later is not this migration's business.
 retire_adhoc_runs() {
-    local archive="$RUNS_DIR/archive" script status sidecar
-    # No -o/-g: install.sh is root-only (line 65), so the archive is root's, and the
-    # account whose verdicts it holds cannot rewrite them there either.
-    command install -d -m 0750 "$archive"
+    local archive="$RUNS_DIR/archive" script job status sidecar unit live
+    local -a active_units
+    command install -d -o root -g "$RUN_USER" -m 0750 "$archive"
+
+    active_units=()
+    while read -r unit; do
+        [[ -n $unit ]] && active_units+=("$unit")
+    done < <(systemctl list-units --type=service --state=active --no-legend --plain --no-pager \
+                2>/dev/null | awk '{print $1}')  # no systemd here means no live runner to find
+
     for script in co-load-runner.sh tx-step3-runner.sh tx-step3-resume-runner.sh \
                   tx-step3-resume2-runner.sh tx-step45-runner.sh; do
         [[ -f "$SBIN_DIR/$script" ]] || continue
+        job=${script%-runner.sh}
+        status="$RUNS_DIR/$job.json"
+
+        live=""
+        for unit in ${active_units[@]+"${active_units[@]}"}; do
+            case "$(systemctl show "$unit" -p ExecStart --value 2>/dev/null)" in  # unloaded answers empty
+                *"$SBIN_DIR/$script"*) live=$unit; break ;;
+            esac
+        done
+        if [[ -z $live && -f $status ]]; then
+            case "$(sed -n 's/.*"result":"\([^"]*\)".*/\1/p' "$status")" in
+                running|waiting) live="$job.json is running" ;;
+            esac
+        fi
+        if [[ -n $live ]]; then
+            printf 'deferred: live (%s) — %s and its records stay for the next deploy\n' \
+                "$live" "$script"
+            continue
+        fi
+
         command mv "$SBIN_DIR/$script" "$archive/$script"
         printf 'retired %s: archived at %s\n' "$script" "$archive/$script"
-    done
-    for status in "$RUNS_DIR"/*.json; do
-        [[ -f $status ]] || continue
-        if grep -q '"log":' "$status"; then continue; fi
-        for sidecar in "${status%.json}".*; do
+        for sidecar in "$RUNS_DIR/$job".*; do
             [[ -f $sidecar ]] || continue
             command mv "$sidecar" "$archive/${sidecar##*/}"
+            printf 'retired %s: archived under %s\n' "${sidecar##*/}" "$archive"
         done
-        printf 'retired the ad-hoc run %s: archived under %s\n' "${status##*/}" "$archive"
     done
 }
 retire_adhoc_runs

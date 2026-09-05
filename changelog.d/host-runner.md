@@ -33,7 +33,10 @@
       scripts and status files together, into `/var/lib/glasswell/runs/archive/` — never
       deleted, because a load's own record is the evidence that it happened. Without it the
       Colorado runbook's first tracked run refuses: `co-load` is the job name the runbook
-      launches and the ad-hoc verdict already sat under it
+      launches and the ad-hoc verdict already sat under it. Never a live one: a runner whose
+      unit is active, or whose job reads `running` or `waiting`, keeps its script, status and
+      stamps and is retired by the next deploy instead, because a deploy lands during a load
+      and a poll path that disappears mid-run is worse than a retirement that waits
 - [Change] of the nineteen `systemd-run` sites in the tree, the thirteen that were
          invocations are jobs on the runner — twelve across six runbooks, each launched
          detached and followed by the command that polls its status file, and `deploy.sh`'s

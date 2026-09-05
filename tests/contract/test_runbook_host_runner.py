@@ -80,16 +80,43 @@ ADHOC_RUNNERS = (
 )
 
 
-def retire_adhoc_runs(root: Path) -> str:
+# `systemctl list-units` names the active services and `systemctl show -p ExecStart --value`
+# says what each one runs. The stub answers both from one mapping, because the question the
+# retirement asks — is a unit running this script right now — is answered by the pair.
+SYSTEMCTL_UNITS_STUB = """#!/bin/bash
+if [ "$1" = list-units ]; then
+    for pair in $STUB_ACTIVE; do printf '%s\\n' "${pair%%=*}"; done
+    exit 0
+fi
+if [ "$1" = show ]; then
+    for pair in $STUB_ACTIVE; do
+        [ "$pair" = "${2}=${pair#*=}" ] || continue
+        printf '%s\\n' "${pair#*=}"
+    done
+    exit 0
+fi
+exit 0
+"""
+
+
+def retire_adhoc_runs(root: Path, active: dict[str, str] | None = None) -> str:
     """install.sh's own retirement function, lifted and executed against a tree under `root`.
 
-    `tests/unit/test_verify_run_state.py` runs verify.sh's helpers the same way: a text
-    assertion would catch a deleted line and miss a mover that archives the wrong file.
+    `active` maps a unit name to the script its ExecStart runs, which is how the host says a
+    runner is still going. `tests/unit/test_verify_run_state.py` runs verify.sh's helpers the
+    same way: a text assertion would catch a deleted line and miss a mover that archives the
+    wrong file.
     """
     text = INSTALL.read_text(encoding="utf-8")
     opening = "retire_adhoc_runs() {"
     assert opening in text, "install.sh does not retire the ad-hoc runners"
     body = opening + text.split(opening, 1)[1].split("\n}\n", 1)[0] + "\n}\n"
+
+    binaries = root / "systemctl-bin"
+    binaries.mkdir(exist_ok=True)
+    stub = binaries / "systemctl"
+    stub.write_text(SYSTEMCTL_UNITS_STUB, encoding="utf-8")
+    stub.chmod(0o755)
 
     harness = root / "retire.sh"
     harness.write_text(
@@ -99,14 +126,20 @@ def retire_adhoc_runs(root: Path) -> str:
                 "set -uo pipefail",
                 f'RUNS_DIR="{root / "runs"}"',
                 f'SBIN_DIR="{root / "sbin"}"',
+                'RUN_USER="$(id -gn)"',
                 body,
                 "retire_adhoc_runs",
             ]
         ),
         encoding="utf-8",
     )
+    environment = {
+        **os.environ,
+        "PATH": f"{binaries}:{os.environ['PATH']}",
+        "STUB_ACTIVE": " ".join(f"{unit}={path}" for unit, path in (active or {}).items()),
+    }
     completed = subprocess.run(
-        ["/bin/bash", str(harness)], capture_output=True, text=True, check=False
+        ["/bin/bash", str(harness)], capture_output=True, text=True, check=False, env=environment
     )
     assert completed.returncode == 0, completed.stderr
     return completed.stdout
@@ -324,10 +357,16 @@ class TestTheColoradoRunbookRunsOnTheHostAsItStands:
     )
 
     @staticmethod
-    def seed_adhoc(runs: Path, body: str) -> None:
+    def seed_adhoc(root: Path, body: str) -> None:
+        # The host's shape: the ad-hoc script in place beside the verdict it wrote. The
+        # retirement is keyed on the script, so both halves are what a real deploy meets.
+        runs = root / "runs"
         runs.mkdir(parents=True, exist_ok=True)
         (runs / "co-load.json").write_text(body, encoding="utf-8")
         (runs / "co-load.stamps").write_text("2026-09-05T18:28:30Z step5 end rc=0\n", "utf-8")
+        sbin = root / "sbin"
+        sbin.mkdir(parents=True, exist_ok=True)
+        (sbin / "co-load-runner.sh").write_text("#!/bin/bash\n", encoding="utf-8")
 
     @staticmethod
     def colorado_launch() -> list[str]:
@@ -341,7 +380,7 @@ class TestTheColoradoRunbookRunsOnTheHostAsItStands:
     ) -> None:
         # The finding itself, kept as the reason the archiving below exists.
         runs = tmp_path / "runs"
-        self.seed_adhoc(runs, self.ADHOC_CO_LOAD)
+        self.seed_adhoc(tmp_path, self.ADHOC_CO_LOAD)
         environment = stub_environment(tmp_path / "stubs", runs)
 
         completed = subprocess.run(
@@ -355,7 +394,7 @@ class TestTheColoradoRunbookRunsOnTheHostAsItStands:
         self, tmp_path: Path
     ) -> None:
         runs = tmp_path / "runs"
-        self.seed_adhoc(runs, self.ADHOC_CO_LOAD)
+        self.seed_adhoc(tmp_path, self.ADHOC_CO_LOAD)
 
         retire_adhoc_runs(tmp_path)
 
@@ -377,8 +416,9 @@ class TestTheColoradoRunbookRunsOnTheHostAsItStands:
     def test_a_tracked_run_of_the_same_job_is_never_archived_by_a_later_install(
         self, tmp_path: Path
     ) -> None:
-        # install.sh runs on every deploy, and a deploy lands while a load is resident. Only a
-        # document without the tracked grammar's `log` and `steps` is an ad-hoc leftover.
+        # install.sh runs on every deploy. The migration is keyed on the ad-hoc script: once
+        # `co-load-runner.sh` has been retired, `co-load` is the tracked runner's job name and
+        # every later deploy leaves its records alone.
         runs = tmp_path / "runs"
         environment = stub_environment(tmp_path / "stubs", runs)
         subprocess.run(
@@ -390,6 +430,120 @@ class TestTheColoradoRunbookRunsOnTheHostAsItStands:
 
         assert (runs / "co-load.json").exists()
         assert not (runs / "archive" / "co-load.json").exists()
+
+    def test_a_status_file_that_is_no_ad_hoc_runners_is_never_swept(self, tmp_path: Path) -> None:
+        # The step retires five named runners, not everything in the directory: an operator's
+        # own record has neither a script nor a name here, and a deploy is not a cleaner.
+        (runs := tmp_path / "runs").mkdir()
+        (runs / "post-deploy-v082.json").write_text('{"job":"post-deploy-v082"}', "utf-8")
+        (sbin := tmp_path / "sbin").mkdir()
+        (sbin / "co-load-runner.sh").write_text("#!/bin/bash\n", encoding="utf-8")
+
+        retire_adhoc_runs(tmp_path)
+
+        assert (runs / "post-deploy-v082.json").exists()
+        assert not (runs / "archive" / "post-deploy-v082.json").exists()
+
+
+class TestALiveRunnerIsNeverArchived:
+    """A deploy lands while a load is running — it already restarts the API beside one.
+
+    The shapes below are VM 111's at 2026-09-05 21:00Z: `t3-tx-runner` and `tx-step45-runner`
+    active, their ExecStart paths two of the five scripts, and `tx-step45.json` reading
+    `waiting` with no `log` key at all. Deciding on the document's shape archived every one of
+    them: the operator's poll path, the stamps the eventual verdict is assembled from, and the
+    script the running unit was started from.
+    """
+
+    WAITING = (
+        '{"job":"tx-step45","started":"2026-09-05T20:06:14Z","step":"wait-step3",'
+        '"step_index":0,"steps_total":3,"unit":"t3-tx-runner","exit":null,"result":"waiting",'
+        '"finished":null,"stamps":["2026-09-05T20:06:14Z waiting on t3-tx-runner"]}'
+    )
+    FINISHED = (
+        '{"job":"co-load","started":"2026-09-05T18:21:35Z","step":"complete","step_index":5,'
+        '"steps_total":5,"unit":"c5-co-marts-counts","exit":0,"result":"complete",'
+        '"finished":"2026-09-05T18:28:30Z","stamps":["2026-09-05T18:28:30Z step5 end rc=0"]}'
+    )
+
+    @staticmethod
+    def host(tmp_path: Path) -> tuple[Path, Path]:
+        runs = tmp_path / "runs"
+        runs.mkdir()
+        sbin = tmp_path / "sbin"
+        sbin.mkdir()
+        for name in ADHOC_RUNNERS:
+            (sbin / name).write_text("#!/bin/bash\n", encoding="utf-8")
+        for job, body in (("tx-step45", TestALiveRunnerIsNeverArchived.WAITING),
+                          ("co-load", TestALiveRunnerIsNeverArchived.FINISHED)):
+            (runs / f"{job}.json").write_text(body, encoding="utf-8")
+            (runs / f"{job}.stamps").write_text("2026-09-05T20:06:14Z waiting\n", "utf-8")
+        return runs, sbin
+
+    def test_the_live_texas_runners_keep_their_scripts_status_and_stamps(
+        self, tmp_path: Path
+    ) -> None:
+        runs, sbin = self.host(tmp_path)
+
+        printed = retire_adhoc_runs(
+            tmp_path,
+            active={
+                "t3-tx-runner.service": f"{sbin}/tx-step3-resume2-runner.sh",
+                "tx-step45-runner.service": f"{sbin}/tx-step45-runner.sh",
+            },
+        )
+
+        assert (runs / "tx-step45.json").exists(), "the operator's poll path was moved"
+        assert (runs / "tx-step45.stamps").exists(), "the verdict's evidence trail was moved"
+        assert (sbin / "tx-step45-runner.sh").exists()
+        assert (sbin / "tx-step3-resume2-runner.sh").exists()
+        assert "deferred: live (t3-tx-runner.service)" in printed
+        assert "deferred: live (tx-step45-runner.service)" in printed
+
+    def test_the_finished_one_beside_them_is_archived_in_the_same_pass(
+        self, tmp_path: Path
+    ) -> None:
+        # A deferral is per-runner, not a refusal: the deploy continues and takes what it can.
+        runs, sbin = self.host(tmp_path)
+
+        retire_adhoc_runs(
+            tmp_path, active={"tx-step45-runner.service": f"{sbin}/tx-step45-runner.sh"}
+        )
+
+        assert (runs / "archive" / "co-load.json").exists()
+        assert not (sbin / "co-load-runner.sh").exists()
+
+    def test_a_status_that_reads_running_defers_with_no_unit_to_name(
+        self, tmp_path: Path
+    ) -> None:
+        # The unit may already be gone from `list-units` while the job is still going — the
+        # file it published is the other half of the same question.
+        runs, sbin = self.host(tmp_path)
+        (runs / "co-load.json").write_text(self.FINISHED.replace("complete", "running"), "utf-8")
+
+        printed = retire_adhoc_runs(tmp_path)
+
+        assert (runs / "co-load.json").exists()
+        assert (sbin / "co-load-runner.sh").exists()
+        assert "deferred: live (co-load" in printed
+
+    def test_the_deferred_one_is_retired_by_the_next_deploy_once_it_has_finished(
+        self, tmp_path: Path
+    ) -> None:
+        runs, sbin = self.host(tmp_path)
+        retire_adhoc_runs(
+            tmp_path, active={"tx-step45-runner.service": f"{sbin}/tx-step45-runner.sh"}
+        )
+        assert (runs / "tx-step45.json").exists()
+
+        (runs / "tx-step45.json").write_text(
+            self.WAITING.replace('"result":"waiting"', '"result":"complete"'), encoding="utf-8"
+        )
+        retire_adhoc_runs(tmp_path)
+
+        assert (runs / "archive" / "tx-step45.json").exists()
+        assert (runs / "archive" / "tx-step45.stamps").exists()
+        assert (runs / "archive" / "tx-step45-runner.sh").exists()
 
     def test_the_five_ad_hoc_runners_are_retired_into_the_archive_not_deleted(
         self, tmp_path: Path
