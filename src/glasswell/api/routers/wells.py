@@ -1251,7 +1251,9 @@ class WellStatusSummary(BaseModel):
 
 
 def _selector_term(name: str, value: str | None) -> str:
-    return f"{name}_null=1" if value is None else identity_selector_term(name, value)
+    """An absence and an empty value are one facet: the grammar admits no empty value, so a
+    source that files "" would otherwise build a handle that refuses the whole response."""
+    return f"{name}_null=1" if not value else identity_selector_term(name, value)
 
 
 def _refuse_bbox(code: str, detail: str, raw: str) -> ProblemError:
