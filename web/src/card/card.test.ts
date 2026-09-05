@@ -1861,6 +1861,36 @@ describe("a re-land keeps the card the reader has", () => {
     expect(host.querySelector(".gw-card")?.getAttribute("aria-busy")).toBeNull();
   });
 
+  it("puts no card-closing dismiss inside a refusal it scoped to one section", async () => {
+    // The × reads `Dismiss this error` and is wired to `onClose`, which main.ts binds to
+    // `selectWell(null)`. Inside the panel the round scoped to the production section, that is
+    // the one-press card loss the scoping exists to prevent, under a label that promises the
+    // opposite.
+    const onClose = vi.fn();
+    await renderWellCard(host, API10, { ...callbacks, onClose });
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(problem(404, "not_found"))));
+
+    window.history.replaceState(null, "", "/?as_of=2026-06-01");
+    await renderWellCard(host, API10, { ...callbacks, onClose });
+
+    const scoped = host.querySelector(".gw-production-chart .gw-error");
+    expect(scoped, "the refusal did not land in the production section").not.toBeNull();
+    for (const button of scoped!.querySelectorAll("button")) button.click();
+    expect(onClose, "a control inside the scoped refusal closed the card").not.toHaveBeenCalled();
+  });
+
+  it("keeps the dismiss on the banner that is the whole card", async () => {
+    // The other half of the same rule: where the panel replaced the card there is nothing else
+    // to dismiss, and the × is how a reader gets rid of it.
+    const onClose = vi.fn();
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(problem(404, "not_found"))));
+
+    await renderWellCard(host, API10, { ...callbacks, onClose });
+    host.querySelector<HTMLButtonElement>(".gw-error .gw-close")?.click();
+
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
   it("moves the reader's focus nowhere, because they are already reading this card", async () => {
     // `land`'s `if (kept) return` — the one H-30 property with no red behind it (H-35).
     // Without it `focusPanel(container)` runs on every press of a server-answered control and

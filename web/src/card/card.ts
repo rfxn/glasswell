@@ -206,7 +206,7 @@ export async function renderWellCard(
     const standingCard = kept ? container.querySelector<HTMLElement>(".gw-card") : null;
     const chart = standingCard?.querySelector<HTMLElement>(".gw-production-chart .gw-frame-body");
     if (standingCard && chart) {
-      chart.replaceChildren(errorPanel(error, callbacks));
+      chart.replaceChildren(errorPanel(error, { onSignIn: callbacks.onSignIn }));
       standingCard.removeAttribute("aria-busy");
       return;
     }
@@ -816,7 +816,9 @@ export async function renderWellCard(
         }),
       );
     } catch (error) {
-      chartHost.replaceChildren(errorPanel(error, callbacks));
+      // Scoped for the same reason the re-land's refusal is: this panel is the chart's frame,
+      // not the card.
+      chartHost.replaceChildren(errorPanel(error, { onSignIn: callbacks.onSignIn }));
     }
   })();
 
@@ -1658,7 +1660,7 @@ export function pendingProductionPanel(
 
 export function errorPanel(
   error: unknown,
-  callbacks: { onClose(): void; onSignIn?(): void },
+  callbacks: { onClose?(): void; onSignIn?(): void },
 ): HTMLElement {
   const element = document.createElement("div");
   element.className = "gw-error";
@@ -1698,13 +1700,17 @@ export function errorPanel(
     body.textContent = String(error);
     element.append(heading, body);
   }
-  const close = document.createElement("button");
-  close.type = "button";
-  close.className = "gw-close";
-  close.setAttribute("aria-label", "Dismiss this error");
-  close.textContent = "×";
-  close.addEventListener("click", callbacks.onClose);
-  element.appendChild(close);
+  // Only where the panel is the whole card: a dismiss inside a panel scoped to one section
+  // reads as "clear this error" and closed the card the scoping exists to keep.
+  if (callbacks.onClose) {
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "gw-close";
+    close.setAttribute("aria-label", "Dismiss this error");
+    close.textContent = "×";
+    close.addEventListener("click", callbacks.onClose);
+    element.appendChild(close);
+  }
   return element;
 }
 
