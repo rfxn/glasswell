@@ -72,6 +72,10 @@ across it silently.
 
 ## 3. Shell bytes — measured, then budgeted
 
+**The table below is C11's, 2026-08-21**, kept because the narrative under it argues from the
+C0 baseline. It is three trains stale as a statement about what ships today; the re-measured
+table after it is the current one, and the budgets are stated against that.
+
 Measured on `npm --prefix web run build`, commit `explorer-c11-integration`, 2026-08-21.
 Gzip is zlib's default level, which is what vite's own size column reports, so every row here
 reconciles against the build log line by line.
@@ -83,6 +87,26 @@ reconciles against the build log line by line.
 | **explorer route, map excluded** | **170,756** | **62,817** | `index-*.js` + `shell-*.js` |
 | map chunk, map-only | 1,153,568 | 313,823 | `map-*.js` + the shared inflate chunk |
 | all JS | 1,324,324 | 376,640 | |
+
+**Re-measured, `fix/v082-register` @ `ea1d0c4`, 2026-09-05.** The map row above had gone
+11,837 B out of date and the budget under it still claimed +5.2% of headroom against it, which
+was really +1.3% — §6's own trend row had recorded 325,700 three days earlier.
+
+| what | raw B | gzip B | chunks |
+|---|---:|---:|---|
+| entry chunk | 40,260 | 13,947 | `index-*.js` |
+| entry chunk + its CSS | 72,036 | 20,753 | `index-*.js` + `index-*.css` |
+| **explorer route, map excluded** | **205,541** | **76,415** | ten chunks, listed below |
+| map chunk, map-only | 1,193,366 | 325,660 | `map-*.js` + the shared inflate chunk |
+| all JS | 1,466,540 | 424,034 | |
+
+**Method**, so the numbers are re-derivable rather than quoted: the walk
+`src/explore/bundle-budget.test.ts` already performs, run against the same build. `vite build`
+with the shipped `vite.config.ts` into a temporary directory; `gzipSync` at zlib level 6, which
+is what vite's own size column reports; the entry chunks read out of the emitted `index.html`;
+the route reached from those plus `shell-*.js` with the map, Status, card, neighbour and
+status-chip branches cut; the map chunk the reach from `map-*.js` minus every chunk the route
+already carries. Two builds of the same tree agreed to the byte on all five rows.
 
 **These numbers jitter by single-digit bytes between builds of the same source.** Two causes,
 both real and both in what the reader downloads: the content-hash in each chunk's filename
@@ -110,9 +134,9 @@ explorer's shell chunk and into the entry. Verified rather than inferred — `gw
 
 | budget | B gzipped | headroom over measured |
 |---|---:|---|
-| entry chunk | 14,000 | +0.4% over 13,950 (v0.78; was +0.5% over 13,928 in v0.76) |
-| explorer route, map excluded | 79,700 | +4.3% over 76,412 (v0.80, re-measured; see below) |
-| map chunk | 330,000 | +5.2% over 313,823 |
+| entry chunk | 14,000 | +0.4% over 13,947 (v0.82, re-measured; 13,950 in v0.78, 13,928 in v0.76) |
+| explorer route, map excluded | 79,700 | +4.3% over 76,415 (v0.82, re-measured; 76,412 at v0.80) |
+| map chunk | 330,000 | +1.3% over 325,660 (v0.82, re-measured; it read +5.2% over C11's 313,823) |
 
 The entry was re-measured again when the well card moved to a dynamic import. `card/card.ts`
 and everything only it reaches — `gw-figure`, `card/format.ts`, the completion and neighbour
@@ -328,8 +352,8 @@ measuring there rather than extrapolating:
   cell heights and the grid's reflow all depend on the actual strings.
 - **martin in front of real tile marts**, which is the only place items 1 and 2 above are both
   true at once.
-- **The network.** Every figure here was measured over loopback. Transfer time for the 62,817 B
-  explorer route and the 313,823 B map chunk is a deployed-instance question.
+- **The network.** Every figure here was measured over loopback. Transfer time for the 76,415 B
+  explorer route and the 325,660 B map chunk is a deployed-instance question.
 - **A real display.** 16.7 ms is this client's vsync; a 120 Hz display quantises to 8.3 ms and
   would resolve work these rows cannot separate.
 
@@ -349,6 +373,7 @@ single green check. Append; do not overwrite.
 | 2026-08-22 | M1-3 | 44,014 | 62,615 | 314,293 | provenance wire field + snapshot coverage: +383 gz on the map chunk (base 88105aa measured 313,910 on this toolchain); entry +10, jitter class |
 | 2026-09-02 | facets-all-jurisdictions | 13,930 | 73,634 | 325,700 | scope becomes a set: +473 gz on the explorer route, +4 on the entry (jitter class — the panel is not on the entry path) and +15 on the map chunk, against a v0.76 baseline re-measured on this toolchain at 13,927 / 73,167 / 325,217. Re-measured after merging v0.77, which is the row shown; the pre-merge measurement was 13,931 / 73,640 / 325,232. The map chunk figure is not comparable with the 313,823 two rows below: the v0.74–v0.76 layers moved it, and nothing here did |
 | 2026-08-31 | facets | 21,340 | 71,511 | 313,823 | "Wells by ..." panel: +3,362 gz on the explorer route, entry and map chunk unchanged. Not split behind a dynamic import — it renders on the `wells` dataset, the one the explorer opens on, so a split buys a second round trip for nearly every reader |
+| 2026-09-05 | `fix/v082-register` @ `ea1d0c4` | 13,947 | 76,415 | 325,660 | a re-measurement, not a change: §3's budget table still stated its map-chunk headroom over C11's 313,823, and the +5.2% that implied was really +1.3%. Nothing on this branch touches a byte budget — the five em-dash rewordings replace a 3-byte glyph with two ASCII characters in four modules, which is inside the jitter band this section already records |
 
 ---
 

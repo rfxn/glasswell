@@ -183,4 +183,49 @@ describe("what the explorer's shell costs the reader", () => {
       );
     }
   });
+
+  /**
+   * The budget table states headroom "over" a measured figure, and that figure went stale
+   * without anything noticing: at v0.81 the map row still read "+5.2% over 313,823" when the
+   * chunk measured 325,660, so the stated headroom was +1.3% and §6's own trend row had
+   * recorded the larger number three days earlier. A budget whose recorded measurement is
+   * fiction reports headroom the tree does not have.
+   *
+   * 3% rather than the byte: this catches a figure a train has left behind (the map row was
+   * 3.6% out) without reddening on the single-digit build jitter §3 documents.
+   */
+  it("keeps the measurement PERF.md quotes beside each budget within 3% of the tree", () => {
+    const map = named("map");
+    const routeCut = reach([...entryChunks(), named("shell")], (name) => name === map);
+    const measured = {
+      "entry chunk": entryChunks().reduce((sum, name) => sum + gzip(name), 0),
+      "explorer route, map excluded": reach(
+        [...entryChunks(), named("shell")],
+        (name) =>
+          name === map ||
+          name === named("surface") ||
+          name === named("neighbors") ||
+          name === named("status-chip") ||
+          name === named("card"),
+      ).reduce((sum, name) => sum + gzip(name), 0),
+      "map chunk": reach([map])
+        .filter((name) => !routeCut.includes(name))
+        .reduce((sum, name) => sum + gzip(name), 0),
+    };
+    const perf = readFileSync(join(WEB, "PERF.md"), "utf8");
+
+    for (const [row, actual] of Object.entries(measured)) {
+      const stated = new RegExp(`^\\| ${row} \\|[^|]*\\|[^|]*over ([\\d,]+)`, "m").exec(perf);
+      expect(stated, `PERF.md's budget table has no "over" figure for ${row}`).not.toBeNull();
+      const recorded = Number((stated as RegExpExecArray)[1]!.split(",").join(""));
+      const drift = Math.abs(recorded - actual) / actual;
+
+      expect(
+        drift,
+        `PERF.md records ${row} at ${recorded} B; it measures ${actual} B here` +
+          " -- re-measure the row and append to \u00a76's trend rather than leaving the budget" +
+          " stating headroom over a figure that no longer exists",
+      ).toBeLessThan(0.03);
+    }
+  });
 });
