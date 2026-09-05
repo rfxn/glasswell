@@ -493,6 +493,51 @@ def test_a_stage_that_dies_for_any_other_reason_is_recorded_the_same_way(
     assert served[0]["state"] == "stale"
 
 
+def test_the_guard_starts_at_the_fetch_commit_and_not_at_the_archive(
+    seeded, raw_root: Path, lineage_env, postgres_password, monkeypatch
+) -> None:
+    """H-18. The inventory read and the restage deletes sit between the fetch commit and the
+    archive block, so a failure in either left the manifest committed and unexplained -- H-13's
+    own shape, inside the guard's own claim."""
+    monkeypatch.setenv("PGPASSWORD", postgres_password)
+    seeded.commit()
+
+    real_inventory = tx_pdq.member_inventory
+    calls: list[Path] = []
+
+    def failing_inventory(path):
+        calls.append(path)
+        if len(calls) > 1:  # the first call is fetch_raw's decompressed_inventory
+            raise MemoryError("cgroup limit reached while reading the member inventory")
+        return real_inventory(path)
+
+    monkeypatch.setattr(tx_pdq, "member_inventory", failing_inventory)
+
+    with durable_fetch_attempts(seeded.info.dsn):
+        with lineage_session(
+            recorder=PostgresRecorder(seeded), environment=lineage_env
+        ), client_for(SAMPLE) as client, pytest.raises(MemoryError):
+            tx_pdq.load(
+                seeded,
+                url=f"https://example.invalid/{SOURCE_KEY}",
+                raw_root=raw_root,
+                client=client,
+                expect_bytes=SAMPLE.stat().st_size,
+                stage_only=True,
+            )
+        seeded.rollback()
+
+    served, _ = source_health_data(
+        seeded, observed_at=datetime.now(UTC), source_ids=["tx_pdq_dsv"]
+    )
+
+    assert scalar(
+        seeded,
+        "select count(*) from lineage.audit_events where event_type = 'staging.load_failed'",
+    ) == 1
+    assert served[0]["state"] == "stale"
+
+
 def test_a_database_error_is_recorded_from_the_aborted_transaction_it_leaves(
     seeded, raw_root: Path, lineage_env, postgres_password, monkeypatch
 ) -> None:

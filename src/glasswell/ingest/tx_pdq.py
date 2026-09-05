@@ -763,19 +763,19 @@ def load(
     # stage_payload() reuses a slot only through owning_slot(), the re-run placed a second copy.
     connection.commit()
     manifest = fetched.manifest
-    members = member_inventory(fetched.payload_path)
-    if restage:
-        with connection.cursor() as cursor:
-            for table in (
-                "tx_pdq_well_completion", "tx_pdq_regulatory_lease", "tx_pdq_lease_cycle"
-            ):
-                cursor.execute(
-                    f"delete from staging.{table} where manifest_id = %s", (manifest.manifest_id,)
-                )
-
     # Everything after the fetch commit is inside this: `_record_staging_load` is stamped in
     # this same transaction, so a promotion that fails unstamps it as surely as a refusal.
     with _staging_outcome_recorded(connection, manifest.manifest_id, rule_id=layout.rule_id):
+        members = member_inventory(fetched.payload_path)
+        if restage:
+            with connection.cursor() as cursor:
+                for table in (
+                    "tx_pdq_well_completion", "tx_pdq_regulatory_lease", "tx_pdq_lease_cycle"
+                ):
+                    cursor.execute(
+                        f"delete from staging.{table} where manifest_id = %s",
+                        (manifest.manifest_id,),
+                    )
         with zipfile.ZipFile(fetched.payload_path) as archive:
             window = production_window(archive, layout)
             districts = district_labels(archive, layout)
