@@ -115,6 +115,15 @@ const entryStyles = (): string[] =>
     (match) => match[1]!,
   );
 
+// The explorer route is one cut, enforced and quoted from the same walk: everything the entry
+// and the shell reach until the chunks a reader downloads only by landing on them.
+function explorerRouteChunks(): string[] {
+  const stops = new Set(
+    ["map", "surface", "neighbors", "status-chip", "card", "drawer", "sheet", "table"].map(named),
+  );
+  return reach([...entryChunks(), named("shell")], (name) => stops.has(name));
+}
+
 describe("what the explorer's shell costs the reader", () => {
   it("keeps the entry chunk inside its budget", () => {
     const measured = entryChunks().reduce((sum, name) => sum + gzip(name), 0);
@@ -178,18 +187,7 @@ describe("what the explorer's shell costs the reader", () => {
     // statically imports the stamped entry chunk, so its own gzip moves with every commit and
     // a figure in a source file read at a later head is a figure that disagrees with the tree.
     const table = named("table");
-    const route = reach(
-      [...entryChunks(), named("shell")],
-      (name) =>
-        name === map ||
-        name === status ||
-        name === neighbors ||
-        name === statusChip ||
-        name === card ||
-        name === drawer ||
-        name === sheet ||
-        name === table,
-    );
+    const route = explorerRouteChunks();
     const measured = route.reduce((sum, name) => sum + gzip(name), 0);
 
     expect(route, "the map chunk is not on the explorer route").not.toContain(map);
@@ -203,6 +201,7 @@ describe("what the explorer's shell costs the reader", () => {
     );
     expect(route, "the lineage drawer is not on the explorer route").not.toContain(drawer);
     expect(route, "the well card's bottom sheet is not on the explorer route").not.toContain(sheet);
+    expect(route, "the table view is not on the explorer route").not.toContain(table);
     expect(measured, `explorer route ${measured} B gzipped over ${route.join(", ")}`).toBeLessThanOrEqual(
       BUDGET_BYTES.explorerRouteGzip,
     );
@@ -260,15 +259,7 @@ describe("what the explorer's shell costs the reader", () => {
     const routeCut = reach([...entryChunks(), named("shell")], (name) => name === map);
     const measured = {
       "entry chunk": entryChunks().reduce((sum, name) => sum + gzip(name), 0),
-      "explorer route, map excluded": reach(
-        [...entryChunks(), named("shell")],
-        (name) =>
-          name === map ||
-          name === named("surface") ||
-          name === named("neighbors") ||
-          name === named("status-chip") ||
-          name === named("card"),
-      ).reduce((sum, name) => sum + gzip(name), 0),
+      "explorer route, map excluded": explorerRouteChunks().reduce((sum, name) => sum + gzip(name), 0),
       "map chunk": reach([map])
         .filter((name) => !routeCut.includes(name))
         .reduce((sum, name) => sum + gzip(name), 0),
