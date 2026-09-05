@@ -6,14 +6,19 @@
       served, and gets the page its own rail links to. A build that resolved no outDir
       refuses rather than guessing one
 - [Fix] Caddy redacts every credential-shaped query parameter in both listeners' access
-      logs, not the four names the API happens to refuse: one `request>uri regexp` covers
-      key, password, secret, token, session, csrf and auth in any identifier, so `?api_key=`
-      no longer takes its 422 and leaves the key in the log
-- [New] The Caddy log filter is gated on completeness rather than on a name list: the shipped
-      pattern is compiled and exercised against every credential-shaped name, against the
-      served parameters it must leave readable, and against everything the API's own
-      access-log filter redacts; a field declared twice in one `fields` block is refused,
-      because Caddy keeps the last one silently
+      logs, not the four names the API happens to refuse: one `request>uri regexp` reads a
+      stem anywhere in the name -- key, pass, pwd, secret, token, session, csrf, auth,
+      credential, sig, jwt, bearer, otp -- so `?api_key=` no longer takes its 422 and leaves
+      the key in the log, and neither do `?pwd=`, `?pass=`, `?credential=`, `?sig=`,
+      `?signature=`, `?jwt=`, `?bearer=` or `?otp=`, which the first alternation logged in
+      full. The API's own access-log filter is built from the same stem list, so the two
+      redact the same names in both directions; it used to miss `session_id=` and `passwd=`
+- [New] The Caddy log filter's gate is derived, not a name list: the shipped pattern's
+      alternation must equal the origin's stem list verbatim, the probe names are generated
+      from that list, the served names come from the committed OpenAPI document with the one
+      the class eats (`source_key`) declared, and every name is checked edge against origin;
+      a field declared twice in one `fields` block is refused, because Caddy keeps the last
+      one silently
 - [Fix] Four sessions migrating four databases on one cluster no longer collide on its
       roles: a migration that loses a cluster-global race is retried inside the runner,
       which is one transaction, so the second attempt takes the branch the winner

@@ -23,6 +23,7 @@ import pytest
 
 from glasswell.api.access_log import (
     ACCESS_LOGGER,
+    CREDENTIAL_QUERY_STEMS,
     REDACTED,
     install_access_log_redaction,
     redact,
@@ -36,9 +37,13 @@ REDACTED_CASES = (
     ("?x_csrf_token=abc", "x_csrf_token=REDACTED", "abc"),
     ("?password=hunter2", "password=REDACTED", "hunter2"),
     ("?csrf=abc", "csrf=REDACTED", "abc"),
-    # Acknowledged over-redaction: `monkey` ends in `key`. A redacted log value is recoverable
-    # from the request; a leaked credential is not.
+    ("?session_id=abc", "session_id=REDACTED", "abc"),
+    ("?pwd=hunter2", "pwd=REDACTED", "hunter2"),
+    ("?signature=abc", "signature=REDACTED", "abc"),
+    # Acknowledged over-redaction: `monkey` ends in `key` and `csrfy` starts with `csrf`. A
+    # redacted log value is recoverable from the request; a leaked credential is not.
     ("?monkey=1", "monkey=REDACTED", None),
+    ("?csrfy=abc", "csrfy=REDACTED", None),
 )
 
 # Every query string this API actually serves, taken off the documented examples. None of them
@@ -48,8 +53,6 @@ UNTOUCHED_CASES = (
     "?h=drv_obqajdni25f25zmxcz7a&format=dot",
     "?bbox=-104,47.5,-103,48.5&explain=true",
     "?state=33&by=operator&top=15",
-    # No match: `csrfy` is not `csrf` followed by `=`.
-    "?csrfy=abc",
 )
 
 
@@ -121,7 +124,7 @@ def test_a_session_token_in_a_log_record_is_redacted() -> None:
     assert bare == "gws_REDACTED"
 
 
-@pytest.mark.parametrize("name", ["key", "password", "token", "session", "csrf"])
+@pytest.mark.parametrize("name", CREDENTIAL_QUERY_STEMS)
 def test_every_credential_shaped_query_parameter_is_redacted_from_a_log(name: str) -> None:
     scrubbed = redact(f"GET /v1/wells?{name}=the-secret-value HTTP/1.1")
 

@@ -66,9 +66,11 @@ http://:8080 {
 				request>headers>X-Api-Key delete
 				# A name list is not a completeness guard: `?api_key=` took its 422 and was
 				# logged in full. One filter per field -- a second `request>uri` entry
-				# silently replaces this one -- so the pattern covers the class the API's own
-				# access-log filter covers, and over-redacting is the safe direction.
-				request>uri regexp "(?i)([?&][\w-]*(?:key|password|passwd|secret|token|session|csrf|auth)[\w-]*=)[^&]*" "${1}REDACTED"
+				# silently replaces this one. The alternation is CREDENTIAL_QUERY_STEMS in
+				# src/glasswell/api/access_log.py, verbatim, and a stem anywhere in the name
+				# redacts it, so `source_key=` is redacted too; over-redacting is the safe
+				# direction, and the gate reds when this line and the origin differ.
+				request>uri regexp "(?i)([?&][\w-]*(?:key|pass|pwd|secret|token|session|csrf|auth|credential|sig|jwt|bearer|otp)[\w-]*=)[^&]*" "${1}REDACTED"
 			}
 		}
 	}
@@ -159,9 +161,11 @@ glasswell.lab.rpx.sh {
 				# which is how a key reached a log here once before and had to be rotated.
 				# A name list is not a completeness guard: `?api_key=` took its 422 and was
 				# logged in full. One filter per field -- a second `request>uri` entry
-				# silently replaces this one -- so the pattern covers the class the API's own
-				# access-log filter covers, and over-redacting is the safe direction.
-				request>uri regexp "(?i)([?&][\w-]*(?:key|password|passwd|secret|token|session|csrf|auth)[\w-]*=)[^&]*" "${1}REDACTED"
+				# silently replaces this one. The alternation is CREDENTIAL_QUERY_STEMS in
+				# src/glasswell/api/access_log.py, verbatim, and a stem anywhere in the name
+				# redacts it, so `source_key=` is redacted too; over-redacting is the safe
+				# direction, and the gate reds when this line and the origin differ.
+				request>uri regexp "(?i)([?&][\w-]*(?:key|pass|pwd|secret|token|session|csrf|auth|credential|sig|jwt|bearer|otp)[\w-]*=)[^&]*" "${1}REDACTED"
 			}
 		}
 	}

@@ -7,19 +7,22 @@ credential matters most, because it is the one the internet reaches.
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
 import pytest
 
 from glasswell.api import REFUSED_QUERY_PARAMS, UNREAD_CREDENTIAL_HEADERS
-from glasswell.api.access_log import redact
+from glasswell.api.access_log import CREDENTIAL_QUERY_STEMS, redact
 from glasswell.api.csrf import CSRF_HEADER
 from glasswell.api.examples import KEY_HEADER
 
 pytestmark = pytest.mark.unit
 
-CADDYFILE = Path(__file__).resolve().parents[2] / "infra" / "caddy" / "Caddyfile"
+ROOT = Path(__file__).resolve().parents[2]
+CADDYFILE = ROOT / "infra" / "caddy" / "Caddyfile"
+OPENAPI = ROOT / "tests" / "contract" / "openapi_snapshot.json"
 DELETED_HEADERS = (KEY_HEADER, "Cookie", CSRF_HEADER)
 
 
@@ -91,29 +94,50 @@ def test_each_log_block_writes_somewhere_of_its_own() -> None:
     assert len(outputs) == len(log_blocks()), "two listeners share one log file"
 
 
-# Names the API refuses outright, plus the shapes a caller reaches for when it will not take
-# them. Over-redacting is the safe direction and the API's own filter already says so: a
-# redacted log value is recoverable from the request, a leaked credential is not.
-# The four the API refuses have their own case above; these are the shapes it does not name.
-CREDENTIAL_QUERY_NAMES = (
+# Names that reached a log in full at some point: `api_key` took its 422 through the four-name
+# delete list (REG-V3), and the v0.83 sentinel's live caddy probe logged the other eight through
+# the first alternation. A regression corpus, not the definition of the class -- that is
+# CREDENTIAL_QUERY_STEMS, and the cases below are generated from it.
+LOGGED_IN_FULL_ONCE = (
     "api_key",
-    "apikey",
-    "owner_key",
-    "access_token",
-    "refresh_token",
-    "id_token",
-    "secret",
-    "client_secret",
-    "session",
-    "session_id",
-    "csrf",
-    "csrf_token",
-    "auth",
-    "authorization",
-    "passwd",
+    "pwd",
+    "pass",
+    "credential",
+    "sig",
+    "signature",
+    "jwt",
+    "bearer",
+    "otp",
 )
-# Served parameters. A log that redacts these stops being readable, which is its own failure.
-SERVED_QUERY_NAMES = ("limit", "cursor", "as_of", "valid_at", "source_id", "bbox", "include")
+# The served names the class eats, by design: a stem inside an identifier is redacted, and
+# `source_key` carries one. The origin redacts it the same way. A new served name that lands
+# here is a naming decision to take, not a silent loss of the log.
+OVER_REDACTED_SERVED = frozenset({"source_key"})
+
+
+def generated_names() -> list[str]:
+    """One name per shape a caller reaches for, per stem: bare, prefixed, suffixed, hyphenated
+    and capitalised. Derived, so a stem added to the origin is probed here without an edit."""
+    return [
+        shape
+        for stem in CREDENTIAL_QUERY_STEMS
+        for shape in (stem, f"x_{stem}", f"{stem}_id", f"X-{stem.capitalize()}-2")
+    ]
+
+
+def served_query_names() -> list[str]:
+    """Every query parameter the committed OpenAPI document serves."""
+    document = json.loads(OPENAPI.read_text(encoding="utf-8"))
+    return sorted(
+        {
+            parameter["name"]
+            for item in document["paths"].values()
+            for operation in item.values()
+            if isinstance(operation, dict)
+            for parameter in operation.get("parameters", [])
+            if parameter.get("in") == "query"
+        }
+    )
 
 
 def uri_regexps() -> list[re.Pattern[str]]:
@@ -156,31 +180,64 @@ def fields_entries() -> list[list[str]]:
     return declared
 
 
-@pytest.mark.parametrize("name", CREDENTIAL_QUERY_NAMES)
-def test_the_uri_pattern_covers_every_credential_shaped_query_parameter(name: str) -> None:
+def shipped_alternations() -> list[list[str]]:
+    """The stem alternation each log block ships, read out of the file."""
+    alternations = []
+    for pattern, _ in uri_regexps():
+        match = re.search(r"\(\?:([^()]+)\)", pattern.pattern)
+        assert match, f"no stem alternation in {pattern.pattern!r}"
+        alternations.append(match.group(1).split("|"))
+    return alternations
+
+
+def test_the_shipped_alternation_is_the_origin_stem_list_verbatim() -> None:
+    """One list, two filters. The edge logs first, and a stem the origin learns that the edge
+    does not is the sentinel's eight leaks again."""
+    for alternation in shipped_alternations():
+        assert alternation == list(CREDENTIAL_QUERY_STEMS)
+
+
+@pytest.mark.parametrize("name", generated_names())
+def test_every_name_the_class_generates_is_redacted_at_the_edge(name: str) -> None:
     """`delete key` covered the four names the API refuses and nothing else. A caller who
     guesses `?api_key=` gets a 422 and leaves the key in the log, which is REG-V3's incident
-    one field along."""
+    one field along. The names are generated from the stem list, not chosen to match."""
     for logged in redacted_at_the_edge(name):
         assert "OWNERKEY" not in logged, f"?{name}= reaches the access log in full"
         assert "limit=5" in logged, f"?{name}= redaction ate the rest of the query"
 
 
-@pytest.mark.parametrize("name", SERVED_QUERY_NAMES)
-def test_the_uri_pattern_leaves_the_served_parameters_readable(name: str) -> None:
+@pytest.mark.parametrize("name", LOGGED_IN_FULL_ONCE)
+def test_every_name_that_once_reached_a_log_in_full_is_redacted(name: str) -> None:
     for logged in redacted_at_the_edge(name):
-        assert f"{name}=OWNERKEY" in logged, f"?{name}= is redacted; the log stops being usable"
+        assert "OWNERKEY" not in logged, f"?{name}= reaches the access log in full again"
 
 
-@pytest.mark.parametrize("name", CREDENTIAL_QUERY_NAMES + SERVED_QUERY_NAMES)
-def test_the_edge_redacts_everything_the_origin_redacts(name: str) -> None:
-    """The API's own filter is the second line for anything that reaches uvicorn. The edge
-    logs first, so it must not be the looser of the two."""
+def test_the_served_parameters_stay_readable_except_the_declared_over_redaction() -> None:
+    """A log that redacts the request's own parameters has stopped being a record of what was
+    asked. The served names come from the OpenAPI document, so a new one is measured; the
+    ones the class eats are declared, so the set cannot grow silently."""
+    eaten = {
+        name
+        for name in served_query_names()
+        if any(f"{name}=OWNERKEY" not in logged for logged in redacted_at_the_edge(name))
+    }
+
+    assert eaten == OVER_REDACTED_SERVED
+
+
+@pytest.mark.parametrize(
+    "name", [*generated_names(), *served_query_names(), *LOGGED_IN_FULL_ONCE]
+)
+def test_the_edge_and_the_origin_redact_the_same_names(name: str) -> None:
+    """The API's own filter is the second line for anything that reaches uvicorn. Both derive
+    from one stem list and read a stem anywhere in the name, so they agree in both directions:
+    the edge is never the looser of the two, and never eats a name the origin keeps."""
     line = f"/v1/wells?{name}=OWNERKEY&limit=5"
-    if redact(line) == line:
-        return
+    at_the_origin = "OWNERKEY" not in redact(line)
+
     for logged in redacted_at_the_edge(name):
-        assert "OWNERKEY" not in logged, f"the origin redacts ?{name}= and the edge does not"
+        assert ("OWNERKEY" not in logged) == at_the_origin, f"?{name}= differs edge to origin"
 
 
 def test_no_log_block_declares_one_field_twice() -> None:
