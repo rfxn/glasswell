@@ -161,12 +161,10 @@ done
 # holds the installed copy equal to the tree.
 install -o root -g root -m 0755 "$INFRA_DIR/bin/host-runner.sh" "$SBIN_DIR/host-runner.sh"
 
-# The five ad-hoc runners of 2026-09-05, retired by the one that replaces them — scripts and
-# status files together, because `co-load` is the Colorado runbook's job name and the ad-hoc
-# verdict sitting under it refuses the first tracked run. Archived rather than deleted: a load's
-# own record is the evidence that it happened. A status file carrying `"log":` was written by
-# the tracked runner and is a live job, never a leftover, so a deploy that lands mid-load
-# archives nothing.
+# The five ad-hoc runners of 2026-09-05, scripts and status files together: `co-load` is the
+# Colorado runbook's job name and the ad-hoc verdict under it refuses the first tracked run.
+# Archived, never deleted — a load's own record is the evidence it happened. `"log":` is the
+# tracked grammar, so a live job is never archived by a deploy that lands mid-load.
 retire_adhoc_runs() {
     local archive="$RUNS_DIR/archive" script status sidecar
     # No -o/-g: install.sh is root-only (line 65), so the archive is root's, and the

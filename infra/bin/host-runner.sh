@@ -477,9 +477,9 @@ fi
 
 (( steps_total > index_offset )) || fail_usage "no steps"
 
-# A simple assignment takes the exit of the LAST substitution in it, so the guard on the old
-# one-liner watched `basename` and a `cd` that failed left `/host-runner.sh` here — the path
-# `--detach` re-executes and every runbook's poll line quotes.
+# Its own function because a simple assignment takes the exit of the LAST substitution in it:
+# guarded inline, a failed `cd` here would leave `/host-runner.sh` as the path `--detach`
+# re-executes and every runbook's poll line quotes.
 resolve_self_path() {
     local invoked=$1 directory
     directory=$(cd -- "$(dirname -- "$invoked")" && pwd) || return 1
@@ -587,9 +587,8 @@ wait_for_job() {
     while :; do
         finished_at=$(status_field "$awaited" finished)
         [[ -n $finished_at ]] && break
-        # The job followed may never finish, and a follower that waits forever is a stuck job
-        # nobody is told about. The deadline is in the step label, so a poller reads how long
-        # it has out of the same file it reads the state from.
+        # A follower waiting forever is a stuck job nobody is told about. The deadline is in
+        # the step label, so a poller reads it from the file it reads the state from.
         if (( $(date -u +%s) >= expires )); then
             printf 'STOP: job %s has not finished after %s seconds (deadline %s) — this job does not wait longer\n' \
                 "$after_job" "$after_timeout" "$deadline"
@@ -691,10 +690,9 @@ run_step() {
         if [[ $evidence == found ]]; then step_failed=0; else step_failed=1; fi
     fi
 
-    # The words systemd itself answers with when the step did not end on its own terms
-    # (`systemd.service(5)` Result). A SIGKILLed unit says `signal`, a dumped one `core-dump`;
-    # `killed` and `abort` were in this list and systemd says neither, so a signal-killed step
-    # did not hard-stop and --keep-going ran the chain on over it.
+    # `systemd.service(5)` Result words for a step the host ended rather than the step itself:
+    # a SIGKILLed unit says `signal`, a dumped one `core-dump`. `exit-code` is deliberately not
+    # here — a step that failed and said so is what --keep-going carries on past.
     case "$systemd_result" in
         signal|core-dump|oom-kill|timeout|watchdog|start-limit-hit|resources|protocol)
             step_hard_stop=1 ;;
