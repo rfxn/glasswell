@@ -471,3 +471,17 @@ def test_the_re_run_of_a_refused_stage_clears_its_own_refusal(db, lineage_env) -
     load_ref(db, lineage_env, manifest_id)
 
     assert by_id(db)["nd_mpr_xlsx"]["state"] == "current"
+
+
+def test_the_column_this_query_reads_says_in_the_schema_what_its_absence_means(db) -> None:
+    """H-15. 003_manifests.sql declared `staging_load_ref` with an FK and no comment, and three
+    modules now turn on what a null in it means. An invariant that lives only in prose is one a
+    schema reader cannot check, so 083 writes it where `\\d+` shows it."""
+    comment = db.execute(
+        "select col_description('lineage.manifests'::regclass, attnum)"
+        "  from pg_attribute"
+        " where attrelid = 'lineage.manifests'::regclass and attname = 'staging_load_ref'"
+    ).fetchone()[0]
+
+    assert comment is not None, "staging_load_ref carries no column comment"
+    assert "fetched and never parsed" in comment

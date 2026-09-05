@@ -28,3 +28,7 @@
       against the manifest, not only a refused header: a memory kill, a database
       error or the per-year headroom refusal now leave the same staging.load_failed
       event and the same stale source the header refusal does
+- [Change] The scheduler reads staging refusals through lineage.staging_load_failures
+         rather than lineage.audit_events, so the least-privileged role gains one
+         column of one event type instead of the account and session trail the same
+         table carries

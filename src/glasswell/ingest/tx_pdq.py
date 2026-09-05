@@ -701,9 +701,10 @@ def _record_staging_load(
 ) -> None:
     """Both passes read the artifact through, so the manifest names the derivation that did it.
 
-    `staging_load_ref` (003_manifests.sql:24) has meant this since the schema was written and
-    nothing set it. Its absence on a head manifest is what lets status.source_health tell a
-    fetch that was parsed from one that was only fetched.
+    003_manifests.sql declared `staging_load_ref` and nothing ever set it or wrote down what
+    it meant; the column comment 083 adds is where that meaning now lives. Its absence on a
+    head manifest is what lets status.source_health tell a fetch that was parsed from one that
+    was only fetched.
     """
     with connection.cursor() as cursor:
         cursor.execute(

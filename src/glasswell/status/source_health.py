@@ -24,18 +24,21 @@ select s.source_id,
        -- The parse's half of freshness. A fetch and a parse are two outcomes: an ingest that
        -- keeps its manifest when the parse refuses leaves an honestly successful poll behind,
        -- so the poll alone cannot say whether the artifact was ever read. A stamped manifest
-       -- (staging_load_ref, 003_manifests.sql:24) is loaded and that is the end of it -- a
-       -- re-run of a refused stage reaches the same bytes and so the same manifest, and its
-       -- old refusal must not outlive the parse that succeeded. An unstamped one counts as
-       -- unloaded when a refusal was recorded against it, or when the source stamps its loads
-       -- at all, which is the backstop for a run that died before it could record one.
+       -- (staging_load_ref, whose meaning is the column comment 083 writes) is loaded and that
+       -- is the end of it -- a re-run of a refused stage reaches the same bytes and so the same
+       -- manifest, and its old refusal must not outlive the parse that succeeded. An unstamped
+       -- one counts as unloaded when a refusal was recorded against it, or when the source
+       -- stamps its loads at all, which is the backstop for a run that died before it could
+       -- record one. The refusals arrive through lineage.staging_load_failures, a view 083 adds
+       -- over the audit stream: the least-privileged role that runs this query would otherwise
+       -- need select on a table that also carries the account and session trail. Naming the
+       -- table here would put it back in the grant, which the registry test extracts from this
+       -- string.
        coalesce(artifact.manifest_id is not null
             and artifact.staging_load_ref is null
             and (
-                 exists (select 1 from lineage.audit_events e
-                          where e.event_type = 'staging.load_failed'
-                            and e.subject_type = 'manifest'
-                            and e.subject_id = artifact.manifest_id)
+                 exists (select 1 from lineage.staging_load_failures f
+                          where f.manifest_id = artifact.manifest_id)
               or exists (select 1 from lineage.manifests loaded
                           where loaded.source_id = s.source_id
                             and loaded.staging_load_ref is not null)
