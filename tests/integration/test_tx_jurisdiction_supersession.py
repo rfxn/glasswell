@@ -20,6 +20,7 @@ from glasswell.db.migrate import discover_migrations
 from glasswell.lineage.clock import utc_today
 from glasswell.lineage.jurisdictions import clear_jurisdiction_cache, load_jurisdictions
 from glasswell.seed import seed_all
+from glasswell.seed.conformance_basin_context import BASIN_CONTEXT
 from glasswell.seed.jurisdictions import (
     PRESENTATION_COLUMNS,
     REGISTERED_ON,
@@ -115,12 +116,15 @@ def test_the_supersession_carries_every_presentation_column_forward(
         assert after[column] == before[column]
 
 
-def test_the_supersession_carries_the_five_decisions_it_inherits_and_adds_four(
+def test_the_supersession_carries_the_six_decisions_it_inherits_and_adds_four(
     db: psycopg.Connection,
 ) -> None:
     """basin_scope and length_source are read by the seam's MartProfile engine for behaviour,
     so dropping either would silently remove Texas's lateral-length measurement and its basin
-    CRS from the tile mart while the mart went on running."""
+    CRS from the tile mart while the mart went on running. basin_context is here because it was
+    the one that was dropped: every Texas card served its basin decision with a null rule until
+    this row was added, and the registry-wide assertion that catches the class lives in
+    test_marts_basin_context.py."""
     seed_all(db)
 
     carried = rules(db, resolved(db, TX_SUPERSEDED_ON, REGISTERED_ON))
@@ -134,7 +138,8 @@ def test_the_supersession_carries_the_five_decisions_it_inherits_and_adds_four(
     assert carried["liquids"] == "cr_tx_liquids_basis_1"
     assert carried["geometry_provenance"] == "cr_tx_geometry_provenance_1"
     assert carried["cumulatives_scope"] == "cr_tx_allocation_v0_1"
-    assert len(carried) == len(TX_SUPERSEDED_RULES) == 9
+    assert carried[BASIN_CONTEXT] == "cr_tx_basin_context_1"
+    assert len(carried) == len(TX_SUPERSEDED_RULES) == 10
 
 
 def test_texas_had_no_geometry_provenance_decision_before_this_track(

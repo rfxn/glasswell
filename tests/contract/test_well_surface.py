@@ -109,6 +109,29 @@ def test_the_basin_is_a_served_answer_with_a_class_and_a_rule(
     assert body["rule_id"] == "cr_nd_basin_context_1"
 
 
+def test_every_served_basin_block_names_the_rule_that_decided_it(
+    client: TestClient, basin_context: psycopg.Connection
+) -> None:
+    """R8 where a reader meets it: a basin decision with no rule is a mapping that exists only
+    in code. Every Texas card served `rule_id: null` for the life of the v0.80 supersession,
+    which carried nine of its decisions forward and not `basin_context`, and the only rule_id
+    assertion in this suite named North Dakota. Read off the mart rather than a list of wells,
+    so a jurisdiction added to the fixture is covered by writing no test at all.
+    """
+    with basin_context.cursor() as cursor:
+        cursor.execute("select api10 from marts.well_basin_context order by api10")
+        served = [row[0] for row in cursor.fetchall()]
+    assert served, "the fixture served no basin rows"
+
+    silent = [
+        api10
+        for api10 in served
+        if client.get(f"/v1/wells/{api10}").json()["data"]["basin_context"]["rule_id"] is None
+    ]
+
+    assert silent == [], f"served basin blocks naming no rule: {silent}"
+
+
 def test_plays_are_plural_because_they_stack(
     client: TestClient, basin_context: psycopg.Connection
 ) -> None:
