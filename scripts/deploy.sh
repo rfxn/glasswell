@@ -306,17 +306,18 @@ step "6d2. basin-context mart"
 remote "sudo -u glasswell env $code_env $VENV/bin/python -m glasswell.marts.well_basin_context --dsn '$SOCKET_DSN'" \
     || refuse "basin context refresh failed"
 
-# Exits 0 with a stated outcome on a host that has never fetched the 440 MB archive: nothing
-# to promote is a plan, not a failure.
 # The per-well series for every jurisdiction whose production_grain rule registers a served
 # rollup, which is New Mexico's 15.4 M summed well-month-stream rows. Registry-driven and
 # rebuilt whole, so it is idempotent for the reason 6d and 6d2 are — and it is a step because
 # the v0.83 ship seeded the registration that drives it and refreshed nothing, which serves the
-# state as no series rather than as a sum.
+# state as no series rather than as a sum. Unlike 6e below, a failure here refuses the ship:
+# an empty rollup is not a stated outcome, it is the defect this step exists to end.
 step "6d3. per-well pool rollup mart"
 remote "sudo -u glasswell env $code_env $VENV/bin/python -m glasswell.marts.well_pool_rollup --dsn '$SOCKET_DSN'" \
     || refuse "pool rollup refresh failed"
 
+# Exits 0 with a stated outcome on a host that has never fetched the 440 MB archive: nothing
+# to promote is a plan, not a failure.
 step "6e. FracFocus completion-design backfill"
 remote "sudo -u glasswell env $code_env $VENV/bin/glasswell-fracfocus --promote-design --dsn '$SOCKET_DSN'" \
     || refuse "completion-design backfill failed"
