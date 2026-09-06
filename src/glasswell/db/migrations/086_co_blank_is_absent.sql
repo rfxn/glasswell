@@ -37,8 +37,8 @@
 
 insert into lineage.conformance_rule_publications
     (rule_id, published_vintage, evidence_tag, evidence_commit)
-select rule_id, date '2026-09-05', 'UNRELEASED',
-       '0000000000000000000000000000000000000000'
+select rule_id, date '2026-09-06', 'v0.83',
+       'ac9cccd4541112bad96ec5a420b890b9a9cbde0d'
   from unnest(array[
        'cr_co_wells_shp_blank_is_absent_1',
        'cr_co_directional_bh_blank_is_absent_1',

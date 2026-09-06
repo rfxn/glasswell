@@ -50,8 +50,8 @@
 -- evidence in the track's own migration.
 insert into lineage.conformance_rule_publications
     (rule_id, published_vintage, evidence_tag, evidence_commit)
-select rule_id, date '2026-09-03', 'UNRELEASED',
-       '0000000000000000000000000000000000000000'
+select rule_id, date '2026-09-06', 'v0.83',
+       'ac9cccd4541112bad96ec5a420b890b9a9cbde0d'
   from unnest(array[
        'cr_status_class_domain_1', 'cr_status_absence_basis_1', 'cr_status_absence_share_1',
        'cr_mt_bogc_pool_rollup_1', 'cr_nm_wcproduction_pool_rollup_2',
@@ -118,7 +118,7 @@ select 'cr_status_class_domain_1', 'cr_status_class_domain', null, 'nd_mpr_xlsx'
        ' this decision, so they are carried forward rather than caused by it, and the palette'
        ' question they raise is routed to BRAND.md.',
        'https://glasswell.rpx.sh/conformance',
-       'glasswell.lineage.status_classes:load_status_classes', date '2026-09-03'
+       'glasswell.lineage.status_classes:load_status_classes', date '2026-09-06'
  where exists (select 1 from lineage.sources where source_id = 'nd_mpr_xlsx')
 on conflict (rule_id) do nothing;
 
@@ -148,7 +148,7 @@ select 'cr_status_absence_basis_1', 'cr_status_absence_basis', null, 'nd_mpr_xls
        ' A second class for a filed-but-unmapped code would mint a vocabulary entry for a fact'
        ' the registered mapping rule already answers.',
        'https://glasswell.rpx.sh/conformance',
-       'glasswell.status_resolution:resolved_status', date '2026-09-03'
+       'glasswell.status_resolution:resolved_status', date '2026-09-06'
  where exists (select 1 from lineage.sources where source_id = 'nd_mpr_xlsx')
 on conflict (rule_id) do nothing;
 
@@ -180,7 +180,7 @@ select 'cr_status_absence_share_1', 'cr_status_absence_share', null, 'nd_mpr_xls
        ' with room for a load rather than at it, because a threshold set at the measurement'
        ' reddens on the next county rather than on the fault it exists to catch.',
        'https://glasswell.rpx.sh/conformance',
-       'glasswell.lineage.status_classes:absence_share_ceiling', date '2026-09-03'
+       'glasswell.lineage.status_classes:absence_share_ceiling', date '2026-09-06'
  where exists (select 1 from lineage.sources where source_id = 'nd_mpr_xlsx')
 on conflict (rule_id) do nothing;
 
@@ -254,7 +254,7 @@ insert into lineage.status_classes
     (status_canonical, label, colour, glyph, min_zoom, sort_order, note, is_absence, rule_id,
      effective_from, published_at, rationale)
 select d.status_canonical, d.label, d.colour, d.glyph, d.min_zoom, d.sort_order, d.note,
-       d.is_absence, d.rule_id, date '2026-09-03', date '2026-09-03',
+       d.is_absence, d.rule_id, date '2026-09-06', date '2026-09-06',
        'The class domain is a decision with a rationale and an effective date, not the union of'
        ' five per-regulator maps computed at runtime. Every mapping targets this set through a'
        ' foreign key, so a class outside it is a mapping with no published decision behind it.'
@@ -606,7 +606,7 @@ insert into lineage.jurisdictions (
     map_colour, neighbors_available, explorer_default, land_grid_state, land_grid_scope,
     status_dataset_detail, rationale, wells_layer_id, wells_style_layer_ids, wells_draw_order,
     wells_default_on, wells_snapshot_key, wells_subtitle_template, legend_note)
-select prior.jurisdiction_code, prior.effective_from, date '2026-09-05',
+select prior.jurisdiction_code, prior.effective_from, date '2026-09-06',
        evidence.evidence_tag, evidence.evidence_commit,
        prior.name, prior.regulator_name, prior.regulator_url,
        prior.identity_scheme, prior.identity_is_unique, prior.identity_prefix,
@@ -628,18 +628,18 @@ select prior.jurisdiction_code, prior.effective_from, date '2026-09-05',
 -- because Montana has none to copy and New Mexico's has to repoint to the successor.
 insert into lineage.jurisdiction_rules
     (jurisdiction_code, effective_from, published_at, decision, rule_id, serving, note)
-select prior.jurisdiction_code, prior.effective_from, date '2026-09-05', prior.decision,
+select prior.jurisdiction_code, prior.effective_from, date '2026-09-06', prior.decision,
        prior.rule_id, prior.serving, prior.note
   from lineage.jurisdiction_rules prior
   join lineage.jurisdictions restated
     on restated.jurisdiction_code = prior.jurisdiction_code
    and restated.effective_from = prior.effective_from
-   and restated.published_at = date '2026-09-05'
+   and restated.published_at = date '2026-09-06'
  where prior.jurisdiction_code in ('MT', 'NM')
    and prior.decision <> 'production_grain'
    and prior.published_at = (select max(p.published_at) from lineage.jurisdiction_rules p
                               where p.jurisdiction_code = prior.jurisdiction_code
-                                and p.published_at < date '2026-09-05')
+                                and p.published_at < date '2026-09-06')
 on conflict do nothing;
 
 -- Montana's, which closes a live R8 violation with no code change: 389 API-10s carry a summed
@@ -653,7 +653,7 @@ select restated.jurisdiction_code, restated.effective_from, restated.published_a
        'production_grain', 'cr_mt_bogc_pool_rollup_1', true, null
   from lineage.jurisdictions restated
  where restated.jurisdiction_code = 'MT'
-   and restated.published_at = date '2026-09-05'
+   and restated.published_at = date '2026-09-06'
    and exists (select 1 from lineage.conformance_rules c
                 where c.rule_id = 'cr_mt_bogc_pool_rollup_1')
 on conflict do nothing;
@@ -674,7 +674,7 @@ select restated.jurisdiction_code, restated.effective_from, restated.published_a
                   then 'cr_nm_wcproduction_pool_rollup_2'
                   else 'cr_nm_wcproduction_pool_rollup_1' end as rule_id) successor
  where restated.jurisdiction_code = 'NM'
-   and restated.published_at = date '2026-09-05'
+   and restated.published_at = date '2026-09-06'
    and exists (select 1 from lineage.conformance_rules c
                 where c.rule_id = successor.rule_id)
 on conflict do nothing;

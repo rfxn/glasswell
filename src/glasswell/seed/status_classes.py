@@ -25,11 +25,11 @@ from glasswell.status_resolution import UNMAPPED_CLASS
 # is not resolvable and there is nothing for a second clock to answer. The two clocks the
 # decision does carry live on cr_status_class_domain_1 through conformance_rule_publications.
 # The integrator repoints this beside the evidence pair, per the migration's REPOINT CHECKLIST.
-DOMAIN_EFFECTIVE_FROM = date(2026, 9, 3)
-DOMAIN_EVIDENCE_TAG = "UNRELEASED"
+DOMAIN_EFFECTIVE_FROM = date(2026, 9, 6)
+DOMAIN_EVIDENCE_TAG = "v0.83"
 # Spelled out rather than computed: release.py scans this file for the quoted placeholder, and
 # an expression that evaluates to it is invisible to that scan.
-DOMAIN_EVIDENCE_COMMIT = "0000000000000000000000000000000000000000"
+DOMAIN_EVIDENCE_COMMIT = "ac9cccd4541112bad96ec5a420b890b9a9cbde0d"
 
 # The eleven mapped classes and the one absence class, in legend order. Every label, glyph and
 # min_zoom is carried across verbatim from what the canvas already draws. Two things are

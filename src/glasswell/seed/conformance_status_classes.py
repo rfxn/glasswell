@@ -18,7 +18,7 @@ from psycopg.types.json import Jsonb
 
 # Valid time: the release these decisions are published in. The integrator repoints it beside
 # seed/status_classes.py's DOMAIN_EFFECTIVE_FROM, per the migration's REPOINT CHECKLIST.
-EFFECTIVE_FROM = date(2026, 9, 3)
+EFFECTIVE_FROM = date(2026, 9, 6)
 
 CLASS_DOMAIN_RULE_ID = "cr_status_class_domain_1"
 ABSENCE_BASIS_RULE_ID = "cr_status_absence_basis_1"

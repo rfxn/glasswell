@@ -237,8 +237,9 @@ def test_the_grain_restatement_carries_its_registrations_rule_rows(
     with db.cursor(row_factory=dict_row) as cursor:
         cursor.execute(
             "select jurisdiction_code, decision, rule_id from lineage.jurisdiction_rules"
-            " where published_at = %s order by jurisdiction_code, decision, rule_id",
-            (GRAIN_RESTATED_ON,),
+            " where published_at = %s and jurisdiction_code = any(%s)"
+            " order by jurisdiction_code, decision, rule_id",
+            (GRAIN_RESTATED_ON, list(GRAIN_RESTATED_CODES)),
         )
         landed = [
             (row["jurisdiction_code"], row["decision"], row["rule_id"])
@@ -246,8 +247,8 @@ def test_the_grain_restatement_carries_its_registrations_rule_rows(
         ]
         cursor.execute(
             "select jurisdiction_code from lineage.jurisdictions where published_at = %s"
-            " order by jurisdiction_code",
-            (GRAIN_RESTATED_ON,),
+            " and jurisdiction_code = any(%s) order by jurisdiction_code",
+            (GRAIN_RESTATED_ON, list(GRAIN_RESTATED_CODES)),
         )
         restated = [row["jurisdiction_code"] for row in cursor.fetchall()]
 
@@ -328,8 +329,8 @@ def test_the_migration_is_the_writer_where_the_source_registry_is_already_reside
         assert cursor.fetchone()[0] == 1
         cursor.execute(
             "select jurisdiction_code from lineage.jurisdictions where published_at = %s"
-            " order by 1",
-            (GRAIN_RESTATED_ON,),
+            " and jurisdiction_code = any(%s) order by 1",
+            (GRAIN_RESTATED_ON, list(GRAIN_RESTATED_CODES)),
         )
         assert [row[0] for row in cursor.fetchall()] == sorted(GRAIN_RESTATED_CODES)
 

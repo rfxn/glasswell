@@ -49,12 +49,12 @@ RESTATED_EVIDENCE_COMMIT = "5b37bf0363095b3e0cda2d6c3fb5d57e235de28f"
 # append at an instant that was already published. Strictly later than every published_at
 # already on the table, and not a founding date plus one day, for the reasons the migration's
 # REPOINT CHECKLIST gives.
-GRAIN_RESTATED_ON = date(2026, 9, 5)
+GRAIN_RESTATED_ON = date(2026, 9, 6)
 GRAIN_RESTATED_CODES = ("MT", "NM")
-GRAIN_EVIDENCE_TAG = "UNRELEASED"
+GRAIN_EVIDENCE_TAG = "v0.83"
 # Spelled out, not computed: the release gate greps for the literal, and a placeholder it
 # cannot see is a placeholder that ships.
-GRAIN_EVIDENCE_COMMIT = "0000000000000000000000000000000000000000"
+GRAIN_EVIDENCE_COMMIT = "ac9cccd4541112bad96ec5a420b890b9a9cbde0d"
 
 # Knowledge time of the Texas supersession that registers the allocation. Strictly later than
 # every published_at Texas already carries, or it does not resolve and Texas goes on serving the
