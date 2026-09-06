@@ -9,6 +9,8 @@ apply on the same day raises instead of being quietly absorbed.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import psycopg
 import pytest
 from psycopg.rows import dict_row
@@ -17,6 +19,7 @@ from glasswell.db.migrate import discover_migrations
 from glasswell.seed import seed_all
 from glasswell.seed.jurisdictions import (
     FOUNDING_JURISDICTIONS,
+    GRAIN_RESTATEMENTS,
     JURISDICTION_RESTATEMENTS,
     JURISDICTION_RULES,
     JURISDICTION_RULES_AS_FOUNDED,
@@ -95,6 +98,9 @@ def test_the_founding_registration_still_answers_under_its_own_knowledge_cut(
 def test_the_restatement_is_published_strictly_later_than_every_founding_row(
     db: psycopg.Connection,
 ) -> None:
+    # Bounded at this track's own instant, because a later track restates again: what is pinned
+    # is that this restatement is strictly later than every founding row, not that nothing has
+    # been published since.
     with db.cursor() as cursor:
         cursor.execute("select min(published_at) from lineage.jurisdictions")
         (earliest,) = cursor.fetchone()
@@ -238,7 +244,10 @@ def test_the_migration_and_the_seed_write_the_same_restatements(
 
     assert from_migration == from_seed
     assert len(from_seed) == (
-        len(JURISDICTIONS) + len(JURISDICTION_RESTATEMENTS) + len(SUPERSESSIONS)
+        len(JURISDICTIONS)
+        + len(JURISDICTION_RESTATEMENTS)
+        + len(GRAIN_RESTATEMENTS)
+        + len(SUPERSESSIONS)
     )
 
 
@@ -300,3 +309,25 @@ def test_a_subtitle_template_that_cannot_carry_a_count_is_refused(
             )
 
 
+def test_the_presentation_columns_reach_the_response_model_and_the_allowlist() -> None:
+    """Inverted, by name, with the reason. This train's own N-17 pinned the opposite: the seven
+    columns were read by the generator and by nothing else, so the OpenAPI snapshot and the
+    naked-number allowlist were untouched by it.
+
+    The status-vocabulary train's §3.1(b) exists to break exactly that. Six of the seven ride on
+    `map` now, so the client stops reading a subtitle or a legend note out of a generated module
+    and a note can change without a rebuild; `wells_draw_order` is a real per-row integer, so it
+    is the one allowlist entry that train ships. `legend_note` reaches the wire under
+    `vocabulary` rather than under `map`, which is why it is named separately here.
+
+    Kept rather than deleted, because what it pins is still worth pinning: which columns are
+    served, and that serving them is a decision rather than a drift.
+    """
+    from glasswell.api.routers import jurisdictions as router
+
+    served = set(router.MapPresentation.model_fields)
+    allowlist = Path("tests/contract/non_figure_allowlist.yml").read_text(encoding="utf-8")
+
+    assert set(PRESENTATION_COLUMNS) - served == {"legend_note"}
+    assert "legend_note" in set(router.StatusVocabulary.model_fields)
+    assert "/*/map/wells_draw_order" in allowlist

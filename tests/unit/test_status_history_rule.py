@@ -114,7 +114,7 @@ def test_the_router_maps_a_status_nowhere_of_its_own() -> None:
     mapping in the router is exactly the drift it was written to prevent."""
     produced = re.findall(r"([\w{}().'\"]+)\s+as status_canonical", ROUTER_SOURCE)
     assert produced, "the scan found no status_canonical projection to check"
-    assert all("resolved" in each for each in produced), produced
+    assert all("resolved" in each.lower() for each in produced), produced
     for mapping_table in ("nm_wellhistory_status_map", "co_facility_status_map", "status_map"):
         assert mapping_table not in ROUTER_SOURCE, mapping_table
 

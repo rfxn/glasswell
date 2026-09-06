@@ -23,6 +23,7 @@ from datetime import date
 
 import psycopg
 
+from glasswell.absence import absent_if_blank
 from glasswell.db.dsn import add_dsn_argument, resolve_dsn
 from glasswell.ingest.base import resolve_environment
 from glasswell.lengths import LengthMethod, resolve_length_method
@@ -128,31 +129,33 @@ select d.derivation_id, d.created_vintage
 
 _RULE_SPEC = "select spec from lineage.conformance_rules where rule_id = %(rule_id)s"
 
-_ND_LATERALS = """
+_ND_LATERALS = f"""
 select s.api10,
        s.geom_key as linekey,
        w.operator_name_reported as operator_name,
-       w.status_canonical,
+       {resolved_status("w")} as status_canonical,
        extract(year from w.spud_date)::int as spud_year,
-       {length_metres}::numeric / %(metres_per_foot)s as lateral_length_ft_exact,
-       round({length_metres}::numeric / %(metres_per_foot)s, 2)::float8 as lateral_length_ft,
+       {{length_metres}}::numeric / %(metres_per_foot)s as lateral_length_ft_exact,
+       round({{length_metres}}::numeric / %(metres_per_foot)s, 2)::float8 as lateral_length_ft,
        s.geom_type as geometry_provenance,
        s.geom
   from canonical.well_spatial s
   left join wells_as_of w on w.api10 = s.api10
+ {resolver_join("w")}
  where s.geom_type = 'lateral' and left(s.api10, 2) = %(state_code)s
 """
 
-_ND_WELLS = """
+_ND_WELLS = f"""
 select s.api10,
        w.operator_name_reported as operator_name,
-       w.status_canonical,
+       {resolved_status("w")} as status_canonical,
        extract(year from w.spud_date)::int as spud_year,
        w.well_type_reported,
        s.geom_type as geometry_provenance,
        s.geom
   from canonical.well_spatial s
   left join wells_as_of w on w.api10 = s.api10
+ {resolver_join("w")}
  where s.geom_type = 'surface' and left(s.api10, 2) = %(state_code)s
 """
 
@@ -163,11 +166,11 @@ select s.api10,
 # No length column, on purpose. The trace is the plan view of a three-dimensional path, so
 # ST_Length over it measures horizontal travel and would read as hole length. The deepest
 # station's measured depth is what the source filed, so that is what is published.
-_ND_SURVEY_TRACES = """
+_ND_SURVEY_TRACES = f"""
 select s.api10,
        s.geom_key as trace_key,
        w.operator_name_reported as operator_name,
-       w.status_canonical,
+       {resolved_status("w")} as status_canonical,
        extract(year from w.spud_date)::int as spud_year,
        station.wellbore_segment,
        station.segment_kind,
@@ -186,38 +189,45 @@ select s.api10,
          group by api10, api14, wellbore_segment, segment_kind) station
     on station.api10 = s.api10
    and s.geom_key = station.api14 || '_' || station.wellbore_segment
+ {resolver_join("w")}
  where s.geom_type = 'survey_trace' and left(s.api10, 2) = %(state_code)s
 """
 
-_TX_LATERALS = """
+_TX_LATERALS = f"""
 select s.api10,
        s.geom_key,
        w.operator_name_reported as operator_name,
-       w.status_canonical,
+       {resolved_status("w")} as status_canonical,
        w.county_code_at_permit as county_code,
-       {length_metres}::numeric / %(metres_per_foot)s as lateral_length_ft_exact,
-       round({length_metres}::numeric / %(metres_per_foot)s, 2)::float8 as lateral_length_ft,
+       {{length_metres}}::numeric / %(metres_per_foot)s as lateral_length_ft_exact,
+       round({{length_metres}}::numeric / %(metres_per_foot)s, 2)::float8 as lateral_length_ft,
        s.geom
   from canonical.well_spatial s
   left join wells_as_of w on w.api10 = s.api10
+ {resolver_join("w")}
  where s.geom_type = 'lateral' and left(s.api10, 2) = %(state_code)s
 """
 
-_TX_WELLS = """
+_TX_WELLS = f"""
 select s.api10,
        w.operator_name_reported as operator_name,
-       w.status_canonical,
+       {resolved_status("w")} as status_canonical,
        w.well_type_reported,
        w.county_code_at_permit as county_code,
        s.geom
   from canonical.well_spatial s
   left join wells_as_of w on w.api10 = s.api10
+ {resolver_join("w")}
  where s.geom_type = 'surface' and left(s.api10, 2) = %(state_code)s
 """
 
-# New Mexico resolves status_canonical at read time: canonical.wells carries null on every New
-# Mexico row and the serving path reads the same view, so the tile and the well card cannot
-# disagree (cr_nm_wellhistory_status_vocab_2).
+# Every projection above and below reads `resolved_status()`, which is the whole of §3.4: the
+# tile, the facet, the filter, the count and the card change together or not at all. Two of them
+# called it before this train because their jurisdictions resolve at read time; the rest served
+# `w.status_canonical` raw, so a promotion-time jurisdiction's tile carried a null for a well
+# whose class the serving path had already resolved to the absence class. On screen that read as
+# the same class counted in the legend and drawn nowhere, because the Wells-By press matches the
+# tile property and a null matches nothing.
 _NM_WELLS = f"""
 select s.api10,
        w.operator_name_reported as operator_name,
@@ -233,13 +243,16 @@ select s.api10,
  where s.geom_type = 'surface' and left(s.api10, 2) = %(state_code)s
 """
 
+# The four source-reported text columns are read under cr_co_wells_shp_blank_is_absent_1: the
+# 1,172 headers promoted with an empty Well_Class cannot be restated, and the tile has to agree
+# with the well card and the legend about the same well.
 _CO_WELLS = f"""
 select s.api10,
-       w.operator_name_reported as operator_name,
+       {absent_if_blank("w.operator_name_reported")} as operator_name,
        {resolved_status("w")} as status_canonical,
-       w.status_reported,
-       w.well_type_reported,
-       w.county_code_at_permit as county_code,
+       {absent_if_blank("w.status_reported")} as status_reported,
+       {absent_if_blank("w.well_type_reported")} as well_type_reported,
+       {absent_if_blank("w.county_code_at_permit")} as county_code,
        extract(year from w.spud_date)::int as spud_year,
        s.location_qualifier as loc_qual_class,
        s.geom_type as geometry_provenance,
@@ -250,32 +263,34 @@ select s.api10,
  where s.geom_type = 'surface' and left(s.api10, 2) = %(state_code)s
 """
 
-_MT_WELLS = """
+_MT_WELLS = f"""
 select s.api10,
        w.operator_name_reported as operator_name,
-       w.status_canonical,
+       {resolved_status("w")} as status_canonical,
        w.status_reported,
        w.well_type_reported,
        extract(year from w.completion_date)::int as completion_year,
        s.geom
   from canonical.well_spatial s
   left join wells_as_of w on w.api10 = s.api10
+ {resolver_join("w")}
  where s.geom_type = 'surface' and left(s.api10, 2) = %(state_code)s
 """
 
 # geometry_class on every feature, because cr_mt_paths_geometry_class_1 requires the map-stick
 # distinction to be stated wherever the geometry is served and a column is the only form of that
 # statement a tile client cannot fail to receive.
-_MT_PATHS = """
+_MT_PATHS = f"""
 select s.api10,
        s.geom_key,
        w.operator_name_reported as operator_name,
-       w.status_canonical,
+       {resolved_status("w")} as status_canonical,
        %(geometry_class)s as geometry_class,
        st_npoints(s.geom) as vertex_count,
        s.geom
   from canonical.well_spatial s
   left join wells_as_of w on w.api10 = s.api10
+ {resolver_join("w")}
  where s.geom_type = 'lateral' and left(s.api10, 2) = %(state_code)s
 """
 
@@ -314,8 +329,11 @@ MART_PROFILES: tuple[MartProfile, ...] = (
                 select=_ND_SURVEY_TRACES,
             ),
         ),
+        # state_code and status_reported are the resolver's join keys, so every spine carries
+        # them: the projections all read resolved_status() now, not just the read-time ones.
         cte_columns=(
-            "operator_name_reported", "status_canonical", "spud_date", "well_type_reported",
+            "state_code", "operator_name_reported", "status_canonical", "status_reported",
+            "spud_date", "well_type_reported",
         ),
         params_extra=(),
         # M1-3: geom_type is served verbatim as geometry_provenance on every ND layer (R8).
@@ -345,8 +363,8 @@ MART_PROFILES: tuple[MartProfile, ...] = (
             ),
         ),
         cte_columns=(
-            "operator_name_reported", "status_canonical", "well_type_reported",
-            "county_code_at_permit",
+            "state_code", "operator_name_reported", "status_canonical", "status_reported",
+            "well_type_reported", "county_code_at_permit",
         ),
         params_extra=(),
         rule_ids=("cr_tx_nad27_1",),
@@ -410,6 +428,7 @@ MART_PROFILES: tuple[MartProfile, ...] = (
             "cr_co_wells_location_qualifier_1",
             "cr_co_wells_source_selection_1",
             "cr_co_wells_status_vocab_1",
+            "cr_co_wells_shp_blank_is_absent_1",
         ),
         emit_extra=(("state", "CO"), ("geometry_scope", "surface_only")),
     ),
@@ -436,7 +455,7 @@ MART_PROFILES: tuple[MartProfile, ...] = (
             ),
         ),
         cte_columns=(
-            "operator_name_reported", "status_canonical", "status_reported",
+            "state_code", "operator_name_reported", "status_canonical", "status_reported",
             "well_type_reported", "completion_date",
         ),
         # `basin: None` beside a jurisdiction that has one and carries no such key is an

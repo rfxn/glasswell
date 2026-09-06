@@ -48,8 +48,10 @@ sidecar and `MANIFEST.sha256`.
 
 1. **Owner authorisation, once, covering Steps 1 through 3.** Step 1 is the first production
    write in the sequence. A plan approval is not an owner cue.
-2. **Run under `systemd-run`, never in an SSH session.** Step 3 is ~89 minutes; a dropped
-   session mid-`insert … select` leaves a partial month.
+2. **Run under `/usr/local/sbin/host-runner.sh`, never in an SSH session.** Step 3 is ~89
+   minutes; a dropped session mid-`insert … select` leaves a partial month. Each step below is
+   one job: launch it detached and poll the status file it writes under
+   `/var/lib/glasswell/runs/`.
 3. **The repository's Phase 2 status-collector fix is in the deployed bytes** — see abort
    condition A. This is not optional and it is not reorderable.
 4. **A verified-fresh dump exists** — see abort condition B. It is a precondition, not an
@@ -334,16 +336,13 @@ raw zone.
 df -h /var/lib/postgresql       # need >= 40 GB avail; 105 GB observed 2026-08-29
 pgrep -a pg_restore || echo "no restore drill running"
 
-sudo systemd-run --unit=t3-nm-stage --collect \
-  --property=User=glasswell --property=Group=glasswell \
-  --property=Environment=GLASSWELL_DSN=postgresql:///glasswell?host=/var/run/postgresql \
-  --property=Environment=GLASSWELL_RAW_ROOT=/data/raw \
-  --property=TimeoutStartSec=7200 --property=MemoryMax=6G \
-  --setenv=GLASSWELL_STAGING_ROOT=/data/staging \
-  /opt/glasswell/venv/bin/python -m glasswell.ingest.nm_ocd \
-    --stage-only
+sudo /usr/local/sbin/host-runner.sh --job nm-stage --detach \
+  --setenv GLASSWELL_STAGING_ROOT=/data/staging -- \
+  stage --timeout 7200 --memory 6G \
+    /opt/glasswell/venv/bin/python -m glasswell.ingest.nm_ocd --stage-only
 
-journalctl -u t3-nm-stage -f
+# Poll the status file; `journalctl -u nm-stage-1-stage -f` is the live output.
+sudo /usr/local/sbin/host-runner.sh --status nm-stage
 ```
 
 **Do not pass `--tables`.** Step 4 needs all eight siblings of `wcproduction`.
@@ -411,16 +410,14 @@ The flag is `--promote-only`. **There is no `--promote`** — the half-mode flag
 exclusive required group and the parser will reject the shorter spelling.
 
 ```bash
-sudo systemd-run --unit=t3-nm-promote --collect \
-  --property=User=glasswell --property=Group=glasswell \
-  --property=Environment=GLASSWELL_DSN=postgresql:///glasswell?host=/var/run/postgresql \
-  --property=TimeoutStartSec=14400 --property=MemoryMax=6G \
-  --setenv=GLASSWELL_STAGING_ROOT=/data/staging \
-  /opt/glasswell/venv/bin/python -m glasswell.ingest.nm_ocd \
-    --promote-only
+sudo /usr/local/sbin/host-runner.sh --job nm-promote --detach \
+  --setenv GLASSWELL_STAGING_ROOT=/data/staging -- \
+  promote --timeout 14400 --memory 6G \
+    /opt/glasswell/venv/bin/python -m glasswell.ingest.nm_ocd --promote-only
 
-journalctl -u t3-nm-promote -f
-systemctl show t3-nm-promote -p Result -p ExecMainStatus   # after it exits
+# Poll the status file. It carries the unit's Result and ExecMainStatus read while the unit was
+# still loaded, which is the reading `systemctl show` cannot give once it has been collected.
+sudo /usr/local/sbin/host-runner.sh --status nm-promote
 ```
 
 Expected, exactly. These are the scratch run's numbers over identical bytes, so they are
@@ -505,11 +502,11 @@ is safe and idempotent for insert-only rows.
 ### 4b — run
 
 ```bash
-sudo systemd-run --unit=t3-nm-dims --collect \
-  --property=User=glasswell --property=Group=glasswell \
-  --property=Environment=GLASSWELL_DSN=postgresql:///glasswell?host=/var/run/postgresql \
-  --property=TimeoutStartSec=1800 --property=MemoryMax=4G \
-  /opt/glasswell/venv/bin/python -m glasswell.ingest.nm_dims
+sudo /usr/local/sbin/host-runner.sh --job nm-dims --detach -- \
+  dims --timeout 1800 --memory 4G \
+    /opt/glasswell/venv/bin/python -m glasswell.ingest.nm_dims
+
+sudo /usr/local/sbin/host-runner.sh --status nm-dims
 ```
 
 Expected: observations read **426,529**; quarantined **0**; identity 426,529 = 426,529 + 0;

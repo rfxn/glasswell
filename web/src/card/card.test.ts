@@ -1797,10 +1797,274 @@ describe("the third production state, and the sections it opens", () => {
     }
   });
 
+  it("tells the section no sum is served, because on this well none is", async () => {
+    // MAJOR-5's other half: the same rule id, the opposite state, and the sentence the reader
+    // is owed here is the one the summed card must not carry.
+    const poolFilings = {
+      data: {
+        api10: API10,
+        granularity: "well_completion_pool",
+        reporting_level: "well_completion_pool",
+        pools: [
+          {
+            well_completion_pool: "77213",
+            entity_key: `${API10}:77213`,
+            streams: ["oil"],
+            series: {
+              pm: ["2026-01"],
+              oil_bbl: ["800.000"],
+              oil_bbl_report_vintage: ["2026-08-01"],
+              oil_bbl_null_semantics: ["reported"],
+            },
+          },
+        ],
+        _units: { "pools.0.series.oil_bbl": "bbl" },
+        _lineage: { "pools.0.series.oil_bbl.0": `drv_p#entity_key=${API10}:77213&col=oil_bbl` },
+      },
+      meta: { as_of: {}, warnings: [], labels: {} },
+      links: {},
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        stubFetch({
+          [`/v1/wells/${API10}/production/pools`]: poolFilings,
+          [`/v1/wells/${API10}`]: poolGrain,
+        }),
+      ),
+    );
+
+    await renderWellCard(host, API10, callbacks);
+    await sectionsSettled();
+
+    const pools = host.querySelector("#gw-section-pools");
+    expect(pools?.textContent).toContain("no sum of them is served");
+    expect(pools?.textContent).toContain("rolls nothing up to the well");
+  });
+
   it("offers no Pools section on a well whose regulator files at the well", async () => {
     await renderWellCard(host, API10, callbacks);
 
     expect(host.querySelector("#gw-section-pools")).toBeNull();
+  });
+});
+
+describe("the fourth production state: filed by pool, and summed to the well", () => {
+  // BLOCKER-1's remaining state. The mart serves this well a sum, so the chart is real and
+  // must stay; the regulator still filed below the well, so the section carrying those
+  // filings must be there too. One code decided both facts, and could only answer one.
+  const summed = {
+    ...wellEnvelope,
+    links: {
+      ...wellEnvelope.links,
+      pools: "/v1/wells/3305310451/production/pools?from=served",
+      pools_rule: "/v1/conformance/cr_nm_wcproduction_pool_rollup_2",
+    },
+    meta: {
+      ...wellEnvelope.meta,
+      warnings: [
+        {
+          code: "production_summed_over_pools",
+          detail:
+            "This well's regulator files production at the well_completion_pool and filed no" +
+            " per-well number, so `producing` is unknown. The served well series is" +
+            " glasswell's sum of those filings (cr_nm_wcproduction_pool_rollup_2).",
+          pointer: "/producing",
+          rule_id: "cr_nm_wcproduction_pool_rollup_2",
+        },
+      ],
+    },
+  };
+
+  // One pool's filings, so the section's own body renders rather than erroring into its catch.
+  const poolFilings = {
+    data: {
+      api10: API10,
+      granularity: "well_completion_pool",
+      reporting_level: "well_completion_pool",
+      pools: [
+        {
+          well_completion_pool: "96269",
+          entity_key: `${API10}:96269`,
+          streams: ["oil"],
+          series: {
+            pm: ["2026-01"],
+            oil_bbl: ["1200.000"],
+            oil_bbl_report_vintage: ["2026-08-01"],
+            oil_bbl_null_semantics: ["reported"],
+          },
+        },
+      ],
+      _units: { "pools.0.series.oil_bbl": "bbl" },
+      _lineage: { "pools.0.series.oil_bbl.0": `drv_p#entity_key=${API10}:96269&col=oil_bbl` },
+    },
+    meta: { as_of: {}, warnings: [], labels: {} },
+    links: {},
+  };
+
+  it("tells the section a sum is served above it, so it does not deny the chart", async () => {
+    // MAJOR-5, on the rendered section. `pools_rule` is served in both pool-grain states, so
+    // a section handed only the rule wrote "no sum of them is served" under the chart of the
+    // sum, citing the rule that authorises the sum. Which state the well is in is on the
+    // envelope, in the warning code, and the sentence has to follow it.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        stubFetch({
+          [`/v1/wells/${API10}/production/pools`]: poolFilings,
+          [`/v1/wells/${API10}/production`]: productionEnvelope,
+          [`/v1/wells/${API10}`]: summed,
+        }),
+      ),
+    );
+
+    await renderWellCard(host, API10, callbacks);
+    await sectionsSettled();
+
+    const pools = host.querySelector("#gw-section-pools");
+    expect(pools?.textContent).toContain("the series above is glasswell's sum of them");
+    expect(pools?.textContent).not.toContain("no sum of them is served");
+  });
+
+  it("draws the summed chart rather than replacing it with the pool-grain panel", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        stubFetch({
+          [`/v1/wells/${API10}/production`]: productionEnvelope,
+          [`/v1/wells/${API10}`]: summed,
+        }),
+      ),
+    );
+
+    await renderWellCard(host, API10, callbacks);
+
+    expect(renderChart).toHaveBeenCalled();
+    expect(host.querySelector('[data-state="production_reported_at_pool_grain"]')).toBeNull();
+  });
+
+  it("keeps the Production-by-pool section, and opens it, because the filings are the record", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        stubFetch({
+          [`/v1/wells/${API10}/production`]: productionEnvelope,
+          [`/v1/wells/${API10}`]: summed,
+        }),
+      ),
+    );
+
+    await renderWellCard(host, API10, callbacks);
+
+    const pools = host.querySelector("#gw-section-pools");
+    expect(pools).not.toBeNull();
+    expect(pools?.querySelector(".gw-section-toggle")?.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("keeps the sentence saying the series is a sum, which nothing else on the card says", async () => {
+    // The chart here is a mart figure, not a filing the regulator made, and this note is the
+    // only place the card says so: no panel is drawn for this code and no scope line carries
+    // it. Suppressing it the way POOL_GRAIN is suppressed would leave the number naked.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        stubFetch({
+          [`/v1/wells/${API10}/production`]: productionEnvelope,
+          [`/v1/wells/${API10}`]: summed,
+        }),
+      ),
+    );
+
+    await renderWellCard(host, API10, callbacks);
+
+    const note = host.querySelector('[data-code="production_summed_over_pools"]');
+    expect(note?.textContent).toContain("glasswell's sum of those filings");
+    expect((host.textContent ?? "").match(/cr_nm_wcproduction_pool_rollup_2/g)?.length).toBe(1);
+  });
+});
+
+describe("a knowledge time the series cannot be read at", () => {
+  // MAJOR-2. The refusal is correct on the wire and the card's own control is the only path a
+  // reader has to it. What made it unreachable was upstream: the card short-circuits on
+  // POOL_GRAIN before it asks for a series, and the wire was sending that code for a well the
+  // mart does serve. With the wire's three states straight the card reaches the request, so
+  // these cases pin both halves — that it asks, and that it renders what it is refused with.
+  const refusal = {
+    type: "https://glasswell.rpx.sh/problems/as_of_not_supported",
+    title: "as_of is not supported on this series",
+    status: 422,
+    detail:
+      "as_of is not supported on this well series: cr_nm_wcproduction_pool_rollup_2 admits a" +
+      " sum glasswell performs in marts.well_pool_rollup, which holds one snapshot per key," +
+      " so an older date would be answered with today's sum. The pool filings it is summed" +
+      " from are at /v1/wells/3305310451/production/pools and answer as_of.",
+  };
+  const summedWell = {
+    ...wellEnvelope,
+    links: {
+      ...wellEnvelope.links,
+      pools: "/v1/wells/3305310451/production/pools?from=served",
+      pools_rule: "/v1/conformance/cr_nm_wcproduction_pool_rollup_2",
+    },
+    meta: {
+      ...wellEnvelope.meta,
+      warnings: [
+        {
+          code: "production_summed_over_pools",
+          detail: "The served well series is glasswell's sum of those filings.",
+          pointer: "/producing",
+          rule_id: "cr_nm_wcproduction_pool_rollup_2",
+        },
+      ],
+    },
+  };
+
+  let fetchSpy: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    window.history.replaceState(null, "", `/?well=${API10}&as_of=2026-09-02`);
+    fetchSpy = vi.fn(
+      stubFetch({
+        [`/v1/wells/${API10}/production`]: refusal,
+        [`/v1/wells/${API10}`]: summedWell,
+      }),
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+  });
+
+  it("asks for the series at the knowledge time, rather than short-circuiting above it", async () => {
+    await renderWellCard(host, API10, callbacks);
+
+    // The series itself, not the pools path underneath it: `/production/pools` also carries
+    // as_of, and matching it would pass on the very short-circuit this case exists to catch.
+    const asked = fetchSpy.mock.calls.map((call) => String(call[0]));
+    expect(
+      asked.some(
+        (url) =>
+          /\/production(\?|$)/.test(url.split("#")[0] ?? "") && url.includes("as_of=2026-09-02"),
+      ),
+    ).toBe(true);
+  });
+
+  it("renders the refusal where the chart would have been, rather than nothing", async () => {
+    await renderWellCard(host, API10, callbacks);
+
+    const panel = host.querySelector(".gw-error");
+    expect(panel).not.toBeNull();
+    expect(panel?.querySelector("h3")?.textContent).toContain("as_of is not supported");
+  });
+
+  it("says why, in the words the API served", async () => {
+    await renderWellCard(host, API10, callbacks);
+
+    expect(host.querySelector(".gw-error")?.textContent).toContain("holds one snapshot per key");
+  });
+
+  it("keeps the rest of the card, because only the series was refused", async () => {
+    await renderWellCard(host, API10, callbacks);
+
+    expect(host.querySelector(".gw-card")).not.toBeNull();
+    expect(host.querySelectorAll(".gw-section").length).toBeGreaterThan(0);
   });
 });
 

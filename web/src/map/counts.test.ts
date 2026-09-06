@@ -21,7 +21,7 @@ import {
   wellTypeCountsOf,
 } from "./counts.ts";
 import type { Bbox, CountsState, WellStatusSummary } from "./counts.ts";
-import { UNMAPPED_STATUS } from "./status.ts";
+import { absenceStatus } from "./status.ts";
 
 const ND: Bbox = [-104.5, 47.2, -102.1, 48.6];
 
@@ -169,7 +169,7 @@ describe("the counts the legend is given", () => {
   it("carries only the classes the box holds — absent, never zero", () => {
     const counts = statusCounts(summary(ND));
 
-    expect(counts).toEqual({ active: 3, plugged: 2, dry: 1, [UNMAPPED_STATUS.id]: 2 });
+    expect(counts).toEqual({ active: 3, plugged: 2, dry: 1, [absenceStatus()!.id]: 2 });
     expect("inactive" in counts).toBe(false);
     expect("expired" in counts).toBe(false);
   });
@@ -188,23 +188,23 @@ describe("the counts the legend is given", () => {
     const counts = statusCounts(data);
     expect(counts).toEqual({ active: 3 });
     expect("permitted" in counts).toBe(false);
-    expect(UNMAPPED_STATUS.id in counts).toBe(false);
+    expect(absenceStatus()!.id in counts).toBe(false);
     // The handle goes with the count: no lineage affordance beside an em dash.
     const handles = statusHandles(data);
     expect("permitted" in handles).toBe(false);
-    expect(UNMAPPED_STATUS.id in handles).toBe(false);
+    expect(absenceStatus()!.id in handles).toBe(false);
   });
 
   it("keys the absence bucket onto the legend's own class, which the API never publishes", () => {
     // §2.3 rule 1: the API must not publish "unmapped" as if it were in the vocabulary.
     const data = summary(ND);
-    expect(data.statuses.map((row) => row.status)).not.toContain(UNMAPPED_STATUS.id);
-    expect(statusCounts(data)[UNMAPPED_STATUS.id]).toBe(2);
+    expect(data.statuses.map((row) => row.status)).not.toContain(absenceStatus()!.id);
+    expect(statusCounts(data)[absenceStatus()!.id]).toBe(2);
   });
 
   it("reports no absence class at all when the box holds none", () => {
     const counts = statusCounts(summary(ND, { unmapped_wells: null }));
-    expect(UNMAPPED_STATUS.id in counts).toBe(false);
+    expect(absenceStatus()!.id in counts).toBe(false);
   });
 
   it("reads the decimal string, never the object", () => {
@@ -222,7 +222,7 @@ describe("the counts the legend is given", () => {
     expect(handles["active"]).toContain("status=active");
     expect(handles["plugged"]).toContain("status=plugged");
     expect(handles["active"]).not.toBe(handles["plugged"]);
-    expect(handles[UNMAPPED_STATUS.id]).toContain("col=unmapped_wells");
+    expect(handles[absenceStatus()!.id]).toContain("col=unmapped_wells");
   });
 
   it("names the vocabulary rules the answer was shaped by, linked where they can be read", () => {
@@ -266,7 +266,7 @@ describe("a viewport that settles", () => {
     const state = last(seen);
     expect(state.kind).toBe("ready");
     if (state.kind !== "ready") return;
-    expect(state.counts).toEqual({ active: 3, plugged: 2, dry: 1, [UNMAPPED_STATUS.id]: 2 });
+    expect(state.counts).toEqual({ active: 3, plugged: 2, dry: 1, [absenceStatus()!.id]: 2 });
     expect(state.total).toBe(10);
     expect(state.totalHandle).toContain("col=wells");
   });

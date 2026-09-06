@@ -23,6 +23,7 @@ from typing import Any
 import polars as pl
 import psycopg
 
+from glasswell.absence import absent_if_blank
 from glasswell.db.dsn import add_dsn_argument, resolve_dsn
 from glasswell.ingest.base import IngestRun, open_ingest_run, resolve_environment
 from glasswell.lineage.capture import current_session, derive
@@ -49,6 +50,7 @@ SCOPE_FAMILY = "cr_co_wells_geometry_scope"
 STATUS_FAMILY = "cr_co_wells_status_vocab"
 WELL_TYPE_FAMILY = "cr_co_wells_well_type"
 QUALIFIER_FAMILY = "cr_co_wells_location_qualifier"
+BLANK_FAMILY = "cr_co_wells_shp_blank_is_absent"
 
 # The identity tuple deduplication is decided over: everything that identifies the feature.
 IDENTITY_COLUMNS = ("facil_id", "loc_id", "facil_stat", "latitude", "longitude")
@@ -149,16 +151,25 @@ def effective_from(row: dict[str, Any], spec: dict[str, Any], fallback: date) ->
     return fallback
 
 
+# Read under cr_co_wells_shp_blank_is_absent_1, not only staged under it: the generations
+# already in staging were written before the rule existed and staging is never edited in place,
+# so a promotion that read them verbatim would put the empty string back into canonical.
+_STAGED_ATTRIBUTES = (
+    "api_county", "api_seq", "api_label", "operat_num", "operator", "well_name", "well_num",
+    "spud_date", "facil_id", "facil_stat", "well_class", "stat_date", "loc_qual", "loc_id",
+    "latitude", "longitude",
+)
+_STAGED = (
+    "select source_row_ordinal,"
+    f" {', '.join(f'{absent_if_blank(name)} as {name}' for name in _STAGED_ATTRIBUTES)},"
+    "       geom is not null as has_geometry"
+    f"  from {STAGING_TABLE} where manifest_id = %s order by source_row_ordinal"
+)
+
+
 def _staged(connection: psycopg.Connection, manifest_id: str) -> list[dict[str, Any]]:
     with connection.cursor() as cursor:
-        cursor.execute(
-            "select source_row_ordinal, api_county, api_seq, api_label, operat_num, operator,"
-            "       well_name, well_num, spud_date, facil_id, facil_stat, well_class,"
-            "       stat_date, loc_qual, loc_id, latitude, longitude,"
-            "       geom is not null as has_geometry"
-            f"  from {STAGING_TABLE} where manifest_id = %s order by source_row_ordinal",
-            (manifest_id,),
-        )
+        cursor.execute(_STAGED, (manifest_id,))
         columns = [column.name for column in cursor.description]
         return [dict(zip(columns, row, strict=True)) for row in cursor.fetchall()]
 
@@ -220,6 +231,7 @@ def promote_headers(run: IngestRun) -> HeaderReport:
     connection = run.connection
     conform = load_rules(connection, source_id=SOURCE_ID, stage="conform", as_of=run.as_of)
     validate = load_rules(connection, source_id=SOURCE_ID, stage="validate", as_of=run.as_of)
+    parse = load_rules(connection, source_id=SOURCE_ID, stage="parse", as_of=run.as_of)
     identity = rule_for_family(conform, IDENTITY_FAMILY)
     qualifier = rule_for_family(conform, QUALIFIER_FAMILY)
     dedup = rule_for_family(validate, DEDUP_FAMILY)
@@ -231,6 +243,7 @@ def promote_headers(run: IngestRun) -> HeaderReport:
         effective.rule_id,
         rule_for_family(conform, STATUS_FAMILY).rule_id,
         rule_for_family(conform, WELL_TYPE_FAMILY).rule_id,
+        rule_for_family(parse, BLANK_FAMILY).rule_id,
         qualifier.rule_id,
     ]
     spatial_cited = [

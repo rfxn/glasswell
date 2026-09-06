@@ -140,7 +140,7 @@ Seed rules, drawn from real cross-source gotchas:
 | **Month convention** | Production month versus report month is resolved per source and recorded. |
 | **Formation names** | Current ND MPR pool labels resolve through append-only, knowledge-vintaged `formation_aliases`; ambiguous composites remain `__other__`, and explicit Three Forks never collapses into Bakken. |
 | **Completion anchor** | FracFocus `JobEndDate` is retained as a hydraulic-fracturing completion event. The earliest valid event per API-10 anchors fv1.0; spud and first production are forbidden fallbacks. |
-| **Well status** | Regulator vocabularies map to a small canonical set — as rows, not code. |
+| **Well status** | Regulator vocabularies map to a small canonical set — as rows, not code — and the set itself is rows too: `lineage.status_classes` carries every class with its label, colour, glyph, zoom gate and order, and every registered map targets it through a foreign key. A code that maps to no class is served as its own class carrying the raw code, and a well whose source filed no code at all is served the absence class, never a null. |
 
 **Registry rot is the named risk.** Mitigation: the promotion step reads rules from
 the table at run time wherever feasible, and CI asserts that every canonical field
@@ -262,6 +262,21 @@ from the raw zone by replaying recipes.
 
 Inventory batch runs are the only new load introduced at v0.5, and they run in
 seconds at township scale.
+
+### Operations — work that outlives the session that started it
+
+Any job longer than one controller turn — a load, a promotion, a mart refresh, a
+multi-step runbook, a deploy — runs as a unit on the host it acts on rather than in the
+shell that launched it, and publishes its own progress to a file on that host. That is
+what `infra/bin/host-runner.sh` is: one transient unit per step, `systemd-run --wait`
+inside the runner and nowhere else, a log at `/var/log/glasswell/<job>.log` and a status
+document at `/var/lib/glasswell/runs/<job>.json` rewritten whole after every transition,
+carrying the step, its unit, its exit, its untruncated summary line and a stamp per
+transition. Everything downstream polls that file — the runbooks, `scripts/deploy.sh`,
+one job waiting on another — because an ssh exit says what the client saw and the file
+says what the host did. A step is done when it wrote the evidence it writes on completion,
+not when it exited 0: a unit stopped by hand answers `Result=success` with status 0, and a
+chain that believed that would run the next step over work that never happened.
 
 ---
 

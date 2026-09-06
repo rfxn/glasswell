@@ -10,10 +10,29 @@ The invariant is one shared resolver, never a second mapping in the API: the til
 every serving path read `canonical.status_resolution`, and no surface translates a status code
 on its own. A mart-only resolver would leave the API serving null; an API-only one would leave
 the tiles serving null. Neither is what shipped.
+
+FOR A LATER JURISDICTION THAT RESOLVES AT READ TIME. Three rows and no trigger: (1) its map
+table in `lineage`, keyed on the reported code, with a foreign key onto `lineage.status_classes`
+so it cannot introduce a class no rule declared; (2) a status-vocabulary conformance rule whose
+spec carries `resolved_at: read_time` with `mapping_table`, `key_col` and `value_col` -- all
+four are filtered on, so a rule missing any one is filtered out one step before the
+missing-table notice can fire -- plus `unmapped_action`, which the promotion reads and this
+loop does not; (3) the `jurisdiction_rules` row, whose key column must be unique within the map,
+which the registration refuses without.
+
+`078:265-274` said to add a statement trigger by hand and to call the refresh at the end of the
+migration. That instruction is superseded and 078 is left as the applied history it is:
+`lineage.attach_status_map_refresh()` attaches the trigger to every registered read-time map,
+and it is called from the migration that created it, from the registry's own append triggers
+and from `seed_jurisdictions`, so a registration appended in a later release gets its trigger
+without one being written. What has not changed is the rest of 078's warning: a second
+`create or replace view` on `canonical.status_resolution` silently drops every other
+jurisdiction's arm, whichever order the two migrations merge in.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date
 
 import psycopg
@@ -21,13 +40,23 @@ from psycopg import sql
 from psycopg.rows import dict_row
 
 from glasswell.lineage.jurisdictions import load_jurisdictions
+from glasswell.lineage.status_classes import mapped_status_classes
 
 RESOLVER_VIEW = "canonical.status_resolution"
 
-# The class where neither the promotion nor the registry resolves one: the source filed no
-# status. Not documented_unmapped, which is a code the regulator did publish and glasswell has
-# no word for. The canvas already coalesces a null status to this name, so the ledger uses it.
+# The class where neither the promotion nor the registry resolves one. Spelled once, and only
+# where a caller has no connection to read the domain with: `lineage.status_classes` is the
+# single writer, `ABSENCE_CLASS_SQL` is how every serving path reads it, and the seed carries
+# this name into the row marked `is_absence` rather than repeating the word.
 UNMAPPED_CLASS = "unmapped"
+
+# How every serving path reads that name: a one-row uncorrelated scalar subselect on the domain.
+# `resolved_status()` is a pure string builder called at query-assembly time from eight sites, so
+# a connection parameter would change all eight signatures; a module constant would be the
+# literal the domain exists to replace; a process cache would be the unbounded one the v0.76
+# sentinel filed. The subselect keeps the signature, keeps lineage.status_classes as the single
+# writer, and turns an empty domain into a null class that infra/verify.sh V-3 catches.
+ABSENCE_CLASS_SQL = "(select status_canonical from lineage.status_classes where is_absence)"
 
 # A jurisdiction resolves at read time when its registered status-vocabulary rule says so in
 # its own spec, which is where 071 put the fact. Read off the registry rather than pinned here:
@@ -52,15 +81,17 @@ select j.identity_prefix, r.rule_id
 """
 
 
-# Every registered vocabulary names the table its classes live in and the column they live
-# under, in the rule's own spec (`vocab_map`). The canonical class list is therefore registry
-# data rather than a roster: a fifth jurisdiction's classes join the vocabulary through its
-# rule row, and a class renamed in one map is renamed here without an edit. This is the same
-# list the client's closed eleven come from -- each of `web/src/map/status.ts`'s classes cites
-# one of these rules -- so the two cannot drift apart silently.
+# The per-map scan, kept as the parity gate's input rather than as the definition. Every
+# registered vocabulary names the table its classes live in and the column they live under, in
+# the rule's own spec, so this is what a standing gate compares the domain against: a map
+# producing a class the domain does not hold, or a domain row no map produces.
 _VOCABULARY_SOURCES = """
-select distinct c.spec->>'mapping_table' as mapping_table,
-                c.spec->>'value_col'     as value_col
+select j.jurisdiction_code,
+       r.rule_id,
+       c.spec->>'resolved_at'     as resolved_at,
+       c.spec->>'unmapped_action' as unmapped_action,
+       c.spec->>'mapping_table'   as mapping_table,
+       c.spec->>'value_col'       as value_col
   from lineage.jurisdictions_as_of(%(knowledge_as_of)s, %(valid_as_of)s) j
   join lineage.jurisdiction_rules r
     on r.jurisdiction_code = j.jurisdiction_code
@@ -71,17 +102,46 @@ select distinct c.spec->>'mapping_table' as mapping_table,
   join lineage.conformance_rules c on c.rule_id = r.rule_id
  where c.spec->>'mapping_table' is not null
    and c.spec->>'value_col' is not null
- order by 1, 2
+ order by j.jurisdiction_code
 """
+
+
+@dataclass(frozen=True, slots=True)
+class JurisdictionVocabulary:
+    """One registration's status vocabulary as the wire serves it."""
+
+    jurisdiction_code: str
+    rule_id: str
+    resolved_at: str | None
+    unmapped_action: str | None
+    classes: tuple[str, ...]
 
 
 def served_status_vocabulary(
     connection: psycopg.Connection, as_of: date | None = None
 ) -> list[str]:
-    """Every canonical class the registered status vocabularies name, in one sorted list.
+    """Every canonical class a registered mapping may target, in one sorted list.
 
-    The absence class is not in it: no mapping produces `unmapped`, which is what makes it the
-    absence class. A caller measuring classes wants both and adds it.
+    Read from `lineage.status_classes`, which is the domain every map has a foreign key to,
+    rather than unioned over the maps: a class is a decision with a rule and an effective date,
+    and a list computed from whatever the maps happen to say cannot be one. The absence class is
+    not in it, because no mapping produces it. A caller measuring classes wants both and adds it.
+
+    `as_of` is unread and kept: the domain carries one clock by construction (a class that stops
+    existing has to be repointed in every map that names it inside one transaction), and eight
+    callers pass the registry's own cut.
+    """
+    return sorted(mapped_status_classes(connection))
+
+
+def served_vocabularies(
+    connection: psycopg.Connection, as_of: date | None = None
+) -> tuple[JurisdictionVocabulary, ...]:
+    """Each registration's vocabulary: its rule, its two spec keys, and what its map produces.
+
+    The classes are read from the registered mapping table rather than from the domain, because
+    what this answers is which of the domain's classes *this* regulator can file. North Dakota
+    is the only one that produces `confidential`, and that is a fact about its codebook.
     """
     registry = load_jurisdictions(connection, as_of)
     with connection.cursor() as cursor:
@@ -93,17 +153,43 @@ def served_status_vocabulary(
             },
         )
         sources = cursor.fetchall()
-    classes: set[str] = set()
+    served: list[JurisdictionVocabulary] = []
     with connection.cursor() as cursor:
-        for table, column in sources:
+        for code, rule_id, resolved_at, unmapped_action, table, column in sources:
             # Identifiers, so a registered table name cannot be a parameter and cannot be
             # concatenated: the rule spec is data, and data does not compose SQL here.
             cursor.execute(
                 sql.SQL("select distinct {column} from {table} where {column} is not null")
                 .format(column=sql.Identifier(column), table=sql.Identifier("lineage", table))
             )
-            classes.update(str(value) for (value,) in cursor.fetchall())
-    return sorted(classes)
+            served.append(
+                JurisdictionVocabulary(
+                    jurisdiction_code=code,
+                    rule_id=rule_id,
+                    resolved_at=resolved_at,
+                    unmapped_action=unmapped_action,
+                    classes=tuple(sorted(str(value) for (value,) in cursor.fetchall())),
+                )
+            )
+    return tuple(served)
+
+
+def status_map_classes(
+    connection: psycopg.Connection, as_of: date | None = None
+) -> list[str]:
+    """Every distinct class the registered mapping tables actually produce, sorted.
+
+    The parity gate's input, and the reason `served_status_vocabulary` can stop being a union:
+    a class here and not in the domain is a map with no published decision behind it, and a
+    mapped domain row absent here is a class registered for a state that never landed.
+    """
+    return sorted(
+        {
+            status
+            for vocabulary in served_vocabularies(connection, as_of)
+            for status in vocabulary.classes
+        }
+    )
 
 
 def resolver_rules(
@@ -180,5 +266,13 @@ def resolver_join(spine: str, *, resolver: str = "sr") -> str:
 
 
 def resolved_status(spine: str, *, resolver: str = "sr") -> str:
-    """The served class: what the promotion wrote, else what the registry resolves."""
-    return f"coalesce({spine}.status_canonical, {resolver}.resolved_status)"
+    """The served class: what the promotion wrote, else what the registry resolves, else absent.
+
+    Never null. Null is indistinguishable from not-yet-loaded to every consumer, which is what
+    blueprint §3.0.1a forbids and what every Texas well that filed no status code has been
+    served since Texas landed. The third arm is one line in the one helper the tile mart, the
+    facet, the filter, the count and the card all call, so they change together or not at all.
+    """
+    return (
+        f"coalesce({spine}.status_canonical, {resolver}.resolved_status, {ABSENCE_CLASS_SQL})"
+    )

@@ -64,6 +64,20 @@ class Jurisdiction:
     land_grid_scope: bool
     status_dataset_detail: str | None
     rationale: str
+    # 075's presentation columns. Read here rather than only through the generated client
+    # module, so a legend note or a subtitle can change without a rebuild and the two copies
+    # can be gated against each other.
+    #
+    # Defaulted, because the columns are nullable and four of the five registrations carry a
+    # null in at least one of them: required-with-no-default would be stricter than the data,
+    # and it was, in five callers of one fixture that had nothing to say about presentation.
+    wells_layer_id: str | None = None
+    wells_style_layer_ids: tuple[str, ...] | None = None
+    wells_draw_order: int | None = None
+    wells_default_on: bool | None = None
+    wells_snapshot_key: str | None = None
+    wells_subtitle_template: str | None = None
+    legend_note: str | None = None
     rules: tuple[JurisdictionRule, ...] = field(default=())
 
     def rule(self, decision: str) -> str | None:
@@ -132,7 +146,9 @@ select max(published_at) filter (where published_at <= %(knowledge_as_of)s) as k
 """
 
 _ROW_FIELDS = tuple(
-    name for name in Jurisdiction.__dataclass_fields__ if name not in ("source_ids", "rules")
+    name
+    for name in Jurisdiction.__dataclass_fields__
+    if name not in ("source_ids", "wells_style_layer_ids", "rules")
 )
 
 # Keyed on the resolved clock pair R-2 names, and on the database the rows came from: the suite
@@ -153,9 +169,11 @@ def _instance(connection: psycopg.Connection) -> tuple[str, str, str]:
 
 def jurisdiction_from_row(row: Mapping[str, object]) -> Jurisdiction:
     """One `jurisdictions_as_of` row, with its rules already aggregated as JSON."""
+    style_layers = row["wells_style_layer_ids"]
     return Jurisdiction(
         **{name: row[name] for name in _ROW_FIELDS},  # type: ignore[arg-type]
         source_ids=tuple(row["source_ids"]),  # type: ignore[arg-type]
+        wells_style_layer_ids=tuple(style_layers) if style_layers is not None else None,
         rules=tuple(
             JurisdictionRule(
                 decision=rule["decision"],

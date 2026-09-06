@@ -63,6 +63,21 @@ describe("the pool filings, where the regulator files below the well", () => {
     expect(host.textContent).toContain("no sum of them is served");
   });
 
+  it("says the series above it is a sum of these filings, where a sum is served", async () => {
+    // MAJOR-5. The rule id is the same in both states, so a sentence chosen by the presence of
+    // a rule link says "no sum of them is served" on the card that draws the sum, under the
+    // rule that authorises it. The key the caller passes is which state the well is in.
+    serve(payload);
+    await render({ aggregation_rule: "/v1/conformance/cr_nm_wcproduction_pool_rollup_2" });
+
+    expect(host.textContent).toContain("the series above is glasswell's sum of them");
+    expect(host.textContent).not.toContain("no sum of them is served");
+    expect(host.textContent).not.toContain("rolls nothing up to the well");
+    expect(host.querySelector(".gw-identity-rule")?.textContent).toBe(
+      "cr_nm_wcproduction_pool_rollup_2",
+    );
+  });
+
   it("draws one table per pool, in the monthly table's own shape", async () => {
     serve(payload);
     await render();

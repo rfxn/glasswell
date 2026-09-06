@@ -26,6 +26,7 @@ from glasswell.db.migrate import discover_migrations
 from glasswell.seed import jurisdictions, seed_all
 from glasswell.seed.jurisdictions import (
     FOUNDING_JURISDICTIONS,
+    GRAIN_RESTATEMENTS,
     JURISDICTION_RESTATEMENTS,
     JURISDICTION_RULES_AS_FOUNDED,
     JURISDICTIONS,
@@ -125,11 +126,16 @@ def rule_row_sources() -> tuple[str, ...]:
 
 RULE_ROW_SOURCES = rule_row_sources()
 
-# Three families write a registration row, not two: the founding set, the restatement, and a
-# supersession that carries one jurisdiction's registration forward at a new clock pair. An
-# equality that knows two of them fails the day a track appends the third (gate-tx H-4).
+# Four families write a registration row, not two and not three: the founding set, the
+# restatement, a supersession carrying one jurisdiction's registration forward at a new clock
+# pair, and the grain restatements that give a jurisdiction a reporting level. An equality that
+# knows some of them fails the day a track appends another (gate-tx H-4, gate-p68 H-2), so this
+# is summed from the seeder's own tuples rather than written as an integer.
 REGISTRATION_ROWS = (
-    len(JURISDICTIONS) + len(JURISDICTION_RESTATEMENTS) + len(SUPERSESSIONS)
+    len(JURISDICTIONS)
+    + len(JURISDICTION_RESTATEMENTS)
+    + len(GRAIN_RESTATEMENTS)
+    + len(SUPERSESSIONS)
 )
 
 

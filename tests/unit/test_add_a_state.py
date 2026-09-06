@@ -36,7 +36,13 @@ APPLIED_HISTORY_CEILING = 71
 PYTHON_TREES = ("marts", "api/routers", "status", "lineage", "scheduler")
 # The package root as well as the four trees: `status_resolution.py` sat outside every one of
 # them and carried `{"30": "cr_nm_wellhistory_status_vocab_2"}` for exactly that reason.
-PACKAGE_ROOT_FILES = ("identity.py", "lengths.py", "status_resolution.py", "units.py")
+PACKAGE_ROOT_FILES = (
+    "absence.py",
+    "identity.py",
+    "lengths.py",
+    "status_resolution.py",
+    "units.py",
+)
 
 TWO_DIGIT_LITERAL = re.compile(r"""['"](\d{2})['"]""")
 # Narrowed, never widened. The generic rule needs the quote immediately before the digits, so

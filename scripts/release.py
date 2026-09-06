@@ -45,8 +45,14 @@ RELEASE_SURFACE_FILES = ("README.md", "STATUS.md", "ROADMAP.md", "llms.txt")
 MIGRATIONS_DIR = Path("src/glasswell/db/migrations")
 PLACEHOLDER_EVIDENCE_TAG = "UNRELEASED"
 PLACEHOLDER_EVIDENCE_COMMIT = "0" * 40
-# Files outside the migrations directory that carry the same placeholder pair (N-5).
-EVIDENCE_MIRRORS = (Path("src/glasswell/seed/jurisdictions.py"),)
+# Files outside the migrations directory that carry the same placeholder pair (N-5). An
+# explicit tuple and not a glob: a seed that mirrors a migration's evidence is the second
+# writer, and a repoint that moves the migration and leaves the mirror at the placeholder is a
+# half-repoint bound for an append-only table.
+EVIDENCE_MIRRORS = (
+    Path("src/glasswell/seed/jurisdictions.py"),
+    Path("src/glasswell/seed/status_classes.py"),
+)
 
 
 @dataclass(frozen=True, order=True)

@@ -18,10 +18,11 @@ from fastapi.testclient import TestClient
 
 import glasswell.marts.counts as writer
 from glasswell.lineage.capture import lineage_session
+from glasswell.lineage.status_classes import load_status_classes
 from glasswell.lineage.store import PostgresRecorder
 from glasswell.marts.counts import refresh_jurisdiction_counts
 from glasswell.seed.jurisdictions import JURISDICTIONS, REGISTERED_ON, RESTATED_ON
-from glasswell.status_resolution import UNMAPPED_CLASS, served_status_vocabulary
+from glasswell.status_resolution import UNMAPPED_CLASS
 from tests.contract.conftest import JURISDICTION_MEASURED_ON, ND_MEASURED, TX_API10
 from tests.support.fakes import FixedClock
 from tests.support.jurisdictions import restate
@@ -121,8 +122,23 @@ def test_a_row_carries_the_regulator_the_identity_and_the_capabilities(
         "neighbors": True,
         "land_grid_state": True,
         "land_grid_scope": True,
+        # The v0.76 sentinel's P4-R5: the explorer opens on the registration whose production
+        # history it can walk, which is a fact about the data and not a client preference.
+        "explorer_default": True,
     }
-    assert row["map"] == {"wells_tile_layer_id": "nd_wells", "colour": "#3FA55E"}
+    assert row["map"] == {
+        "wells_tile_layer_id": "nd_wells",
+        "colour": "#3FA55E",
+        # 075's presentation columns, on the wire rather than only in the generated module, so
+        # a subtitle or a note can change without a rebuild.
+        "wells_layer_id": "wells",
+        "wells_style_layer_ids": ["wells", "wells-struck"],
+        "wells_draw_order": 40,
+        "wells_default_on": True,
+        "wells_snapshot_key": "nd_wells_refresh",
+        "wells_subtitle_template": row["map"]["wells_subtitle_template"],
+    }
+    assert "{count}" in row["map"]["wells_subtitle_template"]
     assert row["liquids_basis"] == "oil+condensate"
     assert row["effective_from"] == REGISTERED_ON.isoformat()
     assert row["published_at"] == RESTATED_ON.isoformat()
@@ -239,16 +255,20 @@ def test_a_day_whose_rows_name_two_runs_is_served_whole_and_each_row_resolves(
     and each row has to resolve to the run that measured it rather than to whichever ran last.
     """
     seed_statusless_well(seeded, api10=STATUSLESS_API10, like=TX_API10)
-    vocabulary = served_status_vocabulary(seeded)
+    domain = load_status_classes(seeded)
     # A class the fixture holds no well of, so the narrowed run leaves it out altogether.
-    absent = next(item for item in vocabulary if item not in {"active", "plugged"})
+    absent = next(
+        row.status_canonical
+        for row in domain
+        if row.status_canonical not in {"active", "plugged", UNMAPPED_CLASS}
+    )
     # Its own context: the fixtures that build this client hold patches of their own on the
     # test's `monkeypatch`, and undoing theirs to restore one of mine takes the session with it.
     with pytest.MonkeyPatch.context() as narrowed:
         narrowed.setattr(
             writer,
-            "served_status_vocabulary",
-            lambda *_, **__: [item for item in vocabulary if item != absent],
+            "load_status_classes",
+            lambda *_, **__: [row for row in domain if row.status_canonical != absent],
         )
         first = remeasure(seeded, codes=None)
 
@@ -269,7 +289,7 @@ def test_a_day_whose_rows_name_two_runs_is_served_whole_and_each_row_resolves(
     served = body(client)["data"]
     row = next(item for item in served if item["jurisdiction_code"] == "TX")
     classes = {item["status_canonical"] for item in row["well_counts_by_status"]}
-    assert classes == {*vocabulary, UNMAPPED_CLASS}, "the day is served in halves"
+    assert classes == {row.status_canonical for row in domain}, "the day is served in halves"
     assert row["measured_on"] == REMEASURED_ON.isoformat()
 
     checked, broken = sum_identity(served)

@@ -2,14 +2,16 @@ import { describe, expect, it } from "vitest";
 
 import {
   PROVENANCE_CLASSES,
-  PROVENANCE_RULE,
+  provenanceRuleFor,
   geometryProvenance,
   provenanceLine,
 } from "./provenance.ts";
 
 describe("the geometry provenance vocabulary", () => {
   it("is the conformance row's, cited by id, not owned by web code", () => {
-    expect(PROVENANCE_RULE).toBe("cr_nd_geometry_provenance_1");
+    expect(provenanceRuleFor("3305300001")).toBe("cr_nd_geometry_provenance_1");
+    // Texas publishes none, which is a licence fact and not a gap in the client.
+    expect(provenanceRuleFor("4230100001")).toBeNull();
     expect([...PROVENANCE_CLASSES]).toEqual(["surface", "lateral", "survey_trace"]);
   });
 

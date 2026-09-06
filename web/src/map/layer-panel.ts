@@ -522,8 +522,13 @@ function buildRow(layer: LayerDef, options: LayerPanelOptions, family?: LayerFam
 
   const swatch = document.createElement("span");
   swatch.className = "gw-layer-swatch";
-  swatch.appendChild(layerSwatch(layer.swatch));
   element.appendChild(swatch);
+
+  /** Redrawn rather than patched: a status-keyed row's colours are served, not fixed. */
+  function paintSwatch(): void {
+    swatch.replaceChildren(layerSwatch(layer.swatch));
+  }
+  paintSwatch();
 
   // The disclosure, not a <label>: the row deliberately forwards no activation to the toggle,
   // and this control asks what a layer is made of rather than switching it.
@@ -621,8 +626,13 @@ function buildRow(layer: LayerDef, options: LayerPanelOptions, family?: LayerFam
   }
   paintCount();
   // The panel is built before the map has asked the registry anything, so the row paints what
-  // is resident and repaints when the answer lands. It never paints a compiled-in count.
-  void loadCensus().then(paintCount);
+  // is resident and repaints when the answer lands. It never paints a compiled-in count. The
+  // swatch rides the same response for the same reason: it seeds the status vocabulary the
+  // registry's status-keyed rows read, and before it lands those paint nothing (v0.83 M1).
+  void loadCensus().then(() => {
+    paintCount();
+    paintSwatch();
+  });
 
   // Only where the row draws more than one. With a single source the subtitle already names
   // it, and the line would say nothing the row has not said; with two, the subtitle can carry

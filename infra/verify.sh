@@ -24,6 +24,8 @@ VENV_PY=/opt/glasswell/venv/bin/python
 UNIT_DIR=/etc/systemd/system
 SBIN_DIR=/usr/local/sbin
 STATUS_SNAPSHOT=/var/lib/glasswell/status.json
+RUNS_DIR=/var/lib/glasswell/runs
+RUN_LOG_DIR=/var/log/glasswell
 RESTORE_RESULT=/var/lib/glasswell-restore-drill/result.json
 OFFSITE_RECEIPT=/var/lib/glasswell-backup/offsite.json
 RECOVERY_RESULT=/var/lib/glasswell-recovery-drill/result.json
@@ -94,6 +96,17 @@ last_run_state() {
 }
 
 listening_on() { ss -ltn | grep -q "$1"; }
+
+# `stat -c %a` prints the mode without its leading zero, so 0750 reads as 750 below. One string
+# carries mode and ownership together because a widened mode and a wrong owner are the same
+# failure to the job that has to write there.
+directory_state() {
+    if [[ ! -d $1 ]]; then
+        printf 'missing\n'
+        return
+    fi
+    printf '%s %s\n' "$(stat -c '%a' "$1")" "$(stat -c '%U:%G' "$1")"
+}
 
 # The tunnel listener exists only where a tunnel is configured, so its *existence* is not a
 # safety property and must not be asserted as one: unconditional, this reported "8080 is bound
@@ -377,6 +390,17 @@ else
     ok "recovery drill is mechanised but has NEVER been executed (no receipt at $RECOVERY_RESULT)"
 fi
 
+# Long host work runs as a chain of transient units under this script and is polled through the
+# status file it writes. A missing directory is not a degraded job, it is a job whose progress
+# nobody can read, so both are asserted with the modes install.sh places.
+printf 'host runner\n'
+assert_true "the host runner is installed" "missing at $SBIN_DIR/host-runner.sh" \
+    test -x "$SBIN_DIR/host-runner.sh"
+assert_true "the host runner equals the tree" "drifted from $INFRA_DIR/bin/host-runner.sh" \
+    cmp -s "$INFRA_DIR/bin/host-runner.sh" "$SBIN_DIR/host-runner.sh"
+assert "the run status directory" "750 root:glasswell" "$(directory_state "$RUNS_DIR")"
+assert "the run log directory" "755 glasswell:glasswell" "$(directory_state "$RUN_LOG_DIR")"
+
 # The roster is the tree's, not a list here: a glasswell-* unit added to infra/systemd but not
 # to install.sh's placement loop is never installed, and a timer that was never installed is a
 # monthly capture that silently never runs (M1-9). Equality, not existence — the live file
@@ -441,6 +465,148 @@ unresolved_read_time="$("${PSQL[@]}" "select coalesce(string_agg(
    and not exists (select 1 from lineage.status_resolution_resolved s
                     where s.for_state_code = j.identity_prefix)")"
 assert "every read-time status vocabulary has resolver rows" "" "$unresolved_read_time"
+# V-1. The domain, from the map side. The foreign keys added with lineage.status_classes cover
+# the five maps that carry one, so what no constraint can see is a sixth map registered without
+# one: it resolves, its classes are whatever its rows say, and nothing notices until a well is
+# drawn grey. Asserted on the constraint rather than on the values, because a map that targets
+# the domain cannot hold a class outside it and a map that does not is the defect itself.
+unconstrained_maps="$("${PSQL[@]}" "with registered as (
+    select j.jurisdiction_code, c.spec->>'mapping_table' as mapping_table,
+           to_regclass('lineage.' || quote_ident(c.spec->>'mapping_table')) as rel
+      from lineage.jurisdictions_as_of(current_date, current_date) j
+      join lineage.jurisdiction_rules r
+        on r.jurisdiction_code = j.jurisdiction_code
+       and r.effective_from = j.effective_from
+       and r.published_at = j.published_at
+       and r.decision = 'status_vocabulary'
+       and r.serving
+      join lineage.conformance_rules c on c.rule_id = r.rule_id
+     where c.spec->>'mapping_table' is not null),
+holds_rows as (
+    select g.jurisdiction_code, g.mapping_table,
+           case when k.relkind = 'v' then source.refobjid else g.rel end as relation
+      from registered g
+      join pg_class k on k.oid = g.rel
+      left join lateral (
+        select distinct d.refobjid
+          from pg_rewrite rw
+          join pg_depend d on d.objid = rw.oid
+                          and d.classid = 'pg_rewrite'::regclass
+                          and d.refclassid = 'pg_class'::regclass
+                          and d.refobjid <> rw.ev_class
+         where rw.ev_class = g.rel) source on true
+     where g.rel is not null)
+select coalesce(string_agg(distinct jurisdiction_code || ' ' || mapping_table, ', '), '')
+  from holds_rows h
+ where h.relation is null
+    or not exists (
+    select 1 from pg_constraint fk
+     where fk.conrelid = h.relation
+       and fk.contype = 'f'
+       and fk.confrelid = 'lineage.status_classes'::regclass)")"
+assert "every registered status map targets the class domain" "" "$unconstrained_maps"
+# V-2. Colorado's measured gap, and the check that would have seen it. The assertion above
+# passes while a read-time map carries no refresh trigger: Colorado had thirteen resolver rows
+# from the deploy's own seed and no trigger on lineage.co_facility_status_map, so an append to
+# that map resolved correctly once and then stopped tracking itself for good.
+untriggered_maps="$("${PSQL[@]}" "select coalesce(string_agg(
+        j.jurisdiction_code || ' ' || (c.spec->>'mapping_table'), ', '
+        order by j.jurisdiction_code), '')
+  from lineage.jurisdictions_as_of(current_date, current_date) j
+  join lineage.jurisdiction_rules r
+    on r.jurisdiction_code = j.jurisdiction_code
+   and r.effective_from = j.effective_from
+   and r.published_at = j.published_at
+   and r.decision = 'status_vocabulary'
+   and r.serving
+  join lineage.conformance_rules c on c.rule_id = r.rule_id
+ where c.spec->>'resolved_at' = 'read_time'
+   and to_regclass('lineage.' || quote_ident(c.spec->>'mapping_table')) is not null
+   and not exists (
+    select 1 from information_schema.triggers t
+     where t.event_object_schema = 'lineage'
+       and t.event_object_table = c.spec->>'mapping_table'
+       and t.trigger_name = 'status_map_refresh_status_resolution')")"
+assert "every read-time status map carries the refresh trigger" "" "$untriggered_maps"
+# V-3. The absence class is served for every well no map resolves, which removed the null that
+# used to make a broken resolver visible. This is the replacement signal, and the threshold is
+# read from cr_status_absence_share_1 rather than written here, because a number in a shell
+# script is a decision nobody published. It also catches an empty lineage.status_classes: the
+# absence subselect then resolves nothing and every well in every jurisdiction goes unclassed.
+absence_over_share="$("${PSQL[@]}" "with ceiling as (
+        select (spec->>'max_share')::numeric as max_share
+          from lineage.conformance_rules where rule_id = 'cr_status_absence_share_1'),
+     absence as (select status_canonical from lineage.status_classes where is_absence),
+     served as (
+        select w.state_code,
+               count(*) as wells,
+               -- The population the absence arm serves: a well no promotion classed and no
+               -- registered map resolves. resolved_status() coalesces the class onto it, so
+               -- the share is counted where both sides are null rather than by comparing
+               -- against the class name the arm supplies.
+               count(*) filter (
+                   where coalesce(w.status_canonical, sr.resolved_status) is null) as unmapped
+          from canonical.wells_latest w
+          left join canonical.status_resolution sr
+            on sr.for_state_code = w.state_code
+           and sr.for_status_reported = w.status_reported
+         group by w.state_code)
+select case
+    when (select count(*) from absence) <> 1
+        then 'the class domain declares no single absence class'
+    when not exists (select 1 from ceiling)
+        then 'cr_status_absence_share_1 registers no ceiling to hold a share to'
+    else coalesce((select string_agg(
+            s.state_code || ' ' || round(100.0 * s.unmapped / s.wells, 1) || '%',
+            ', ' order by s.state_code)
+        from served s, ceiling c
+       where s.wells > 0 and s.unmapped::numeric / s.wells > c.max_share), '')
+  end")"
+assert "no jurisdiction serves the absence class above its registered share" "" \
+    "$absence_over_share"
+assert "GET /v1/conformance/cr_status_absence_share_1" 200 \
+    "$(api_curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
+        "$API/v1/conformance/cr_status_absence_share_1")"
+# V-4. Two clocks over one registry: the resolver rebuilds at the registry's own knowledge cut
+# and the API reads it at max(published_at) too, so a resolver built at the host's calendar
+# instead resolves a different rule set from the one the wire cites. Both halves, because each
+# is internally consistent when they disagree: the cuts themselves, and the invariant that no
+# served jurisdiction resolves fewer serving rule rows through the refresh's cut than through
+# the API's, which stays true on the day a supersession's clock moves ahead of the host.
+clock_gap="$("${PSQL[@]}" "select case
+    when not exists (select 1 from lineage.status_resolution_resolved) then ''
+    when (select max(knowledge_for) from lineage.status_resolution_resolved)
+       is not distinct from (select max(published_at) from lineage.jurisdictions) then ''
+    else coalesce((select max(knowledge_for)::text
+                     from lineage.status_resolution_resolved), 'null')
+         || ' against the registry''s '
+         || coalesce((select max(published_at)::text from lineage.jurisdictions), 'null')
+  end")"
+assert "the resolver's knowledge cut is the registry's" "" "$clock_gap"
+rule_rows_lost="$("${PSQL[@]}" "with cut as (
+        select coalesce((select max(knowledge_for) from lineage.status_resolution_resolved),
+                        (select max(published_at) from lineage.jurisdictions)) as resolver,
+               (select max(published_at) from lineage.jurisdictions) as api),
+     counted as (
+        select j.jurisdiction_code,
+               (select count(*) from lineage.jurisdiction_rules r
+                 where r.jurisdiction_code = a.jurisdiction_code
+                   and r.effective_from = a.effective_from
+                   and r.published_at = a.published_at and r.serving) as api_rows,
+               (select count(*) from lineage.jurisdiction_rules r
+                 where r.jurisdiction_code = b.jurisdiction_code
+                   and r.effective_from = b.effective_from
+                   and r.published_at = b.published_at and r.serving) as resolver_rows
+          from cut,
+               lineage.jurisdictions_as_of(cut.api, current_date) j
+          join lineage.jurisdictions_as_of(cut.api, current_date) a
+            on a.jurisdiction_code = j.jurisdiction_code
+          join lineage.jurisdictions_as_of(cut.resolver, current_date) b
+            on b.jurisdiction_code = j.jurisdiction_code)
+select coalesce(string_agg(jurisdiction_code || ' ' || resolver_rows || '<' || api_rows, ', '
+        order by jurisdiction_code), '')
+  from counted where resolver_rows < api_rows")"
+assert "no jurisdiction loses a serving rule row at the resolver's cut" "" "$rule_rows_lost"
 # The mart is one row per well in canonical.wells_latest at the moment it ran, and the ingest
 # timer promotes wells between deploys -- so a resident count held against a live spine count
 # refuses a healthy host the first time one well lands. Two facts that cannot race instead: the

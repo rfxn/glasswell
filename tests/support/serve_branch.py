@@ -9,6 +9,31 @@ Prints the base URL and the key-file path, never the key. GW_SEED names an optio
 file exec'd with `connection` bound, after the base seeds, for track-specific shapes.
 Everything docker creates carries glasswell.test=1 (CADENCE N-10) and is removed on exit.
 
+Two things a gate photographing this instance needs and does not get by starting it.
+
+The status surface reads a collected snapshot, so before it is taken it renders "Snapshot
+unavailable · Degraded" and every successful-looking value is suppressed, which is the surface
+working rather than a defect. Run the collector against this instance's DSN once the API is up:
+
+    GLASSWELL_DSN=<the printed dsn> GLASSWELL_STATUS_SNAPSHOT=/tmp/<dir>/status.json \
+      .venv/bin/python -m glasswell.status.collector
+
+Set GLASSWELL_STATUS_SNAPSHOT on THIS script too, so uvicorn inherits it. On the collector
+alone the file is written and the API goes on reading DEFAULT_SNAPSHOT, and the page renders
+4 checks and `snapshot_state: unavailable` -- which looks exactly like a real degradation. With
+it on both, 14 checks and `snapshot_state: current`.
+
+And the tiles. This script stands up no tile server, so every wells layer loads nothing and no
+feature is on the canvas to hover or press. The API proxies martin through GLASSWELL_MARTIN_URL
+(`api/deps.py`), the image is on the workstation and `infra/martin/config.yaml` needs two lines
+changed, its `listen_addresses` and its `connection_string`:
+
+    docker run -d --name gw-martin --label glasswell.test=1 \
+      -v /tmp/<dir>/martin.yaml:/martin.yaml:ro \
+      ghcr.io/maplibre/martin:1.14.0 --config /martin.yaml
+    socat TCP-LISTEN:3261,bind=127.0.0.1,fork,reuseaddr TCP:<martin-ip>:3000
+    # then start this script with GLASSWELL_MARTIN_URL=http://127.0.0.1:3261
+
 Refuses to start on a `GW_WEB_ROOT` older than `web/src`, because a gate pointed at the
 instance photographs whatever was last built (DR-P7). `GW_WEB_STALE=ok` serves it anyway with
 a warning, which is what a run that puts its own dev server in front of this API wants.

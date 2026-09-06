@@ -15,6 +15,7 @@ import psycopg
 import pytest
 from fastapi.testclient import TestClient
 
+from glasswell.lineage.status_classes import absence_class
 from glasswell.seed.conformance_status_history import (
     CO_HISTORY_RULE_ID,
     LOAD_STAMP,
@@ -136,10 +137,16 @@ def test_dr_a7_the_filed_code_and_its_class_are_both_served(
 def test_a_well_whose_class_resolves_nowhere_still_names_its_regulator(
     client: TestClient, seeded: psycopg.Connection
 ) -> None:
-    """The Texas arm of DR-A7. Measured on the deployed instance: 68,186 Texas wells serve a
-    null class, because every canonical.status_resolution row is another jurisdiction's. The
+    """The Texas arm of DR-A7. Measured on the deployed instance: 68,186 Texas wells resolved
+    to no class, because every canonical.status_resolution row is another jurisdiction's. The
     filed code and the regulator must reach the card anyway -- a well with neither shows no
-    status at all, not even what the regulator wrote down."""
+    status at all, not even what the regulator wrote down.
+
+    Amended for cr_status_absence_basis_1, which is what this track publishes: no serving path
+    emits a null class any more, so the served class is the absence class and `status_reported`
+    is what tells the two cases apart. The property the case exists for is unchanged and the
+    null it used to assert is now the thing the rule forbids.
+    """
     from tests.contract.conftest import TX_API10
 
     unresolved = f"{TX_API10[:2]}00399997"
@@ -159,7 +166,7 @@ def test_a_well_whose_class_resolves_nowhere_still_names_its_regulator(
 
     body = client.get(f"/v1/wells/{unresolved}").json()["data"]
 
-    assert body["status_canonical"] is None
+    assert body["status_canonical"] == absence_class(seeded)
     assert body["status_reported"] == "AC"
     assert body["regulator_name"]
     assert body["regulator_url"]

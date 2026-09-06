@@ -75,6 +75,35 @@ def applied_migrations(connection: psycopg.Connection) -> dict[int, str]:
         return dict(cursor.fetchall())
 
 
+# Roles are cluster-global, so 001, 026 and 076's `if not exists (select 1 from pg_roles ...)`
+# is a check between sessions and not a lock: four workers migrating four databases on one
+# cluster all pass it in the same instant, all issue the CREATE, and the losers take 23505 on
+# `pg_authid_rolname_index` -- 843 tests errored on it in the first sharded CI run. The guard
+# belongs in the SQL, but that SQL is applied everywhere and `migrate` refuses a file whose
+# sha256 moved (RELEASING.md, "an applied migration's checklist is read, never corrected"), so
+# the close is here. A migration is one transaction: a lost attempt leaves nothing behind, and
+# the retry takes the branch the winner has by then committed.
+CLUSTER_OBJECT_RACE = (psycopg.errors.DuplicateObject, psycopg.errors.UniqueViolation)
+RACE_ATTEMPTS = 3
+
+
+def _apply(connection: psycopg.Connection, migration: Migration) -> None:
+    for attempt in range(1, RACE_ATTEMPTS + 1):
+        try:
+            with connection.transaction(), connection.cursor() as cursor:
+                cursor.execute(migration.sql)
+                cursor.execute(
+                    "insert into public.schema_migrations (version, name, sha256)"
+                    " values (%s, %s, %s)",
+                    (migration.version, migration.name, migration.sha256),
+                )
+        except CLUSTER_OBJECT_RACE:
+            if attempt == RACE_ATTEMPTS:
+                raise
+        else:
+            return
+
+
 def migrate(connection: psycopg.Connection, directory: Path | None = None) -> list[Migration]:
     """Apply every unapplied migration in order. Returns only what this call applied."""
     migrations = discover_migrations(directory)
@@ -91,12 +120,7 @@ def migrate(connection: psycopg.Connection, directory: Path | None = None) -> li
                 f"migration {migration.version:03d}_{migration.name} changed after it was applied"
                 f" (recorded {recorded}, on disk {migration.sha256})"
             )
-        with connection.transaction(), connection.cursor() as cursor:
-            cursor.execute(migration.sql)
-            cursor.execute(
-                "insert into public.schema_migrations (version, name, sha256) values (%s, %s, %s)",
-                (migration.version, migration.name, migration.sha256),
-            )
+        _apply(connection, migration)
         newly_applied.append(migration)
     return newly_applied
 

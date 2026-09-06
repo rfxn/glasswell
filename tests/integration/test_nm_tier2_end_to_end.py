@@ -123,7 +123,13 @@ def test_the_mart_publishes_one_tile_row_per_promoted_geometry(tier2, db) -> Non
 
 def test_no_new_mexico_well_carries_an_invented_status_class(tier2, db) -> None:
     """The status class, end to end: the letter reaches the tile, the class beside it is the
-    one the registry maps that letter to, and nothing was written back to the spine."""
+    one the registry maps that letter to, and nothing was written back to the spine.
+
+    Amended for cr_status_absence_basis_1: a tile row whose letter the map has no row for --
+    including the rows that filed no letter at all -- now serves the absence class instead of
+    a null, so the join reads through the domain the way every serving path does. What is
+    still forbidden is the thing the case is named for, a class no registry row produced.
+    """
     reported, canonical = rows(
         db,
         "select count(status_reported), count(status_canonical) from marts.nm_wells_tile",
@@ -131,12 +137,14 @@ def test_no_new_mexico_well_carries_an_invented_status_class(tier2, db) -> None:
 
     assert reported > 0
     assert canonical > 0
-    # Every class on the tile is a registry row, not a value a parser decided (R8).
+    # Every class on the tile is a registry row, not a value a parser decided (R8): the
+    # jurisdiction's own map where it has a row, the domain's absence class where it has none.
     assert rows(
         db,
         "select t.status_reported, t.status_canonical from marts.nm_wells_tile t"
         " left join lineage.nm_wellhistory_status_map m on m.status = t.status_reported"
-        " where t.status_canonical is distinct from m.status_canonical",
+        " where t.status_canonical is distinct from coalesce(m.status_canonical,"
+        " (select status_canonical from lineage.status_classes where is_absence))",
     ) == []
     # And the spine is untouched: the class is a join, never a backfill.
     assert scalar(

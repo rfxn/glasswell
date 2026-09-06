@@ -273,6 +273,12 @@
   reason: >-
     How long a scheduled job ran, on the status page's job rows. Operational inventory from a
     timed snapshot, not a petroleum figure.
+# One entry and not three: the class domain is served in `meta` and the walker reads `data`,
+# so an exemption for its two integers could never match.
+- pointer: /*/map/wells_draw_order
+  reason: >-
+    Where a jurisdiction's Wells row sits in the layer panel. A real per-row integer that
+    ranks layers, not a measurement of anything: disposal wells sit between two of them.
 
 # --- the allocation, and what is method rather than measurement ---------------
 # An allocated share is a figure and carries a handle like any other. What is exempt

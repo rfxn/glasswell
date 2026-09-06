@@ -30,6 +30,7 @@ pytestmark = pytest.mark.contract
 ANOTHER_ND_VOCAB_RULE = "cr_nd_segment_vocab_1"
 ANOTHER_ND_PROVENANCE_RULE = "cr_nd_datum_1"
 A_LENGTH_SCOPE_RULE = "cr_nd_multilateral_1"
+A_BLANK_IS_ABSENT_RULE = "cr_nd_units_1"
 ANOTHER_TX_ABSENCE_RULE = "cr_tx_status_vocab_1"
 BOTH_STATES_BOX = "-105,30,-100,50"
 
@@ -66,6 +67,27 @@ def test_the_collection_row_cites_it_too(
     listed = body(client, "/v1/wells", api10=EXAMPLE_API10)["data"]
 
     assert [row["status_vocabulary_rule"] for row in listed] == [ANOTHER_ND_VOCAB_RULE]
+
+
+def test_the_card_and_the_collection_cite_the_rule_the_blank_read_applied(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """gate-cofix H-1, at the spine read. `_COLUMNS` applies absent_if_blank to every
+    source-reported text column the card and the collection serve, so both name the decision
+    that shaped what they served -- and neither names it before a jurisdiction registers one.
+    """
+    before = body(client, f"/v1/wells/{EXAMPLE_API10}")
+    assert "absence_rule" not in before["links"]
+
+    restate(seeded, "ND", rules={"blank_is_absent": A_BLANK_IS_ABSENT_RULE})
+
+    card = body(client, f"/v1/wells/{EXAMPLE_API10}")
+    listed = body(client, "/v1/wells", api10=EXAMPLE_API10)
+
+    assert card["links"]["absence_rule"] == f"/v1/conformance/{A_BLANK_IS_ABSENT_RULE}"
+    assert listed["links"][A_BLANK_IS_ABSENT_RULE] == (
+        f"/v1/conformance/{A_BLANK_IS_ABSENT_RULE}"
+    )
 
 
 def test_the_status_summary_names_it_per_basin(

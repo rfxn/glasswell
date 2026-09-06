@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import importlib
+import pkgutil
 from datetime import date
 from decimal import Decimal
 
@@ -8,8 +10,15 @@ import psycopg
 import pytest
 from psycopg.rows import dict_row
 
+import glasswell.seed
 from glasswell.lengths import LATERALS_SOURCE_ID, resolve_length_method
-from glasswell.lineage.conformance import RULE_KINDS, apply_registry_rules, apply_rules, load_rules
+from glasswell.lineage.conformance import (
+    RULE_KINDS,
+    apply_registry_rules,
+    apply_rules,
+    executor_for,
+    load_rules,
+)
 from glasswell.seed import seed_all
 from glasswell.seed.conformance_nd import ND_RULES
 from glasswell.seed.conformance_schedules import SCHEDULE_RULES
@@ -60,6 +69,22 @@ POLICY_RULES = tuple(sorted((
     "cr_eia_geometry_repair_1",
     "cr_eia_well_membership_1",
     "cr_ff_completion_anchor_1",
+    # The status class domain's three: the set every regulator's map targets, what the absence
+    # class means and how a consumer tells its two cases apart, and the share of a spine that
+    # may legitimately resolve to it. All three are declarations the serving path and the host
+    # check read, with no frame for an executor to transform.
+    # Montana's production grain: a decision the promotion has carried out since Montana
+    # landed and the registry never recorded, so the serving path had nothing to name.
+    "cr_mt_bogc_pool_rollup_1",
+    # New Mexico's, one train later and one grain the other way: the successor that admits a
+    # sum glasswell performs in the mart layer, executed by the refresh its spec names. It IS
+    # seeded at the conform stage, so the NM promotion filters it out of the pass the way
+    # Montana's does; this tuple is the registry's own census of code_ref and is asserted as
+    # an equality, so omitting the id only breaks the census (gate-p68 H-1).
+    "cr_nm_wcproduction_pool_rollup_2",
+    "cr_status_class_domain_1",
+    "cr_status_absence_basis_1",
+    "cr_status_absence_share_1",
     # The FracFocus design promotion and the serve-time intensity it feeds: two decisions with
     # measured bounds, kept apart because one runs at promote time and one at request time.
     "cr_ff_design_promote_1",
@@ -582,3 +607,94 @@ def test_the_active_length_method_is_zone_free(db, seeded):
         "geodesic",
         None,
     )
+
+
+# The four this track registers, which is the set the assertion below is about. Named rather
+# than derived, because what it pins is that a rule filed away from its own subject says so.
+CROSS_JURISDICTION_DECLARATIONS = (
+    "cr_status_absence_basis_1",
+    "cr_status_absence_share_1",
+    "cr_status_class_domain_1",
+)
+
+
+def test_a_declaration_filed_under_a_source_it_does_not_interpret_says_so(db, seeded):
+    """`lineage.conformance_rules.source_id` is not null and every one of the 29 registered
+    sources is a regulator or publisher dataset. A policy declaration interprets none of them,
+    so the column is being used as a filing anchor, which works and was undocumented: eight
+    rows already do it, the producing and type-curve decisions under the founding North Dakota
+    source, and nothing on the row said which of the two readings applied.
+
+    `source_is_filing_anchor` is that reading, stated. Whether `lineage.sources` should carry a
+    shape for a decision with no publication to interpret is the registry track's question; what
+    this asserts is that a rule filed away from its own subject says so on the row.
+    """
+    rows = {row["rule_id"]: row for row in registry_rows(db)}
+
+    for rule_id in CROSS_JURISDICTION_DECLARATIONS:
+        assert rows[rule_id]["spec"]["source_is_filing_anchor"] is True, rule_id
+    # And the counterpart: a grain rule's source is the filings it decides about, so it is an
+    # interpretation and says the opposite rather than being silent.
+    assert rows["cr_mt_bogc_pool_rollup_1"]["spec"]["source_is_filing_anchor"] is False
+
+
+def declared_policy_pairs() -> list[tuple[str, str]]:
+    """Every `(source_id, stage)` the seed declares a `code_ref` rule at.
+
+    Read out of the seed modules so a new declaration is parametrised without an edit here,
+    and pinned to the registry itself by the census below.
+    """
+    pairs: set[tuple[str, str]] = set()
+    for module in pkgutil.iter_modules(glasswell.seed.__path__):
+        loaded = importlib.import_module(f"glasswell.seed.{module.name}")
+        for value in vars(loaded).values():
+            if not isinstance(value, list | tuple):
+                continue
+            for row in value:
+                if isinstance(row, dict) and row.get("rule_kind") == "code_ref":
+                    pairs.add((str(row["source_id"]), str(row["stage"])))
+    return sorted(pairs)
+
+
+POLICY_PAIRS = declared_policy_pairs()
+
+
+def test_every_pair_the_registry_declares_a_policy_rule_at_is_covered(db, seeded):
+    """The parametrisation below is derived from the seed modules; the registry is what the
+    ingests read. A rule inserted by a migration rather than a seed module would otherwise
+    declare a policy at a pair no case covers."""
+    with db.cursor() as cursor:
+        cursor.execute(
+            "select distinct source_id, stage from lineage.conformance_rules"
+            " where rule_kind = 'code_ref' order by source_id, stage"
+        )
+        registered = [(row[0], row[1]) for row in cursor.fetchall()]
+
+    assert registered == POLICY_PAIRS
+
+
+@pytest.mark.parametrize(("source_id", "stage"), POLICY_PAIRS)
+def test_a_stage_that_declares_a_policy_rule_cannot_be_executed_wholesale(
+    db, seeded, source_id: str, stage: str
+):
+    """H-16: the census proves every declaration is well-formed, not that the ingest reading
+    that stage drops it. A `code_ref` row has no executor, so the whole-stage load at this
+    pair cannot be handed to `apply_rules` -- which is why no ingest reaches
+    `apply_registry_rules` here, and why one that started to would fail on its first run
+    rather than conform a column by accident.
+
+    Filtering the declarations out has to be sufficient, not merely necessary: the rest of
+    the pair's load is executable kinds, so an ingest that drops the declarations has a load
+    it can run.
+    """
+    loaded = load_rules(db, source_id=source_id, stage=stage)
+    declarations = [rule for rule in loaded if rule.rule_kind == "code_ref"]
+    assert declarations, f"{source_id}/{stage} no longer declares a policy rule"
+
+    for rule in declarations:
+        with pytest.raises(NotImplementedError, match="code_ref"):
+            executor_for(rule.rule_kind)(pl.DataFrame(), rule)
+
+    for rule in loaded:
+        if rule.rule_kind != "code_ref":
+            assert executor_for(rule.rule_kind), f"{rule.rule_id} has no executor either"

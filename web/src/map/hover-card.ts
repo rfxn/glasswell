@@ -1,5 +1,6 @@
 import { explainHandle, setExplainHandle } from "../chrome/handle.ts";
-import { disposalType } from "./disposal.ts";
+import { disposalCodebook, injectionCandidate } from "./disposal.ts";
+import { BY_PREFIX } from "./jurisdictions.generated.ts";
 import { geometryProvenance, provenanceLine } from "./provenance.ts";
 import { statusClass } from "./status.ts";
 import { statusSwatch } from "./swatch.ts";
@@ -233,14 +234,30 @@ export function createHoverCard(options: HoverCardOptions = {}): HoverCardHandle
       }
       // The verbatim code, never an English decode: which words SWD abbreviates is the
       // regulator's PDF footnote to own, and cr_nd_well_type_disposal_1 asserts none.
-      const wellType = disposalType(properties);
-      disposal.hidden = wellType === null;
-      disposal.textContent = disposal.hidden ? "" : `Disposal / injection · well_type ${wellType} as ND filed it`;
+      //
+      // Two sentences, because there are two facts and only one of them is registered
+      // everywhere. The code and the regulator that filed it are always knowable, and this
+      // line used to say "as ND filed it" over every jurisdiction on a code list that is North
+      // Dakota's. Whether another regulator means by the code what the NDIC means is a
+      // decision, and only North Dakota has published one -- so the class and its rule are
+      // named where a codebook is registered, and their absence is stated where none is,
+      // rather than the whole line disappearing, which reads as though the well were not an
+      // injector at all.
+      const candidate = injectionCandidate(properties);
+      const codebook = disposalCodebook(api10);
+      const filer = BY_PREFIX[api10.slice(0, 2)]?.code ?? null;
+      disposal.hidden = candidate === null || filer === null;
+      const filed = `well_type ${candidate} as ${filer} filed it`;
+      disposal.textContent = disposal.hidden
+        ? ""
+        : codebook !== null && codebook.codes.includes(candidate!)
+          ? `Disposal / injection · ${filed} · ${codebook.rule}`
+          : `${filed} · no injection codebook is registered for ${filer}`;
       // M1-3: provenance-of-record at hover, the class verbatim. The trace line above
       // already states its own; a TX feature carries no property and the line stays hidden
       // (the TX half is licence-gated on RF-1 — the legend states it where the reader looks).
       const provenanceClass = geometryProvenance(properties);
-      const sentence = provenanceClass === null ? null : provenanceLine(provenanceClass);
+      const sentence = provenanceClass === null ? null : provenanceLine(provenanceClass, api10);
       provenance.hidden = sentence === null;
       provenance.textContent = sentence ?? "";
       place(point);

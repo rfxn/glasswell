@@ -1,7 +1,7 @@
 import { isAuthRefusal } from "../api/client.ts";
 import type { Envelope, Figure, Links } from "../api/envelope.ts";
 import type { ProducingCounts, ProducingWindow } from "./producing.ts";
-import { UNMAPPED_STATUS } from "./status.ts";
+import { absenceStatus } from "./status.ts";
 
 export const STATUS_SUMMARY_PATH = "/v1/wells/status-summary";
 
@@ -185,8 +185,17 @@ export function statusCounts(data: WellStatusSummary): Record<string, number> {
       .map((row) => [row.status, Number(row.wells.value)] as const)
       .filter(([, wells]) => wells !== 0),
   );
-  if (data.unmapped_wells && Number(data.unmapped_wells.value) !== 0) {
-    counts[UNMAPPED_STATUS.id] = Number(data.unmapped_wells.value);
+  // The class's own count wins where the response carries one: the legend row toggles the
+  // class, so a row showing the filed-no-code subset beside it would disagree with the canvas.
+  // `unmapped_wells` is the fallback for a response served before the absence class was one.
+  const absent = absenceStatus()?.id;
+  if (
+    absent !== undefined &&
+    counts[absent] === undefined &&
+    data.unmapped_wells &&
+    Number(data.unmapped_wells.value) !== 0
+  ) {
+    counts[absent] = Number(data.unmapped_wells.value);
   }
   return counts;
 }
@@ -200,8 +209,14 @@ export function statusHandles(data: WellStatusSummary): Record<string, string> {
       .filter((row) => Number(row.wells.value) !== 0)
       .map((row) => [row.status, row.wells.d]),
   );
-  if (data.unmapped_wells && Number(data.unmapped_wells.value) !== 0) {
-    handles[UNMAPPED_STATUS.id] = data.unmapped_wells.d;
+  const absent = absenceStatus()?.id;
+  if (
+    absent !== undefined &&
+    handles[absent] === undefined &&
+    data.unmapped_wells &&
+    Number(data.unmapped_wells.value) !== 0
+  ) {
+    handles[absent] = data.unmapped_wells.d;
   }
   return handles;
 }

@@ -1,9 +1,9 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { decodeUnicodeEscapes } from "../test/literals";
 import { dirname, join, normalize } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { unescapeLiteral } from "../test/literals.ts";
 import { CLASS_B_DATASETS, CLASS_C_DATASETS } from "./rail.ts";
 
 // Paths are relative to `web/`, which is vitest's cwd (the chrome/*.test.ts precedent).
@@ -286,7 +286,7 @@ const RENDERED = sources("src", [".ts", ".css"]).map((path) => ({
 function literalsOf(path: string, source: string): string[] {
   const dialect = path.endsWith(".css") ? "css" : "ts";
   return [...withoutComments(source, dialect).matchAll(LITERAL)].map(([literal]) =>
-    decodeUnicodeEscapes(literal),
+    unescapeLiteral(literal, dialect),
   );
 }
 
@@ -319,6 +319,15 @@ describe("every glyph this product renders comes from a face it ships", () => {
     ].join("\n");
 
     expect(outOfRange("probe.ts", probe).map((hit) => hit.point)).toEqual([0x24d4, 0x24d4, 0x24d4]);
+  });
+
+  it("reads an escaped spelling, which is the one a reviewer's eye does not catch", () => {
+    expect(outOfRange("probe.ts", 'const escaped = "\\u24d4";').map((hit) => hit.point)).toEqual([
+      0x24d4,
+    ]);
+    expect(outOfRange("probe.css", 'content: "\\24d4";').map((hit) => hit.point)).toEqual([
+      0x24d4,
+    ]);
   });
 
   it("walks every .ts and .css under src, not one directory of it", () => {
@@ -416,5 +425,9 @@ describe("no em dash reaches a shipped literal", () => {
 
     expect(literalsOf("probe.ts", probe).filter((one) => one.includes(EM_DASH))).toHaveLength(3);
     expect(literalsOf("probe.ts", `// a ${EM_DASH} comment`)).toEqual([]);
+
+    // The escaped spelling renders the same character and reads as ASCII in the source.
+    const escaped = 'const escaped = "a \\u2014 b";';
+    expect(literalsOf("probe.ts", escaped).filter((one) => one.includes(EM_DASH))).toHaveLength(1);
   });
 });

@@ -16,6 +16,7 @@ import polars as pl
 import psycopg
 import pytest
 
+from glasswell.ingest import nm_ocd
 from glasswell.ingest.xml_stream import stream_records
 from glasswell.lineage.conformance import apply_registry_rules, apply_rules, load_rules
 from glasswell.seed import seed_all
@@ -133,7 +134,16 @@ def nm_rows(connection: psycopg.Connection) -> list[tuple]:
 
 
 def conform(connection: psycopg.Connection, frame: pl.DataFrame):
-    return apply_registry_rules(connection, frame, source_id=SPINE_SOURCE, stage="conform")
+    """The conform pass as `promote_all` runs it, filter included.
+
+    `apply_registry_rules` is the unfiltered shortcut and raises on a declaration; modelling
+    the promotion without its own filter is what let cr_nm_wcproduction_pool_rollup_2 look
+    green here while the promotion was red (gate-p68 H-1).
+    """
+    rules = nm_ocd._executable(
+        load_rules(connection, source_id=SPINE_SOURCE, stage="conform")
+    )
+    return apply_rules(frame, rules)
 
 
 def test_every_nm_source_carries_at_least_one_rule_under_its_own_source_id(seeded):
@@ -206,6 +216,24 @@ def test_a_declaration_passes_the_frame_through_rather_than_asserting_a_header(s
     assert application.frame.to_dicts() == DECLARATION_FRAME.to_dicts()
     assert application.quarantined == []
     assert application.applied_rows[rule_id] == 0
+
+
+def test_no_policy_declaration_under_the_spine_source_reaches_the_executor(seeded):
+    """H-1: `code_ref` has no executor, so a declaration handed to `apply_rules` raises and
+    takes the promotion with it. The registry is asserted to still carry one at the conform
+    stage, or this passes the day the hazard is only moved."""
+    loaded = load_rules(seeded, source_id=SPINE_SOURCE, stage="conform")
+    declared = [rule.rule_id for rule in loaded if rule.rule_kind == "code_ref"]
+
+    executable = nm_ocd._executable(loaded)
+
+    assert "cr_nm_wcproduction_pool_rollup_2" in declared
+    assert [rule.rule_id for rule in executable if rule.rule_kind == "code_ref"] == []
+    assert {rule.rule_id for rule in executable} == {
+        rule.rule_id for rule in loaded
+    } - set(declared)
+    with pytest.raises(NotImplementedError, match="code_ref"):
+        apply_rules(DECLARATION_FRAME, [rule for rule in loaded if rule.rule_id in declared])
 
 
 def test_the_api10_pads_each_segment_to_its_own_width(seeded):

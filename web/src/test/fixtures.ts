@@ -784,7 +784,10 @@ export function stubFetch(
 ): (input: RequestInfo | URL) => Promise<Response> {
   return (input: RequestInfo | URL) => {
     const url = String(input);
-    for (const [path, body] of Object.entries(routes)) {
+    // Longest key first: the match is a prefix, so a shorter route declared above a longer one
+    // would answer every path beneath it with the wrong body (H-17, which hid MAJOR-5).
+    const byPathLength = Object.entries(routes).sort(([a], [b]) => b.length - a.length);
+    for (const [path, body] of byPathLength) {
       if (url.startsWith(path)) {
         // Any problem document, not one particular object: a route that answers 404 with its
         // own `detail` is what the card renders now, so a stub that could only serve one

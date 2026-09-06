@@ -1008,6 +1008,11 @@ def get_well_facets(
     consume_rate_limit(
         connection, principal, operation="get_well_facets", limit=FACET_REQUESTS_PER_MINUTE
     )
+    # No search and a search for nothing are the same request -- what the partition term below
+    # already says -- and the selector grammar admits no empty value, so `?q=` rendered
+    # `q_b64=` and refused the whole response. Normalised once, here, so the SQL, the echo, the
+    # captions and every selector read one `q`.
+    q = q or None
     registry = jurisdictions(connection)
     requested = state_set(state)
     loaded, codes = _require_states(connection, requested, registry)

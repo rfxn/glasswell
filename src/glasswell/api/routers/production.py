@@ -4,6 +4,7 @@ per point, and the three null semantics kept apart."""
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Annotated, Any, Literal
@@ -51,6 +52,7 @@ from glasswell.lineage.jurisdictions import JurisdictionRegistry
 from glasswell.lineage.selector_registry import identity_selector_term
 from glasswell.lineage.vintages import select_production
 from glasswell.marts.cumulatives import CUMULATIVES_SCOPE
+from glasswell.marts.well_pool_rollup import ADMITTED_NULL_SEMANTICS, POOL_GRAIN_ENTITY
 from glasswell.status.source_health import source_health_data
 from glasswell.units import metres_to_feet
 
@@ -64,6 +66,9 @@ router = APIRouter(tags=["wells"])
 LIQUIDS_STREAM = "oil"
 WATER_BASIS = "water"
 PRODUCTION_GRAIN = "production_grain"
+SUM_OVER_POOLS = "sum_over_pools"
+WELL_OBSERVED = "well_observed"
+POOL_GRAIN_LEVEL = "well_completion_pool"
 
 STREAM_COLUMNS = {"oil": "oil_bbl", "gas": "gas_mcf", "water": "water_bbl"}
 
@@ -72,6 +77,10 @@ STREAM_COLUMNS = {"oil": "oil_bbl", "gas": "gas_mcf", "water": "water_bbl"}
 # regulator publishes none, and the absence is stated rather than served as an empty array.
 ALLOCATED_STREAM_COLUMNS = {"liquid": "oil_bbl", "gas": "gas_mcf"}
 ALLOCATED_STREAM_OF = {"oil": "liquid", "gas": "gas"}
+# The rollup mart's own vocabulary, water included: New Mexico's regulator publishes a water
+# stream at pool grain and the sum carries it, which the allocated mart's jurisdiction does not.
+ROLLUP_STREAM_COLUMNS = {"liquid": "oil_bbl", "gas": "gas_mcf", "water": "water_bbl"}
+ROLLUP_STREAM_OF = {"oil": "liquid", "gas": "gas", "water": "water"}
 ALLOCATION_MART = "marts.tx_allocated_production"
 
 
@@ -89,6 +98,29 @@ def stream_basis(stream: str, state_code: str | None, *, registry: JurisdictionR
 
 def rollup_rule(state_code: str | None, *, registry: JurisdictionRegistry) -> str | None:
     return registry.rule_for(state_code, PRODUCTION_GRAIN)
+
+
+_ROLLUP_SPEC = """
+select spec from lineage.conformance_rules where rule_id = %(rule_id)s
+"""
+
+
+def rollup_series_rule(
+    connection: psycopg.Connection, state_code: str | None, *, registry: JurisdictionRegistry
+) -> str | None:
+    """The grain rule that registers a served rollup, or None where none does.
+
+    Two reads and not one: the registration says which grain decision is serving, and the
+    decision's own spec says whether glasswell sums the pool filings. A jurisdiction that files
+    at pool grain and registers no rollup answers None here and keeps the panel.
+    """
+    rule_id = rollup_rule(state_code, registry=registry)
+    if rule_id is None:
+        return None
+    found = rows(connection, _ROLLUP_SPEC, {"rule_id": rule_id})
+    if not found or found[0]["spec"].get("served_rollup") != SUM_OVER_POOLS:
+        return None
+    return rule_id
 MONTH_FORMAT = r"^\d{4}-\d{2}$"
 
 # The summed per-well series: a well's shares for a month, added at request time. It is stored
@@ -481,8 +513,13 @@ def _state_code(connection, api10: str) -> str | None:
         " over those rows, `*_aggregation` reads `sum_over_pools`, `reporting_level` reads"
         " `well_completion_pool`, and `links.pools` carries the per-pool breakdown. Where two"
         " filings share one pool label the rule cannot say which is the well, so that point is"
-        " withdrawn as multi_pool_pending instead. meta.warnings names every case with the"
-        " rule that decided it."
+        " withdrawn as multi_pool_pending instead. Where the regulator filed no per-well number"
+        " at all and its grain rule registers a served rollup, the series is read from"
+        " glasswell's own rollup mart: every point carries the refresh that produced it and its"
+        " own selector, a production_summed_over_pools warning names the rule, and as_of is"
+        " refused rather than answered with today's sum, because the mart holds one snapshot"
+        " per key while the pool filings under it are bitemporal. meta.warnings names every"
+        " case with the rule that decided it."
         " GOR and water cut are deliberately not served in this slice."
     ),
     response_model=EnvelopeModel[Production],
@@ -686,11 +723,44 @@ def get_well_production(
             explain=explain,
         )
 
-    observed = _rows_in_window(
-        select_production(connection, as_of=as_of, api10=api10, entity_type="well"),
-        requested=requested,
-        window=window,
+    # Bound rather than inlined: the same rows answer two questions, and the second one is
+    # whether this well has a well-level series at all. `observed` narrows them to the streams
+    # and the months the request asked for; the pool-grain disclosure is about the well.
+    all_well_rows = select_production(
+        connection, as_of=as_of, api10=api10, entity_type="well"
     )
+    observed = _rows_in_window(all_well_rows, requested=requested, window=window)
+    # A jurisdiction that files below the well and registers a served rollup has no well-grain
+    # filing to observe and a sum glasswell performs and discloses. The mart rows are read
+    # unwindowed for the reason the pool-grain guard is: a narrow window over a well the mart
+    # covers is an empty window, not a well nothing rolls up.
+    summed_rule = rollup_series_rule(connection, state_code, registry=registry)
+    if summed_rule is not None and not all_well_rows:
+        summed = _rollup_rows(connection, api10)
+        if summed:
+            if divisor is not None:
+                # The allocated arm's refusal, one grain the other way and for the same reason.
+                # Not live while New Mexico holds surface points only, and live the day a
+                # pool-grain jurisdiction with laterals registers a rollup -- which this design
+                # advertises as a spec key rather than a module.
+                raise _refuse_normalisation(
+                    "this jurisdiction serves a series summed over its pool filings"
+                    f" ({summed_rule}), and a sum over pool filings divided by this well's"
+                    " lateral is not a per-foot rate anybody measured"
+                )
+            return _summed_response(
+                request,
+                connection,
+                api10=api10,
+                requested=requested,
+                window=window,
+                registry=registry,
+                state_code=state_code,
+                rule_id=summed_rule,
+                summed=summed,
+                as_of=as_of,
+                explain=explain,
+            )
     # A lease-reporting jurisdiction has no observed well-level series. An empty envelope here
     # reads as "nothing was produced"; the disclosure says what is actually true (DIR-3).
     lease_reported = lease_reporting_rule(
@@ -709,7 +779,13 @@ def get_well_production(
         warnings.append(pending_allocation(lease_reported))
     warnings.extend(
         _pool_grain_warning(
-            connection, api10, state_code, observed, as_of=as_of, registry=registry
+            connection,
+            api10,
+            state_code,
+            observed,
+            as_of=as_of,
+            registry=registry,
+            has_well_rows=bool(all_well_rows),
         )
     )
     columns: list[str] = []
@@ -1238,6 +1314,246 @@ def _allocated_response(
     )
 
 
+_ROLLUP_SERIES = """
+select production_month, stream, volume, unit, days_produced, pools_summed, derivation_id
+  from marts.well_pool_rollup
+ where api10 = %(api10)s
+ order by production_month, stream
+"""
+
+# The filings the sum was taken over, for the two facts the mart does not carry: which source
+# published them, and the vintage they were read at. Read from canonical rather than spelled,
+# so a second pool-grain jurisdiction needs no entry anywhere.
+_ROLLUP_FILINGS = """
+select coalesce(array_agg(distinct source_id), '{}') as source_ids,
+       max(report_vintage) as report_vintage
+  from canonical.production_monthly
+ where api10 = %(api10)s and entity_type = 'well_completion_pool'
+"""
+
+# The same filings per month and stream, for the facts that are per point and were served as
+# one scalar each or inferred: whether every filing under a summed month was an explicit zero,
+# whether the ones a month was kept out of the sum for say withheld, and the vintage that month
+# was read at. The ranking window is the mart's own, so a restated month is described by the
+# restatement the mart summed rather than beside it.
+_ROLLUP_FILING_MONTHS = """
+with ranked as (
+    select p.production_month, p.stream, p.null_semantics, p.source_id, p.report_vintage,
+           row_number() over (
+               partition by p.entity_type, p.entity_key, p.production_month, p.stream,
+                            p.source_id
+               order by p.report_vintage desc) as vintage_rank
+      from canonical.production_monthly p
+     where p.api10 = %(api10)s and p.entity_type = %(entity_type)s
+)
+select production_month, stream,
+       bool_and(null_semantics = 'reported_zero') filter (where admitted) as all_zero,
+       bool_and(null_semantics = 'withheld') filter (where not admitted) as all_withheld,
+       max(report_vintage) filter (where admitted) as report_vintage
+  from (select production_month, stream, null_semantics, report_vintage,
+               null_semantics = any(%(admitted)s) as admitted
+          from ranked where vintage_rank = 1) rank_one
+ group by production_month, stream
+"""
+
+
+def _rollup_rows(connection: psycopg.Connection, api10: str) -> list[dict[str, Any]]:
+    return rows(connection, _ROLLUP_SERIES, {"api10": api10})
+
+
+@dataclass(frozen=True)
+class _FilingMonth:
+    """What the pool filings under one summed month and stream say about it."""
+
+    all_zero: bool
+    all_withheld: bool
+    vintage: date | None
+
+
+def _rollup_filing_months(
+    connection: psycopg.Connection, api10: str
+) -> dict[tuple[date, str], _FilingMonth]:
+    read = rows(
+        connection,
+        _ROLLUP_FILING_MONTHS,
+        {
+            "api10": api10,
+            "entity_type": POOL_GRAIN_ENTITY,
+            "admitted": list(ADMITTED_NULL_SEMANTICS),
+        },
+    )
+    return {
+        (row["production_month"], row["stream"]): _FilingMonth(
+            all_zero=bool(row["all_zero"]),
+            all_withheld=bool(row["all_withheld"]),
+            vintage=row["report_vintage"],
+        )
+        for row in read
+        if row["stream"] in ROLLUP_STREAM_OF
+    }
+
+
+def _summed_semantics(filed: _FilingMonth | None, *, summed: bool) -> str:
+    """The four states the card's legend advertises, on the summed arm too.
+
+    A month with no mart row is not a hole in the axis: either its filings were all withheld,
+    which is why the sum admits none of them, or the stream filed nothing that month. Serving
+    null for both painted the band in the gas red with nothing in the key to read it by.
+
+    Which of the two it is comes from the filings' own tokens, never from the sum admitting
+    none of them: New Mexico files no `withheld` (`nm_ocd.py:139`), so a count would answer
+    "the operator held this back" over every month its pools filed no number for.
+    """
+    if not summed:
+        return "withheld" if filed is not None and filed.all_withheld else "no_report"
+    return "reported_zero" if filed is not None and filed.all_zero else "reported"
+
+
+def summed_over_pools(api10: str, rule_id: str) -> dict[str, Any]:
+    """The disclosure a summed series carries: what it is, and what it is not.
+
+    It is deliberately not one of the codes `card.ts` replaces the chart with a panel for. The
+    chart is drawn and this sentence sits above it, because the figure exists and what a reader
+    needs is to know who computed it.
+    """
+    return {
+        "code": "production_summed_over_pools",
+        "detail": (
+            f"This well's regulator files production per completion pool and filed no per-well"
+            f" number, so the series is glasswell's exact sum of those filings ({rule_id}),"
+            " disclosed as a sum and promoted into no canonical row. One derivation addresses"
+            " the whole series rather than one per month, and each point carries its own"
+            f" selector. The filings are at /v1/wells/{api10}/production/pools and the rule is"
+            f" at /v1/conformance/{rule_id}."
+        ),
+        "pointer": "/series",
+        "rule_id": rule_id,
+    }
+
+
+def _summed_response(
+    request: Request,
+    connection: psycopg.Connection,
+    *,
+    api10: str,
+    requested: Sequence[str],
+    window: tuple[date | None, date | None],
+    registry: JurisdictionRegistry,
+    state_code: str | None,
+    rule_id: str,
+    summed: Sequence[Mapping[str, Any]],
+    as_of: date | None,
+    explain: Any,
+) -> JSONResponse:
+    """The per-well series a pool-grain jurisdiction is served, read from the rollup mart.
+
+    `as_of` is refused rather than answered, for the reason the allocated arm refuses it: the
+    mart holds one snapshot per key, so an older date would be answered with today's sum
+    wearing the caller's date. The pool filings underneath it are bitemporal and answer as_of.
+    """
+    if as_of is not None:
+        raise ProblemError(
+            "as_of_not_supported",
+            detail=(
+                f"as_of is not supported on this well series: {rule_id} admits a sum glasswell"
+                " performs in marts.well_pool_rollup, which holds one snapshot per key, so an"
+                " older date would be answered with today's sum. The pool filings it is summed"
+                f" from are at /v1/wells/{api10}/production/pools and answer as_of."
+            ),
+        )
+    wanted = {ROLLUP_STREAM_OF[name] for name in requested if name in ROLLUP_STREAM_OF}
+    points = [
+        row
+        for row in summed
+        if row["stream"] in wanted
+        and (window[0] is None or row["production_month"] >= window[0])
+        and (window[1] is None or row["production_month"] <= window[1])
+    ]
+    filings = rows(connection, _ROLLUP_FILINGS, {"api10": api10})[0]
+    per_month = _rollup_filing_months(connection, api10)
+    months = sorted({row["production_month"] for row in points})
+    payload: dict[str, Any] = {"pm": [month_label(month) for month in months]}
+    warnings: list[dict[str, Any]] = [summed_over_pools(api10, rule_id)]
+    columns: list[str] = []
+
+    for mart_stream, column in ROLLUP_STREAM_COLUMNS.items():
+        by_month = {row["production_month"]: row for row in points if row["stream"] == mart_stream}
+        if not by_month:
+            continue
+        columns.append(column)
+        first = next(iter(by_month.values()))
+        stream = next(name for name, value in ROLLUP_STREAM_OF.items() if value == mart_stream)
+        payload[column] = series(
+            [_decimal(by_month[month]["volume"]) if month in by_month else None
+             for month in months],
+            unit=first["unit"],
+            derivation=first["derivation_id"],
+            selector=f"api10={api10}&col={column}",
+            # North Dakota's own composed token for the same arithmetic: its promotion sums
+            # the pool filings into a well row and serves well_observed beside
+            # aggregation = sum_over_pools. The vocabulary is the store's (M-5), so a fourth
+            # token would have to be a canonical value no canonical row may carry.
+            granularity=WELL_OBSERVED,
+            basis=stream_basis(stream, state_code, registry=registry),
+            # One derivation for the series and one selector per point: the handle is coarser
+            # than a per-month promotion's and the address is not, so a point still resolves to
+            # the refresh that produced it and to the filings that refresh read.
+            point_handles=[
+                format_handle(
+                    by_month[month]["derivation_id"],
+                    f"api10={api10}&col={column}&pm={month:%Y-%m}",
+                )
+                if month in by_month
+                else None
+                for month in months
+            ],
+        )
+        payload[f"{column}_report_vintage"] = [
+            iso(per_month[(month, stream)].vintage) if month in by_month else None
+            for month in months
+        ]
+        payload[f"{column}_null_semantics"] = [
+            _summed_semantics(per_month.get((month, stream)), summed=month in by_month)
+            for month in months
+        ]
+        payload[f"{column}_aggregation"] = [
+            SUM_OVER_POOLS if month in by_month else None for month in months
+        ]
+
+    data: dict[str, Any] = {
+        "api10": api10,
+        "source_id": (filings["source_ids"] or [None])[0],
+        "granularity": WELL_OBSERVED,
+        # The level the source reported at, which is what the field's own description says: the
+        # OCD filed per completion pool and the series is their disclosed sum.
+        "reporting_level": POOL_GRAIN_LEVEL,
+        "streams": [
+            name for name in requested
+            if ROLLUP_STREAM_COLUMNS.get(ROLLUP_STREAM_OF.get(name, "")) in columns
+        ],
+        "series": payload,
+    }
+    links = {
+        "well": f"/v1/wells/{api10}",
+        "pools": f"/v1/wells/{api10}/production/pools",
+        "aggregation_rule": f"/v1/conformance/{rule_id}",
+    }
+    cumulatives = registry.rule_for(state_code, CUMULATIVES_SCOPE)
+    if cumulatives:
+        links["cumulatives_rule"] = f"/v1/conformance/{cumulatives}"
+    return enveloped(
+        request,
+        data,
+        as_of=filings["report_vintage"],
+        as_of_requested="latest",
+        labels=_labels(columns),
+        source_freshness=_freshness(connection, sorted(filings["source_ids"] or [])),
+        warnings=warnings,
+        links=links,
+        explain=inline_for(connection, explain),
+    )
+
+
 def pending_allocation_detail(grain_rule: str, model_rule: str | None) -> str:
     """The disclosure's sentence, guarded the way the link beside it is guarded.
 
@@ -1661,6 +1977,7 @@ def _pool_grain_warning(
     *,
     as_of: date | None,
     registry: JurisdictionRegistry,
+    has_well_rows: bool,
 ) -> list[dict[str, Any]]:
     """An empty well-level series over a well that filed at pool grain is not "no production".
 
@@ -1668,9 +1985,15 @@ def _pool_grain_warning(
     without this the card would render an empty chart for a producing well — the same DIR-3
     failure `pending_allocation` exists to prevent one jurisdiction upstream. The rule that
     decided it is named so the reader can resolve it.
+
+    `has_well_rows` is the whole of what this is really asking. `observed` is windowed and the
+    pool-row count is not, so a narrow window emptied one while the other stayed positive and a
+    North Dakota well with 408 well-grain rows was told that its regulator files per completion
+    pool and glasswell performs no rollup. It has a well-level series; the request asked about
+    twelve months it does not cover.
     """
     rule = rollup_rule(state_code, registry=registry)
-    if observed or not rule:
+    if observed or has_well_rows or not rule:
         return []
     if not rows(connection, _POOL_GRAIN_ROWS, {"api10": api10, "as_of": as_of})[0]["count"]:
         return []

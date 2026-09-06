@@ -90,6 +90,46 @@ def test_the_collection_filters_on_the_well_type_code_verbatim(client: TestClien
     assert client.get("/v1/wells", params={"well_type": "SWD"}).json()["data"] == []
 
 
+def test_an_empty_filter_value_is_no_filter_and_never_selects_a_blank_row(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """gate-cofix M-4. `?well_type=` had no min_length and reached the outer where as
+    `well_type_reported = ''`, which selects the 1,172 Colorado rows the spine reads under
+    cr_co_wells_shp_blank_is_absent_1 and serves each of them with well_type_reported null: the
+    filter says the value exists and the payload says it does not. The empty string is what a
+    source files when it files nothing, so an empty filter value is no filter -- and a non-empty
+    one addresses the value the response serves rather than the column underneath it.
+    """
+    seed_well(
+        seeded,
+        api10="0512300003",
+        state_code="05",
+        basin=None,
+        well_type_reported="",
+        county_code_at_permit="",
+        operator_name_reported="",
+        well_name="",
+    )
+    seeded.commit()
+    unfiltered = [
+        row["api10"] for row in client.get("/v1/wells", params={"limit": 200}).json()["data"]
+    ]
+
+    for name in ("well_type", "county", "operator", "q", "status", "geometry_provenance"):
+        filtered = client.get("/v1/wells", params={name: "", "limit": 200}).json()["data"]
+        assert [row["api10"] for row in filtered] == unfiltered, name
+
+    blank = client.get("/v1/wells/0512300003").json()["data"]
+
+    assert blank["well_type_reported"] is None
+    assert blank["county_code_at_permit"] is None
+    assert blank["operator_name_reported"] is None
+    assert "0512300003" not in [
+        row["api10"]
+        for row in client.get("/v1/wells", params={"well_type": "OG"}).json()["data"]
+    ]
+
+
 def test_the_collection_filters_on_geometry_provenance_verbatim(client: TestClient) -> None:
     """m13 residual, the R-1 pattern replayed for provenance: the class as canonical records
     it — no decode, no case-folding — and a well matches on any of its geometry."""

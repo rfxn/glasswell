@@ -9,7 +9,7 @@ appends nothing.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import httpx
@@ -23,7 +23,8 @@ from glasswell.seed import seed_all
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 EWA_CSV = FIXTURES / "tx_ewa" / "OG_WELLBORE_EWA_sample.csv"
-LATER_VINTAGE = date(2026, 9, 6)
+# Strictly after any clock the suite runs under: a literal here expired on the day it named.
+LATER_VINTAGE = date.today() + timedelta(days=365)
 
 
 def client_for(payload: Path) -> httpx.Client:

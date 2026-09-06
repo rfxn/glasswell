@@ -235,6 +235,27 @@ def test_a_search_matching_nothing_says_so_rather_than_serving_a_silent_empty_li
     assert "No " in data["caption"] or "0 " in data["caption"]
 
 
+def test_an_empty_search_is_no_search_rather_than_a_refusal(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """`?q=` reached `identity_selector_term` as "", which the selector grammar admits no value
+    for: the handle rendered `q_b64=` and the whole response was refused with
+    selector_ambiguous. No search and a search for nothing are the same request, which is what
+    the partition term one function below has always said."""
+    _seed_tx(seeded)
+    searched = client.get(
+        "/v1/wells/facets",
+        params={"state": "42", "by": "operator", "q": "", "explain": "true"},
+    )
+
+    assert searched.status_code == 200, searched.text
+    data = searched.json()["data"]
+    assert data["q"] is None
+    assert data["wells"]["value"] == _facets(client)["data"]["wells"]["value"]
+    for handle in [bucket["wells"]["d"] for bucket in data["buckets"]]:
+        assert client.get("/v1/explain", params={"h": handle}).status_code == 200, handle
+
+
 def test_a_state_the_spine_has_no_wells_for_is_refused_not_served_as_empty(
     client: TestClient, seeded: psycopg.Connection
 ) -> None:
@@ -909,3 +930,35 @@ def test_the_absence_sentence_uses_the_same_preposition_under_a_search(
     ).json()["data"]
 
     assert "across North Dakota and Texas" in data["absence"]["detail"]
+
+
+def test_the_status_facet_carries_the_absence_class_as_a_bucket(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """The class a well with no resolvable status carries is a class, so it ranks like one.
+
+    Before the resolver's third arm the column was null for these wells, `nullif` never
+    suppressed a null, and they fell out of the facet's ranking into its absence bucket, where
+    "the source filed no status" and "this dimension has no value here" read as one fact.
+    """
+    _seed_tx(seeded)
+    seed_well(
+        seeded,
+        api10="4200999001",
+        state_code="42",
+        county_code_at_permit="003",
+        basin="permian",
+        status_canonical=None,
+        status_reported=None,
+        well_type_reported="PRODUCING",
+    )
+    seeded.commit()
+
+    body = _facets(client, by="status")["data"]
+    ranked = {row["value"]: int(row["wells"]["value"]) for row in body["buckets"]}
+
+    assert ranked["unmapped"] == 1
+    # And it did not fall into the dimension's absence bucket, where "the source filed no
+    # status" would read as "this dimension has no value here". Absent rather than zero, which
+    # is the rule this surface already keeps: a bucket nothing is in has no count.
+    assert body["absence"] is None

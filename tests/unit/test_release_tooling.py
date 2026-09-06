@@ -9,15 +9,15 @@ from __future__ import annotations
 
 import difflib
 import hashlib
-import importlib.util
 import os
 import re
 import subprocess
-import sys
 from itertools import pairwise
 from pathlib import Path
 
 import pytest
+
+from tests.support.scripts import load_script
 
 pytestmark = pytest.mark.unit
 
@@ -28,20 +28,9 @@ WEB = ROOT / "web"
 STYLE = WEB / "src" / "style.css"
 
 
-def _load(name: str, filename: str):
-    spec = importlib.util.spec_from_file_location(name, SCRIPTS / filename)
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    # Registered before execution: @dataclass resolves its own module out of sys.modules.
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-release = _load("gw_release", "release.py")
-render = _load("gw_render_changelog", "render-changelog.py")
-assemble = _load("gw_changelog_assemble", "changelog-assemble.py")
+release = load_script("gw_release", "release.py")
+render = load_script("gw_render_changelog", "render-changelog.py")
+assemble = load_script("gw_changelog_assemble", "changelog-assemble.py")
 
 Version = release.Version
 
@@ -1369,11 +1358,18 @@ def _run_deploy_against_a_stub_host(
     log = tmp_path / "ssh-calls.log"
     log.write_text("")
     fake = bin_dir / "ssh"
+    # The host records every step through the runner the tree ships, and deploy.sh reads its
+    # own verdict back out of that file — so the stub runs the real runner against a state
+    # directory under tmp_path rather than answering 0 to it.
+    runner_dir = Path(__file__).resolve().parents[2] / "infra" / "bin"
     fake.write_text(
         "#!/bin/sh\n"
         f'printf \'%s\\n\' "$2" >> "{log}"\n'
         "cat >/dev/null\n"
         'case "$2" in\n'
+        '  *host-runner.sh*)\n'
+        f"    eval \"$(printf '%s' \"$2\" | sed 's|/opt/glasswell/src/infra/bin|{runner_dir}|')\"\n"
+        '    exit $? ;;\n'
         '  *sha256sum*) printf \'%s\\n\' "$GW_STUB_LOCK_HASH" ;;\n'
         '  *schema_migrations*) printf \'%s\\n\' "$GW_STUB_DB_HEAD" ;;\n'
         'esac\n'
@@ -1392,6 +1388,9 @@ def _run_deploy_against_a_stub_host(
             "GW_DEPLOY_HOST": "root@stub.invalid",
             "GW_STUB_DB_HEAD": db_head,
             "GW_STUB_LOCK_HASH": lock_hash,
+            # Never the workstation's own /var/lib/glasswell — see `make check-workstation`.
+            "GLASSWELL_RUNS_DIR": str(tmp_path / "runs"),
+            "GLASSWELL_LOG_DIR": str(tmp_path / "run-logs"),
         },
     )
     return result, log.read_text()

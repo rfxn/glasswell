@@ -5,6 +5,8 @@ set -euo pipefail
 INFRA_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ETC_DIR=/etc/glasswell
 STATE_DIR=/var/lib/glasswell
+RUNS_DIR="$STATE_DIR/runs"
+RUN_LOG_DIR=/var/log/glasswell
 UNIT_DIR=/etc/systemd/system
 SBIN_DIR=/usr/local/sbin
 WEB_ROOT=/opt/glasswell/web
@@ -65,6 +67,12 @@ id "$RUN_USER" >/dev/null || { printf 'user %s does not exist\n' "$RUN_USER" >&2
 
 install -d -o root -g root -m 0700 "$ETC_DIR"
 install -d -o "$RUN_USER" -g "$RUN_USER" -m 0750 "$STATE_DIR"
+# A long load and a deploy publish their progress here, so both exist before any job runs:
+# a runner that cannot write its status leaves a job that can only be guessed at. Root's, not
+# $RUN_USER's: every step runs as $RUN_USER, and `result: complete` is the one fact deploy.sh
+# and `--after-job` trust, so the account being judged does not get to rewrite the verdict.
+install -d -o root -g "$RUN_USER" -m 0750 "$RUNS_DIR"
+install -d -o "$RUN_USER" -g "$RUN_USER" -m 0755 "$RUN_LOG_DIR"
 install -d -o "$RUN_USER" -g "$RUN_USER" -m 0755 "$WEB_ROOT"
 install -d -o "$RUN_USER" -g "$RUN_USER" -m 0755 "$BASEMAP_ROOT"
 
@@ -148,6 +156,65 @@ for script in glasswell-backup.sh glasswell-restore-drill.sh glasswell-recovery-
               glasswell-durable-write.py; do
     install -o root -g root -m 0755 "$INFRA_DIR/backup/$script" "$SBIN_DIR/$script"
 done
+
+# Every runbook's long step and every remote deploy step goes through this one, and verify.sh
+# holds the installed copy equal to the tree.
+install -o root -g root -m 0755 "$INFRA_DIR/bin/host-runner.sh" "$SBIN_DIR/host-runner.sh"
+
+# The five ad-hoc runners of 2026-09-05, retired with the status files they wrote: `co-load` is
+# the Colorado runbook's job name and the ad-hoc verdict under it refuses the first tracked run.
+# Archived, never deleted — a load's own record is the evidence it happened. Never while it is
+# live: a deploy lands during a load, and moving a running runner's status file takes the
+# operator's poll path and the stamps its verdict is assembled from. Liveness is the unit that
+# runs the script and the state the job published, never the shape of the document. Keyed on the
+# script, so a job name the tracked runner reuses later is not this migration's business.
+retire_adhoc_runs() {
+    local archive="$RUNS_DIR/archive" script job status sidecar unit live published
+    local -a active_units
+    # No -o: install.sh is root-only (line 65). -g, so reading the archive is not root-only,
+    # which is what runbook-co-tier2.md tells an operator to do.
+    command install -d -g "$RUN_USER" -m 0750 "$archive"
+
+    active_units=()
+    while read -r unit; do
+        [[ -n $unit ]] && active_units+=("$unit")
+    done < <(systemctl list-units --type=service --state=active --no-legend --plain --no-pager \
+                2>/dev/null | awk '{print $1}')  # no systemd here means no live runner to find
+
+    for script in co-load-runner.sh tx-step3-runner.sh tx-step3-resume-runner.sh \
+                  tx-step3-resume2-runner.sh tx-step45-runner.sh; do
+        [[ -f "$SBIN_DIR/$script" ]] || continue
+        job=${script%-runner.sh}
+        status="$RUNS_DIR/$job.json"
+
+        live=""
+        for unit in ${active_units[@]+"${active_units[@]}"}; do
+            case "$(systemctl show "$unit" -p ExecStart --value 2>/dev/null)" in  # unloaded answers empty
+                *"$SBIN_DIR/$script"*) live=$unit; break ;;
+            esac
+        done
+        if [[ -z $live && -f $status ]]; then
+            published=$(sed -n 's/.*"result":"\([^"]*\)".*/\1/p' "$status")
+            case "$published" in
+                running|waiting) live="$job.json reads $published" ;;
+            esac
+        fi
+        if [[ -n $live ]]; then
+            printf 'deferred: live (%s) — %s and its records stay for the next deploy\n' \
+                "$live" "$script"
+            continue
+        fi
+
+        command mv "$SBIN_DIR/$script" "$archive/$script"
+        printf 'retired %s: archived at %s\n' "$script" "$archive/$script"
+        for sidecar in "$RUNS_DIR/$job".*; do
+            [[ -f $sidecar ]] || continue
+            command mv "$sidecar" "$archive/${sidecar##*/}"
+            printf 'retired %s: archived under %s\n' "${sidecar##*/}" "$archive"
+        done
+    done
+}
+retire_adhoc_runs
 
 # The units this release retired, disabled and removed rather than left behind. verify.sh
 # fails a deploy on a host unit that has no counterpart in the tree, which is how a retired

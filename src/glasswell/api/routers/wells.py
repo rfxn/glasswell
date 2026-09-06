@@ -10,6 +10,7 @@ from fastapi import APIRouter, Path, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.responses import JSONResponse
 
+from glasswell.absence import SOURCE_REPORTED_TEXT_COLUMNS, absent_if_blank
 from glasswell.api.deps import (
     AsOf,
     Connection,
@@ -57,6 +58,7 @@ from glasswell.lineage.explain import MAX_HANDLES
 from glasswell.lineage.ids import format_handle
 from glasswell.lineage.jurisdictions import NEIGHBORS_SCOPE, JurisdictionRegistry
 from glasswell.lineage.selector_registry import identity_selector_term
+from glasswell.lineage.status_classes import absence_class
 from glasswell.marts.cumulatives import (
     CUMULATIVES_SCOPE,
     LIQUIDS_BASIS,
@@ -115,12 +117,16 @@ COUNT_UNIT = "wells"
 
 # R8: every per-jurisdiction decision this router serves is a row in lineage.jurisdiction_rules
 # resolved at the request's knowledge cut, never a map in this module. status_vocabulary,
-# geometry_provenance and length_scope are decisions; whether the neighbour mart holds subjects
-# is the neighbors_available column. An unregistered prefix yields a null rule, which is an
-# answer; a registry that resolves nothing is service_degraded.
+# geometry_provenance, length_scope and blank_is_absent are decisions; whether the neighbour
+# mart holds subjects is the neighbors_available column. An unregistered prefix yields a null
+# rule, which is an answer; a registry that resolves nothing is service_degraded.
 STATUS_VOCABULARY = "status_vocabulary"
 GEOMETRY_PROVENANCE = "geometry_provenance"
 LENGTH_SCOPE = "length_scope"
+# The decision behind `absent_if_blank`. A read-time absence normalisation is a mapping decision
+# that shapes a served figure -- applying it is what takes the "" bucket out of well_types -- so
+# the reads that apply it name it, and name it per jurisdiction: only a registered one cites it.
+BLANK_IS_ABSENT = "blank_is_absent"
 # Served in the figure's place where a jurisdiction registers a length_scope rule: the length
 # resolver answers nd_gis_horizontals_line for a well with no basin, so serving a length there
 # would put a rule about North Dakota geometry on a Montana map stick.
@@ -182,6 +188,15 @@ STATUS_SUMMARY_LABELS = {
     "/producing_window/liquids_basis": "gt_stream",
 }
 
+# Wrapped for the reason facets.py:54-58 wraps the same expression: a resolver that maps a
+# reported code onto an empty string yields a class named "", which is grouped and served
+# beside the real ones under `status_null=1` -- the handle the absence already carries. Not
+# absent_if_blank: that helper cites Colorado's rule about ECMC's GIS attributes, and a blank
+# in a status map is a different source's blank.
+def _resolved_class(spine: str) -> str:
+    return f"nullif({resolved_status(spine)}, '')"
+
+
 _PRODUCING_CLASS = class_expression(api10="ranked.api10", state_code="ranked.state_code")
 
 # The guard is not decoration: with the definition unregistered the classifier would answer
@@ -189,11 +204,17 @@ _PRODUCING_CLASS = class_expression(api10="ranked.api10", state_code="ranked.sta
 # registry. Short-circuiting to NULL is what lets the response say it does not know.
 _PRODUCING_COLUMN = f"case when %(producing_registered)s::boolean then {_PRODUCING_CLASS} end"
 
+# The source-reported text columns are read under cr_co_wells_shp_blank_is_absent_1. The 1,172
+# Colorado headers promoted with an empty Well_Class before the staging applied it cannot be
+# restated -- see glasswell/absence.py for why -- so every read applies the rule instead.
+_REPORTED = ", ".join(
+    f"{absent_if_blank(name)} as {name}" for name in SOURCE_REPORTED_TEXT_COLUMNS
+)
 _COLUMNS = (
-    "api10, api14, state_code, county_code_at_permit, ndic_file_no, operator_name_reported,"
-    " operator_id, well_name,"
-    f" {resolved_status('ranked')} as status_canonical,"
-    " status_reported, well_type_reported, spud_date,"
+    "api10, api14, state_code,"
+    f" {_REPORTED},"
+    f" {_resolved_class('ranked')} as status_canonical,"
+    " spud_date,"
     " confidential_flag, basin, land_unit_label, total_depth_ft, completion_date,"
     " effective_from, source_manifest_id, derivation_id,"
     " greatest(effective_from, manifest_vintage,"
@@ -338,8 +359,9 @@ with in_view as (
                          st_makeenvelope(%(minx)s, %(miny)s, %(maxx)s, %(maxy)s, 4326))),
      latest as (
     select distinct on (v.api10)
-           v.api10, {resolved_status("w")} as status_canonical, w.basin, w.state_code,
-           w.well_type_reported, w.derivation_id, w.effective_from
+           v.api10, {_resolved_class('w')} as status_canonical, w.basin, w.state_code,
+           {absent_if_blank("w.well_type_reported")} as well_type_reported,
+           w.derivation_id, w.effective_from
       from in_view v
       left join canonical.wells w
              on w.api10 = v.api10
@@ -370,6 +392,16 @@ select geom_type as geometry_provenance, count(distinct api10) as wells,
  where st_intersects(geom,
                      st_makeenvelope(%(minx)s, %(miny)s, %(maxx)s, %(maxy)s, 4326))
  group by 1
+"""
+
+# Which of the pool-grain disclosure's three states this well is in, in one round trip: whether
+# the regulator filed anything below it, and whether the rollup mart serves a sum of those
+# filings. Both are facts about the well; the registration alone answers neither.
+_POOL_GRAIN_FACTS = """
+select exists(select 1 from canonical.production_monthly
+               where api10 = %(api10)s and entity_type = 'well_completion_pool'
+                 and (%(as_of)s::date is null or report_vintage <= %(as_of)s::date)) as filings,
+       exists(select 1 from marts.well_pool_rollup where api10 = %(api10)s) as summed
 """
 
 _STORAGE_CRS = """
@@ -867,20 +899,52 @@ def pending_allocation(rule: LeaseReportingRule) -> dict[str, Any]:
     }
 
 
-def reported_at_pool_grain(rule: LeaseReportingRule) -> dict[str, Any]:
+def reported_at_pool_grain(
+    rule: LeaseReportingRule, *, filings: bool = True, summed: bool = False
+) -> dict[str, Any] | None:
     """DIR-3 one grain the other way from `pending_allocation`.
 
-    A well whose regulator files per completion pool and rolls nothing up has no well-level
-    series to be absent from, so `producing` is `unknown` — but it filed, and the three causes
-    the field enumerated before this did not include the one that applies. The rule is named so
-    a reader can resolve it at /v1/conformance."""
+    A well whose regulator files per completion pool has no well-level filing to be absent
+    from, so `producing` is `unknown`, and it filed, which is not one of the three causes the
+    field enumerated before this.
+
+    Which sentence it gets is a fact about THIS well and not only about its jurisdiction's
+    registration. `filings` is whether the well has pool rows at all: a registered jurisdiction
+    holds wells that filed nothing, and telling one of those that its filings were summed names
+    a surface the same response declines to link (gate-p68-shots MAJOR-1). `summed` is whether
+    the rollup mart actually serves this well: between a deploy and the first refresh, and for
+    every well whose filings the mart admits none of, there is no sum, and the code that says
+    so is what the card gates its Production-by-pool section on (BLOCKER-1).
+    """
+    if not filings:
+        return None
+    if summed:
+        return {
+            "code": "production_summed_over_pools",
+            "detail": (
+                f"This well's regulator files production at the {rule['reporting_level']} and"
+                " filed no per-well number, so `producing` is unknown because canonical holds"
+                " no well-grain row for it rather than because nothing was filed. The served"
+                f" well series is glasswell's sum of those filings ({rule['rule_id']}), which"
+                " is a mart figure carrying its own derivation and not a filing the regulator"
+                " made. The pool filings are served separately."
+            ),
+            "pointer": "/producing",
+            "rule_id": rule["rule_id"],
+        }
+    rolls_up = (
+        " glasswell sums those filings into a well series, and none of this well's are"
+        f" admitted into that sum ({rule['rule_id']}), so no well-level series is served"
+        if rule["served_rollup"]
+        else f" glasswell performs no rollup to the well ({rule['rule_id']}), so no well-level"
+        " series has been observed"
+    )
     return {
         "code": "production_reported_at_pool_grain",
         "detail": (
             f"This well's regulator files production at the {rule['reporting_level']} and"
-            f" glasswell performs no rollup to the well ({rule['rule_id']}), so no well-level"
-            " series has been observed and `producing` is unknown for that reason rather than"
-            " because nothing was filed. The pool series is served separately."
+            f"{rolls_up} and `producing` is unknown for that reason rather than because"
+            " nothing was filed. The pool series is served separately."
         ),
         "pointer": "/producing",
         # On the warning rather than only inside the sentence: a client that had to parse the
@@ -1323,6 +1387,12 @@ def list_wells(
     # either way. Resolved, the registration invalidates the cursor instead, which is the
     # refusal cursor_query_mismatch exists to make.
     registry = jurisdictions(connection)
+    status = _filter_value(status)
+    operator = _filter_value(operator)
+    county = _filter_value(county)
+    well_type = _filter_value(well_type)
+    geometry_provenance = _filter_value(geometry_provenance)
+    q = _filter_value(q)
     requested = state_set(state) if state is not None else ()
     if state is None:
         scoped_states = None
@@ -1377,19 +1447,22 @@ def list_wells(
         clauses.append("and (api10 = %(api10)s or api14 = %(api10)s)")
         params["api10"] = api10
     if status is not None:
-        clauses.append(f"and {resolved_status('ranked')} = %(status)s")
+        clauses.append(f"and {_resolved_class('ranked')} = %(status)s")
         params["status"] = status
     if operator is not None:
-        clauses.append("and operator_name_reported ilike '%%' || %(operator)s || '%%'")
+        clauses.append(
+            f"and {absent_if_blank('operator_name_reported')}"
+            " ilike '%%' || %(operator)s || '%%'"
+        )
         params["operator"] = operator
     if county is not None:
-        clauses.append("and county_code_at_permit = %(county)s")
+        clauses.append(f"and {absent_if_blank('county_code_at_permit')} = %(county)s")
         params["county"] = county
     if state is not None:
         clauses.append("and state_code = any(%(state)s)")
         params["state"] = scoped_states
     if well_type is not None:
-        clauses.append("and well_type_reported = %(well_type)s")
+        clauses.append(f"and {absent_if_blank('well_type_reported')} = %(well_type)s")
         params["well_type"] = well_type
     if geometry_provenance is not None:
         clauses.append(
@@ -1407,7 +1480,9 @@ def list_wells(
         clauses.append(f"and {_PRODUCING_CLASS} = %(producing)s")
         params["producing"] = producing
     if q is not None:
-        clauses.append("and well_name ilike '%%' || %(q)s || '%%'")
+        clauses.append(
+            f"and {absent_if_blank('well_name')} ilike '%%' || %(q)s || '%%'"
+        )
         params["q"] = q
     if envelope is not None:
         clauses.append(
@@ -1447,7 +1522,15 @@ def list_wells(
         links={
             "next": next_link("/v1/wells", filters | {"limit": limit}, next_cursor)
             if next_cursor
-            else None
+            else None,
+            # One key per jurisdiction on the page, the way the summary links its rules: the
+            # spine read every source-reported text column here under the rule the reader is
+            # being pointed at, and a page spanning two states cites each state's own.
+            **{
+                rule: f"/v1/conformance/{rule}"
+                for row in items
+                if (rule := registry.rule_for(row["state_code"], BLANK_IS_ABSENT))
+            },
         },
     )
 
@@ -1455,8 +1538,13 @@ def list_wells(
 class StatusCount(BaseModel):
     status: str = Field(
         description=(
-            "Canonical status the wells in this bucket carry. Never null: a well the source"
-            " reported no status for is counted in `unmapped_wells`, not here."
+            "Canonical status the wells in this bucket carry. Never null: a well whose class"
+            " does not resolve is served the absence class, and `unmapped_wells` counts that"
+            " same population under its own name. Neither is the set of wells whose source"
+            " filed no code, which is wider and holds classed wells too: a promotion can write"
+            " a class for a well that filed nothing, and on the deployed spine 105,946 Texas"
+            " wells are in exactly that state. The filed code is served beside the class, so a"
+            " reader can tell the two apart well by well."
         ),
         json_schema_extra={GLOSSARY_KEY: "gt_well_status"},
     )
@@ -1483,7 +1571,12 @@ class BasinStatusCounts(BaseModel):
     )
     wells: FigureModel = Field(description="Wells in this basin inside the box.")
     unmapped_wells: FigureModel | None = Field(
-        description="Wells here whose source reported no status; absent when there are none."
+        description=(
+            "Wells here whose status did not resolve to a class, counted under the absence"
+            " class; absent when there are none. The same population as the `unmapped` entry in"
+            " `statuses`, named separately because it is the figure this surface has always"
+            " served. Not the wells whose source filed no code, which is a wider set."
+        )
     )
     statuses: list[StatusCount] = Field(description="One entry per class present, largest first.")
 
@@ -1556,9 +1649,15 @@ class WellStatusSummary(BaseModel):
     )
     unmapped_wells: FigureModel | None = Field(
         description=(
-            "Wells whose source reported no status at all. Its own bucket, never added to a"
-            " class — an absence is not a value, and in the 2026-08-20 Texas load 65,685 wells"
-            " are in it, which is more than any single class it could have been folded into."
+            "Wells whose status did not resolve to a class: neither the promotion nor the"
+            " registered vocabulary produced one, so they are served the absence class. The"
+            " same population as the `unmapped` entry in `statuses`, and served under its own"
+            " name because it is what this field has always counted. It is not the set of wells"
+            " whose source filed no code: that set is wider, because a promotion can write a"
+            " class for a well that filed nothing, and the filed code is served beside the"
+            " class so a reader can tell the two apart. The legend's own affordance resolves"
+            " the class entry's handle rather than this one, because the row it sits on toggles"
+            " the class; both address the same population and this field keeps its own handle."
         ),
         json_schema_extra={GLOSSARY_KEY: "gt_well_status"},
     )
@@ -1610,8 +1709,17 @@ class WellStatusSummary(BaseModel):
     )
 
 
+def _filter_value(value: str | None) -> str | None:
+    """An empty filter value is no filter. A source that files "" has filed no value, and the
+    spine reads it as the absence it is -- so a predicate on it selects rows the response then
+    serves as null, which is the filter and the payload disagreeing about the same row."""
+    return value or None
+
+
 def _selector_term(name: str, value: str | None) -> str:
-    return f"{name}_null=1" if value is None else identity_selector_term(name, value)
+    """An absence and an empty value are one facet: the grammar admits no empty value, so a
+    source that files "" would otherwise build a handle that refuses the whole response."""
+    return f"{name}_null=1" if not value else identity_selector_term(name, value)
 
 
 def _refuse_bbox(code: str, detail: str, raw: str) -> ProblemError:
@@ -1677,10 +1785,11 @@ def _count(found: list[dict[str, Any]], *, selector: str) -> Figure | None:
 
 
 def _classes(found: list[dict[str, Any]], *, box: str, scope: str = "") -> list[dict[str, Any]]:
+    # No row on this query carries a null class any more, so there is nothing to skip: the
+    # absence class is a class here, with a swatch, a count and a filter that matches it.
     grouped: dict[str, list[dict[str, Any]]] = {}
     for row in found:
-        if row["status_canonical"] is not None:
-            grouped.setdefault(row["status_canonical"], []).append(row)
+        grouped.setdefault(row["status_canonical"], []).append(row)
     ordered = sorted(
         grouped.items(), key=lambda item: (-sum(row["wells"] for row in item[1]), item[0])
     )
@@ -1770,7 +1879,11 @@ def _producing_window(
 
 
 def _basins(
-    found: list[dict[str, Any]], *, box: str, registry: JurisdictionRegistry
+    found: list[dict[str, Any]],
+    *,
+    box: str,
+    registry: JurisdictionRegistry,
+    absence: str,
 ) -> list[dict[str, Any]]:
     grouped: dict[tuple[str | None, str | None], list[dict[str, Any]]] = {}
     for row in found:
@@ -1787,7 +1900,7 @@ def _basins(
                 "status_vocabulary_rule": registry.rule_for(state_code, STATUS_VOCABULARY),
                 "wells": _count(group, selector=f"col=wells{scope}&bbox={box}"),
                 "unmapped_wells": _count(
-                    [row for row in group if row["status_canonical"] is None],
+                    [row for row in group if row["status_canonical"] == absence],
                     selector=f"col=unmapped_wells{scope}&bbox={box}",
                 ),
                 "statuses": _classes(group, box=box, scope=scope),
@@ -1910,10 +2023,11 @@ def _summary_warnings(
         " at 30 requests per principal per UTC minute. Where a box produces more counts than"
         " /v1/explain accepts handles in one call, `links.explain` carries as many as it can"
         " and a warning says exactly how many it left out; each count still resolves alone."
-        " A class no well in the box carries is absent rather than zero. Wells whose source"
-        " reported no status are their own bucket, `unmapped_wells`, and are never added to a"
-        " class — in the 2026-08-20 Texas load 65,685 wells are in it, which is more than any"
-        " class it could have been folded into. Counts are split per basin with the vocabulary"
+        " A class no well in the box carries is absent rather than zero. A well whose status"
+        " does not resolve is served the absence class like any other class, and"
+        " `unmapped_wells` counts that same population under the name this surface has always"
+        " served it as. Whether the source filed a code at all is a different question, served"
+        " beside the class on the well itself. Counts are split per basin with the vocabulary"
         " rule that mapped that jurisdiction's codes, because a status class means what its"
         " rule says it means and the rules travel with the counts. The same box is classed two"
         " more ways: per provenance of the recorded geometry — canonical geom_type verbatim,"
@@ -2007,7 +2121,13 @@ def get_well_status_summary(
     )
     box = _rendered_bbox(envelope, ",")
     selector_box = _rendered_bbox(envelope, ":")
-    basins = _basins(counted, box=selector_box, registry=registry)
+    # Read once per request off the twelve-row domain, not spelled: the figure this predicates
+    # is a served one, and a second spelling of the class name is the defect the domain closes.
+    # Measured on the deployed spine over a relation of the same twelve rows and the same
+    # single-row predicate: 0.07 ms execution, 0.11 ms planning, against 250-350 ms for the
+    # box query it rides beside. Once, not per row and not per group, so no cache.
+    absence = absence_class(connection)
+    basins = _basins(counted, box=selector_box, registry=registry, absence=absence)
     unregistered = sorted(
         {
             row["state_code"] or "unassigned"
@@ -2027,12 +2147,25 @@ def get_well_status_summary(
             if (rule := registry.rule_for(row["state_code"], GEOMETRY_PROVENANCE))
         }
     ) if classed else []
-    response_rules = sorted({*rules, *provenance_rules})
+    # The rule STATUS_SUMMARY_SQL read the grouped columns under, resolved the same way and for
+    # the same reason: it decided what a blank well type means, so the list it produced cites it.
+    absence_rules = sorted(
+        {
+            rule
+            for row in counted
+            if (rule := registry.rule_for(row["state_code"], BLANK_IS_ABSENT))
+        }
+    )
+    response_rules = sorted({*rules, *provenance_rules, *absence_rules})
     data = {
         "bbox": box,
         "wells": _count(counted, selector=f"col=wells&bbox={selector_box}"),
+        # The population the null used to mark, named rather than absent. Before the resolver's
+        # third arm this read `status_canonical is null`; after it no row on this query is null,
+        # so the same wells are found by the class the arm gives them. The figure counts what it
+        # always counted, keeps its address, and does not move at the deploy.
         "unmapped_wells": _count(
-            [row for row in counted if row["status_canonical"] is None],
+            [row for row in counted if row["status_canonical"] == absence],
             selector=f"col=unmapped_wells&bbox={selector_box}",
         ),
         "statuses": _classes(counted, box=selector_box),
@@ -2061,6 +2194,7 @@ def get_well_status_summary(
     )
     links = {rule: f"/v1/conformance/{rule}" for rule in rules}
     links |= {rule: f"/v1/conformance/{rule}" for rule in provenance_rules}
+    links |= {rule: f"/v1/conformance/{rule}" for rule in absence_rules}
     if policy:
         links |= {rule: f"/v1/conformance/{rule}" for rule in PRODUCING_RULE_IDS}
     minx, miny, maxx, maxy = envelope
@@ -2603,6 +2737,7 @@ def get_well(
     # without asking. The jurisdiction's status_history rule is the only thing that emits it.
     history_rule = registry.rule_for(row["state_code"], STATUS_HISTORY)
     length_scope_rule = registry.rule_for(row["state_code"], LENGTH_SCOPE)
+    absence_rule = registry.rule_for(row["state_code"], BLANK_IS_ABSENT)
     neighbours_served, neighbours_rule, neighbours_reason = _neighbours(
         registry, row["state_code"]
     )
@@ -2635,8 +2770,14 @@ def get_well(
     pool_grain = pool_grain_rule(
         connection, row["state_code"], valid_at=as_of, knowledge_at=as_of
     )
+    pool_disclosure: dict[str, Any] | None = None
     if pool_grain and row["producing"] == UNKNOWN:
-        warnings.append(reported_at_pool_grain(pool_grain))
+        facts = rows(connection, _POOL_GRAIN_FACTS, {"api10": api10, "as_of": as_of})[0]
+        pool_disclosure = reported_at_pool_grain(
+            pool_grain, filings=facts["filings"], summed=facts["summed"]
+        )
+        if pool_disclosure:
+            warnings.append(pool_disclosure)
     cumulatives_rule = registry.rule_for(row["state_code"], CUMULATIVES_SCOPE)
     geometry = rows(
         connection,
@@ -2851,13 +2992,15 @@ def get_well(
             ),
             # M-11: the card's section list is built from this envelope, so the pool-grain
             # predicate rides here as a link like every other section's, beside the warning
-            # that says why the well-level chart is absent.
+            # that says why the well-level chart is absent. Beside the warning literally: a
+            # registered well that filed nothing below it gets neither, because the surface
+            # this would link to holds none of its rows (MAJOR-1).
             **(
                 {
                     "pools": f"/v1/wells/{api10}/production/pools",
                     "pools_rule": f"/v1/conformance/{pool_grain['rule_id']}",
                 }
-                if pool_grain and row["producing"] == UNKNOWN
+                if pool_disclosure
                 else {}
             ),
             # WC-P2-4, on the envelope the section list reads: which rule decides whether this
@@ -2868,6 +3011,9 @@ def get_well(
                 if cumulatives_rule
                 else {}
             ),
+            # Every source-reported text field on this card was read under it, so the reader
+            # can open the decision that turned a value the source filed into a null.
+            **({"absence_rule": f"/v1/conformance/{absence_rule}"} if absence_rule else {}),
         },
         explain=inline_for(connection, explain),
     )

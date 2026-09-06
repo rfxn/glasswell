@@ -644,6 +644,19 @@ JOBS: tuple[dict[str, object], ...] = (
         " month is the only event that changes them.",
     },
     {
+        "job_id": "marts_well_pool_rollup",
+        "label": "Per-well pool rollup mart",
+        "kind": "mart",
+        "entry_point": "glasswell.marts.well_pool_rollup",
+        "argv": [],
+        "jurisdiction": "NM",
+        "run_as": "glasswell",
+        "rationale": "The sum reads the completion-pool filings the OCD promotion writes, so it"
+        " is New Mexico's job by whose filings it reads, the way the method study is Montana's."
+        " It builds for whichever registrations register a served rollup, which is New Mexico"
+        " alone today; a sixth pool-grain state restates this row rather than adding a module.",
+    },
+    {
         "job_id": "marts_basin_context",
         "label": "Basin context mart",
         "kind": "mart",
@@ -885,6 +898,13 @@ DEPENDENCIES: tuple[tuple[str, str, str, str], ...] = (
         "ingest_nd_mpr",
         "changed",
         "Cumulatives stream the monthly production report and change only when it does.",
+    ),
+    (
+        "marts_well_pool_rollup",
+        "ingest_nm_ocd_promote",
+        "changed",
+        "The rollup is a sum over the pool filings that promotion writes, so a promotion that"
+        " moved no row leaves the sum unchanged.",
     ),
     (
         "marts_basin_context",
@@ -1154,6 +1174,17 @@ SCHEDULES: tuple[dict[str, object], ...] = (
         "memory_max": "2G",
         "timeout_seconds": 3600,
         "legacy_unit": INGEST_UNIT,
+    },
+    {
+        "job_id": "marts_well_pool_rollup",
+        "trigger": "after_dependency",
+        "cadence_note": "Rebuilds when the pool filings it sums are promoted again",
+        # Observing, like every row this registry resolves: the flip is the launch track's act.
+        "launch_mode": "observe",
+        # The sum is done in the database and nothing but the report is resident, so the
+        # ceiling is the write of 15.4 M rows rather than anything Python holds.
+        "memory_max": "2G",
+        "timeout_seconds": 7200,
     },
     {
         "job_id": "marts_basin_context",
