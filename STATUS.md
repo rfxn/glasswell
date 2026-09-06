@@ -11,20 +11,20 @@ so on the line. [`ROADMAP.md`](ROADMAP.md) owns phase scope and exit criteria;
 ## Deployed
 
 - **Release line:** 64 tagged releases, v0.20 through v0.83, cut 2026-08-21 through
-  2026-09-05.
+  2026-09-06.
 
-Measured on the deployed database (VM 111) and host, read-only, 2026-09-05 after the v0.82 deploy
-(Texas Step 3 in flight: production is promoted through 2011).
+Measured on the deployed database (VM 111) and host, read-only, 2026-09-06 after the v0.83 deploy
+(Texas Step 3 in flight: production is promoted through 2016).
 
 | Item | Value | Source of the measurement |
 |---|---|---|
-| Code version | `v0.82+26f938c` | `/etc/glasswell/code-version.env` |
-| Schema head | `084` | `select max(version) from schema_migrations` |
+| Code version | `v0.83+4472259` | `/etc/glasswell/code-version.env` |
+| Schema head | `086` | `select max(version) from schema_migrations` |
 | `canonical.wells` | 1,083,458 rows over 710,310 distinct API-10 | `select count(*), count(distinct api10) from canonical.wells` |
-| `canonical.production_monthly` | 67,405,690 rows | `select count(*) from canonical.production_monthly` |
+| `canonical.production_monthly` | 73,981,024 rows | `select count(*) from canonical.production_monthly` |
 | `canonical.well_spatial` | 1,165,902 rows | `select count(*) from canonical.well_spatial` |
 | `marts.basin_boundaries_tile` | 48 rows | `select count(*) from marts.basin_boundaries_tile` |
-| `main` | `26f938c`, level with `origin/main`; 63 version tags | `git rev-parse main origin/main`; `git tag \| grep -c '^v'` |
+| `main` | `e001950`, level with `origin/main`; 64 version tags | `git rev-parse main origin/main`; `git tag \| grep -c '^v'` |
 
 ## Shipped baseline per state
 
@@ -38,7 +38,7 @@ than a phase; ROADMAP's N3 owns its exit criteria.
 | **TX** 42 | 359,421 / 359,421 | **none** — `tx_pdq_dsv` is not a registered source; allocation and both validators unbuilt | surface 355,463 · bottomhole 355,545 · lateral 68,331 | 291,235 of 359,421 · `cr_tx_status_vocab_1` | `TOTAL_DEPTH`, `COMPLETION_DATE` · `cr_tx_ewa_measures_1`, the only TX withholding rule. Operator absence is not withholding · `cr_tx_operator_absence_1` |
 | **NM** 30 | 321,510 / 142,000 | 17,597,960 · `nm_ocd_wcproduction`, completion-pool grain | surface 141,778 | **0 of 321,510 promoted, by design** — the column stays null and `cr_nm_wellhistory_status_vocab_2` resolves the class at read time: ten of fourteen OCD codes to canonical classes, `I`/`J`/`Q`/`Z` to a distinct `documented_unmapped` class, `unmapped_action = passthrough`. Tile-grain classes active 54,325 · plugged 50,935 · permitted 18,161 · expired 17,056 (`work-output/nm-status-status.md`, 2026-09-01) | lateral geometry `data-unreachable` · `cr_nm_wellhistory_geometry_scope_1`. No well-level rollup · `cr_nm_wcproduction_pool_rollup_1` |
 | **MT** 25 | 40,626 / 40,626 | 17,547,951 well grain + 4,808,814 PRU lease grain · `mt_bogc_*` | surface 42,026 · lateral 2,835 | 40,626 of 40,626 · `cr_mt_gis_status_vocab_1` | lateral length · `cr_mt_paths_length_scope_1`. No basin tag · `cr_mt_basin_scope_1` |
-| **CO** 05 | 124,392 / 124,392 | 1,261,665 · `co_ecmc_production` rolling file, 244,491 pool + 1,017,174 well grain, 98,226 disclosed `sum_over_pools` | surface 124,392 · bottomhole 39,048 · lateral 39,048 (staged 124,410 / 39,048 / 39,048; 18 `duplicate_row` quarantined) | 124,392 of 124,392 via the resolver (G-3) · `cr_co_wells_status_vocab_1` | 1,172 wells carry a blank `well_type_reported` — F-3, `fix/co-blank-well-type` in flight (the status summary refuses their bbox until it lands) |
+| **CO** 05 | 124,392 / 124,392 | 1,261,665 · `co_ecmc_production` rolling file, 244,491 pool + 1,017,174 well grain, 98,226 disclosed `sum_over_pools` | surface 124,392 · bottomhole 39,048 · lateral 39,048 (staged 124,410 / 39,048 / 39,048; 18 `duplicate_row` quarantined) | 124,392 of 124,392 via the resolver (G-3) · `cr_co_wells_status_vocab_1` | 1,172 wells filed a blank well type — F-3, closed in v0.83: a blank ECMC attribute is an absence under `cr_co_wells_shp_blank_is_absent_1`, cited at promotion, mart and the two API reads, and the status summary answers 200 on their bbox |
 
 ### Basin context, measured on the deployed database
 
@@ -123,13 +123,18 @@ Rollback is three levels: delete the proxied CNAME, `systemctl stop cloudflared`
 ## Verification state
 
 - **Hosted CI runs on every push** — six jobs: `python`, `web`, `e2e-guards`, `shell`,
-  `collateral`, `map-chrome`. The last run is **green at `26f938c`** (Release v0.82, 2026-09-05).
-- **`infra/verify.sh` and `scripts/smoke.sh`** last read **236 passed / 1 failed** and **35 passed /
-  1 failed** at the **v0.82** deploy, 2026-09-05, and again from the host's `post-deploy-v082` unit
-  (`/var/log/glasswell/verify-v082.log`, `smoke-v082.log`). Both reds are the stated ones: verify's
-  status-health line names the three Texas allocation checks that stay unavailable or degraded until
-  runbook Steps 4–5 (`allocation_conservation`, `crosswalk_agreement`, `allocation_error_bounds`), and
-  smoke's check 22 is the Colorado blank well type (F-3), whose fix rides v0.83.
+  `collateral`, `map-chrome`, sharded since v0.83's CI-lean merge behind one required check, `CI complete`.
+  The last run is **green at `e001950`** (2026-09-06).
+- **`infra/verify.sh` and `scripts/smoke.sh`** last read **245 passed / 2 failed** and **40 passed /
+  2 failed** at the **v0.83** deploy, 2026-09-06, and again as host units (`/var/log/glasswell/verify-v083b.log`,
+  `smoke-v083b.log`). Every red is named: verify's status-health line carries the three Texas allocation
+  checks that stay unavailable or degraded until runbook Steps 4–5; verify's read of
+  `cr_status_absence_share_1` sent no key and the public-mode host refused it (fixed on `main` at
+  `e001950`, installed with the next deploy); smoke 26 and 27 read the New Mexico series as a sum over
+  pool filings, which the host does not serve yet — the v0.83 deploy applied 085 before the seed that
+  makes the rollup successor rule resident, so the registry names the founding rule and the
+  `well_pool_rollup` mart builds for no jurisdiction; the v0.84 hotfix completes that repoint. Smoke 22
+  (the Colorado blank well type, F-3) is green: closed on the host.
 - **Deployed code version, schema head and every row count above** were measured today. No
   local suite count is stated here: a test count that is not re-measured is not evidence.
 
