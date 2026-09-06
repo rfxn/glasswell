@@ -569,6 +569,48 @@ GRAIN_JURISDICTION_RULES: tuple[dict[str, object], ...] = tuple(
     if str(row["jurisdiction_code"]) in GRAIN_RESTATED_CODES
 )
 
+# The correction instant, and the second writer of migration 087. A deploy migrates before it
+# seeds, so 085 chose New Mexico's production_grain rule from a registry the successor was not
+# resident in yet and named the founding one; where 087 finds the successor absent too -- a host
+# that skips the release in between and migrates both files before it seeds -- the seed is the
+# only writer left. Strictly later than every published_at New Mexico carries.
+GRAIN_REPOINTED_ON = date(2026, 9, 7)
+GRAIN_REPOINT_CODE = "NM"
+GRAIN_REPOINT_DECISION = "production_grain"
+# Read off the declarations rather than respelled: the pair is what the repoint moves between,
+# and a fourth spelling of either id is how the two writers drift apart.
+GRAIN_REPOINT_FOUNDING_RULE = next(
+    str(row["rule_id"])
+    for row in JURISDICTION_RULES
+    if (str(row["jurisdiction_code"]), str(row["decision"]))
+    == (GRAIN_REPOINT_CODE, GRAIN_REPOINT_DECISION)
+)
+GRAIN_REPOINT_SUCCESSOR_RULE = GRAIN_RULE_REPOINTS[
+    (GRAIN_REPOINT_CODE, GRAIN_REPOINT_DECISION)
+]
+# Spelled identically in 087, and held to it by test_jurisdiction_parity.py: a reader of
+# /jurisdictions meets the corrected row before any of this file.
+GRAIN_REPOINT_NOTE = (
+    "repointed to the successor the restatement instant could not name: the successor was"
+    " not resident when the migration that restated it ran"
+)
+
+GRAIN_REPOINT_REGISTRATION: dict[str, object] = next(
+    row
+    for row in FOUNDING_JURISDICTIONS
+    if str(row["jurisdiction_code"]) == GRAIN_REPOINT_CODE
+)
+
+# What the corrected registration declares: the grain restatement's own rows for this
+# jurisdiction, with the one decision that moved carrying the note that says why.
+GRAIN_REPOINT_RULES: tuple[dict[str, object], ...] = tuple(
+    {**row, "note": GRAIN_REPOINT_NOTE}
+    if str(row["decision"]) == GRAIN_REPOINT_DECISION
+    else row
+    for row in GRAIN_JURISDICTION_RULES
+    if str(row["jurisdiction_code"]) == GRAIN_REPOINT_CODE
+)
+
 # The ten decisions the Texas registration carries after the supersession, six of them carried
 # forward from the registration it supersedes. The loader joins decisions to the resolved
 # registration on its exact (code, effective_from, published_at) triple, so a decision left out
@@ -674,6 +716,45 @@ on conflict do nothing
 """
 
 
+# Whether the correction 087 publishes is still owed here: the registration this registry
+# resolves today still names the founding rule for the decision, and the successor the repoint
+# moves to is resident. Both halves have to be read from the database rather than assumed,
+# because the answer differs per host -- it is false on every fresh one.
+_GRAIN_REPOINT_PENDING = """
+select exists (
+    select 1
+      from lineage.jurisdictions_as_of(
+               (select max(published_at) from lineage.jurisdictions), current_date) resolved
+      join lineage.jurisdiction_rules decided
+        on decided.jurisdiction_code = resolved.jurisdiction_code
+       and decided.effective_from = resolved.effective_from
+       and decided.published_at = resolved.published_at
+     where resolved.jurisdiction_code = %(code)s
+       and decided.decision = %(decision)s
+       and decided.serving
+       and decided.rule_id = %(founding)s)
+   and exists (select 1 from lineage.conformance_rules where rule_id = %(successor)s)
+"""
+
+# 085's own supersession event, which its guard prevented it from writing on the host this
+# correction exists for. The payload names the fact and the actor names who recorded it, so the
+# id is the one 085 uses and the trail carries the supersession once however it was reached.
+_INSERT_SUPERSESSION_EVENT = """
+insert into lineage.audit_events (event_id, occurred_at, actor, event_type, subject_type,
+                                  subject_id, payload)
+select 'evt_migration_cr_nm_wcproduction_pool_rollup_2', now(), 'system:seed',
+       'conformance.rule_superseded', 'rule', %(successor)s::text,
+       jsonb_build_object('supersedes', %(founding)s::text,
+                          'from_spec', 'no served rollup; the regulator files at completion-pool'
+                                       ' grain and glasswell performs none',
+                          'to_spec', 'served_rollup: sum_over_pools, served_from:'
+                                     ' marts.well_pool_rollup, promotes_to_canonical: false',
+                          'migration', 'nm_grain_repoint')
+ where not exists (select 1 from lineage.audit_events
+                    where event_id = 'evt_migration_cr_nm_wcproduction_pool_rollup_2')
+"""
+
+
 def registration_parameters(
     row: dict[str, object],
     *,
@@ -756,6 +837,49 @@ def rule_parameters(
     }
 
 
+def repoint_the_grain_rule(cursor: psycopg.Cursor) -> bool:
+    """Publish the correction migration 087 publishes, where the migration could not.
+
+    An append at a new instant rather than a repair of the old one, and the distinction is not
+    ceremony: `lineage.jurisdiction_rules` is append-only under 073's trigger, so no writer can
+    move a rule row; and 2026-09-06 published the founding rule and served it, so the correction
+    is knowledge this registry did not have at that instant rather than a write that never
+    finished. What it is not is a restatement of a decision that changed: nothing about the OCD's
+    filings moved, and the rows the corrected registration carries are the rows the restatement
+    declared, with the one rule id the deploy order left behind.
+
+    Returns whether it wrote, which is false on every host where 085 or 087 already chose the
+    successor -- every fresh database included.
+    """
+    keys = {
+        "code": GRAIN_REPOINT_CODE,
+        "decision": GRAIN_REPOINT_DECISION,
+        "founding": GRAIN_REPOINT_FOUNDING_RULE,
+        "successor": GRAIN_REPOINT_SUCCESSOR_RULE,
+    }
+    cursor.execute(_GRAIN_REPOINT_PENDING, keys)
+    if not cursor.fetchone()[0]:
+        return False
+    cursor.execute(
+        _INSERT_JURISDICTION,
+        registration_parameters(
+            GRAIN_REPOINT_REGISTRATION,
+            published_at=GRAIN_REPOINTED_ON,
+            evidence_tag=GRAIN_EVIDENCE_TAG,
+            evidence_commit=GRAIN_EVIDENCE_COMMIT,
+        ),
+    )
+    cursor.executemany(
+        _INSERT_RULE,
+        [
+            rule_parameters(row, published_at=GRAIN_REPOINTED_ON)
+            for row in GRAIN_REPOINT_RULES
+        ],
+    )
+    cursor.execute(_INSERT_SUPERSESSION_EVENT, keys)
+    return True
+
+
 def seed_jurisdictions(connection: psycopg.Connection) -> int:
     """Idempotent by contract: seed_all runs on every deploy. Returns the registry total.
 
@@ -789,6 +913,9 @@ def seed_jurisdictions(connection: psycopg.Connection) -> int:
                 for row in TX_SUPERSEDED_RULES
             ],
         )
+        # After the rule rows and before the resolver is rebuilt: the correction moves the
+        # knowledge cut the rebuild reads.
+        repoint_the_grain_rule(cursor)
         # The refresh trigger for every registered read-time map, attached from the registry
         # rather than written by hand. The registry's own append triggers already call this, so
         # the explicit call is for the database restored from a dump where nothing appends.

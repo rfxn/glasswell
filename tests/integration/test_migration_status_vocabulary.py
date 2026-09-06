@@ -469,6 +469,24 @@ def test_the_repoint_migration_completes_what_the_deploy_order_left_undone(
         assert cursor.fetchone()[0] == 1, "the supersession the migration completed is on the trail"
 
 
+def test_the_seed_completes_the_repoint_where_the_migration_could_not(
+    empty_db: psycopg.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A host that skips the release in between applies both files before it seeds, so the
+    successor is absent for the repoint migration too and the seed is the only writer left."""
+    deployed_before_the_successor(empty_db, monkeypatch)
+
+    migrate(empty_db)
+    clear_jurisdiction_cache()
+    assert serving_grain_rule(empty_db) == FOUNDING_RULE, "the successor is not resident yet"
+
+    seed_all(empty_db)
+    empty_db.commit()
+
+    assert serving_grain_rule(empty_db) == SUCCESSOR_RULE
+    assert [row.jurisdiction_code for row in rollup_registrations(empty_db)] == ["NM"]
+
+
 def test_the_repoint_is_written_once_however_many_deploys_run(
     empty_db: psycopg.Connection, monkeypatch: pytest.MonkeyPatch
 ) -> None:

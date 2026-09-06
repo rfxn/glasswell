@@ -18,6 +18,7 @@ import pytest
 from fastapi.testclient import TestClient
 from psycopg.rows import dict_row
 
+from glasswell.db.migrate import discover_migrations
 from glasswell.lineage.jurisdictions import (
     JurisdictionRegistryError,
     clear_jurisdiction_cache,
@@ -31,6 +32,10 @@ from glasswell.seed.conformance_tx import TX_SOURCES
 from glasswell.seed.jurisdictions import (
     EXPLORER_DEFAULT_CODE,
     FOUNDING_JURISDICTIONS,
+    GRAIN_REPOINT_FOUNDING_RULE,
+    GRAIN_REPOINT_NOTE,
+    GRAIN_REPOINT_SUCCESSOR_RULE,
+    GRAIN_REPOINTED_ON,
     GRAIN_RESTATEMENTS,
     JURISDICTION_RESTATEMENTS,
     JURISDICTIONS,
@@ -289,6 +294,25 @@ def test_the_migration_and_the_seed_module_write_the_same_registrations(
             assert landed[column] == (
                 list(value) if isinstance(value, tuple) else value
             ), f"{landed['jurisdiction_code']}.{column}"
+
+
+def test_the_two_writers_of_the_grain_repoint_spell_one_correction() -> None:
+    """The same gate as above, for the correction the two writers publish between them.
+
+    Only one of them writes it on any host -- whichever finds the successor resident first --
+    so a repoint that moved the seed's instant, rule or note and not the migration's would
+    publish two different registrations depending on which release the host came from.
+    """
+    sql = next(
+        item for item in discover_migrations() if item.name == "nm_grain_repoint"
+    ).sql
+    # The literals as SQL spells them: a concatenated string across lines is still one value.
+    spelled = " ".join(sql.replace("'", "").split())
+
+    assert f"date {GRAIN_REPOINTED_ON.isoformat()}" in spelled
+    assert GRAIN_REPOINT_FOUNDING_RULE in spelled
+    assert GRAIN_REPOINT_SUCCESSOR_RULE in spelled
+    assert " ".join(GRAIN_REPOINT_NOTE.split()) in spelled
 
 
 def test_a_registration_published_after_the_cut_is_not_served_under_it(
