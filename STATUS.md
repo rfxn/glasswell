@@ -13,18 +13,18 @@ so on the line. [`ROADMAP.md`](ROADMAP.md) owns phase scope and exit criteria;
 - **Release line:** 65 tagged releases, v0.20 through v0.84, cut 2026-08-21 through
   2026-09-05.
 
-Measured on the deployed database (VM 111) and host, read-only, 2026-09-06 after the v0.83 deploy
-(Texas Step 3 in flight: production is promoted through 2016).
+Measured on the deployed database (VM 111) and host, read-only, 2026-09-06 after the v0.84 deploy
+(Texas Step 3 in flight: production is promoted through 2019).
 
 | Item | Value | Source of the measurement |
 |---|---|---|
-| Code version | `v0.83+4472259` | `/etc/glasswell/code-version.env` |
-| Schema head | `086` | `select max(version) from schema_migrations` |
+| Code version | `v0.84+978bef0` | `/etc/glasswell/code-version.env` |
+| Schema head | `087` | `select max(version) from schema_migrations` |
 | `canonical.wells` | 1,083,458 rows over 710,310 distinct API-10 | `select count(*), count(distinct api10) from canonical.wells` |
-| `canonical.production_monthly` | 73,981,024 rows | `select count(*) from canonical.production_monthly` |
+| `canonical.production_monthly` | 78,290,582 rows | `select count(*) from canonical.production_monthly` |
 | `canonical.well_spatial` | 1,165,902 rows | `select count(*) from canonical.well_spatial` |
 | `marts.basin_boundaries_tile` | 48 rows | `select count(*) from marts.basin_boundaries_tile` |
-| `main` | `e001950`, level with `origin/main`; 64 version tags | `git rev-parse main origin/main`; `git tag \| grep -c '^v'` |
+| `main` | `56cf137`, level with `origin/main`; 65 version tags | `git rev-parse main origin/main`; `git tag \| grep -c '^v'` |
 
 ## Shipped baseline per state
 
@@ -124,17 +124,16 @@ Rollback is three levels: delete the proxied CNAME, `systemctl stop cloudflared`
 
 - **Hosted CI runs on every push** — six jobs: `python`, `web`, `e2e-guards`, `shell`,
   `collateral`, `map-chrome`, sharded since v0.83's CI-lean merge behind one required check, `CI complete`.
-  The last run is **green at `e001950`** (2026-09-06).
-- **`infra/verify.sh` and `scripts/smoke.sh`** last read **245 passed / 2 failed** and **40 passed /
-  2 failed** at the **v0.83** deploy, 2026-09-06, and again as host units (`/var/log/glasswell/verify-v083b.log`,
-  `smoke-v083b.log`). Every red is named: verify's status-health line carries the three Texas allocation
-  checks that stay unavailable or degraded until runbook Steps 4–5; verify's read of
-  `cr_status_absence_share_1` sent no key and the public-mode host refused it (fixed on `main` at
-  `e001950`, installed with the next deploy); smoke 26 and 27 read the New Mexico series as a sum over
-  pool filings, which the host does not serve yet — the v0.83 deploy applied 085 before the seed that
-  makes the rollup successor rule resident, so the registry names the founding rule and the
-  `well_pool_rollup` mart builds for no jurisdiction; the v0.84 hotfix completes that repoint. Smoke 22
-  (the Colorado blank well type, F-3) is green: closed on the host.
+  The last run is **green at `c5a02c4`** (PR #56, 2026-09-06).
+- **`infra/verify.sh` and `scripts/smoke.sh`** last read **245 passed / 2 failed** and **42 passed /
+  0 failed** at the **v0.84** deploy, 2026-09-06 (`work-output/ship-v084.log`). Smoke is clean: the New
+  Mexico sum serves under its successor rule (087 completed the repoint the v0.83 deploy order left on the
+  founding rule; `marts.well_pool_rollup` 15,387,002 rows) and the Colorado blank well type (F-3) stays
+  closed. Verify's two reds are named: the status-health line carries the three Texas allocation checks that
+  stay unavailable or degraded until runbook Steps 4–5; and its read of `cr_status_absence_share_1` still
+  fails — v0.83's fix put the key on the line before the script reads it, so `set -u` stops the substitution
+  (the route answers 200 with the key); moved below the key read on `main` at `56cf137`, installed with the
+  next deploy.
 - **Deployed code version, schema head and every row count above** were measured today. No
   local suite count is stated here: a test count that is not re-measured is not evidence.
 
