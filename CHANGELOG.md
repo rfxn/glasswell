@@ -7,6 +7,249 @@ its own version in its header, and its history is summarised in §3.1.
 
 ## Unreleased
 
+<a id="v0.83"></a>
+## v0.83 — 2026-09-05
+
+- [Change] CI: the Python job is four `pytest -n 4` shards over the contract and integration
+         tiers plus a docker-free lint-and-unit job, gated by a diff classifier and a
+         tree-identity skip that does not re-run a merge commit whose tree a green parent
+         already carried; `CI complete` is the one always-running required check, and PR refs
+         cancel their own superseded runs
+- [New] `.github/workflows/nightly.yml`: the whole suite once a day, unsharded, in one process
+      and in collection order — the control for the order dependence and lost-shard classes a
+      split run cannot see — plus the shard-parity comparison against its own collection
+- [New] `make test` selects the tests a diff can reach (`scripts/test-scope.py`: import graph,
+      `test_<stem>.py` naming, and a whole-suite fallback for conftest, fixtures, migrations,
+      the lockfile and the workflows) and prints what it excluded; `make test-full` is the whole
+      suite, `make test-scope` prints the selection alone, `make durations` refreshes the file
+      that balances the CI shards
+- [New] docs/ci-gate.md: what each job refuses, when the tree-identity skip may fire, how the
+      shards are kept honest, and what every red symptom means
+- [Change] 104 items that reach no database fixture move from the contract and integration tiers
+         to `tests/unit/`, eight are deleted with the surviving cover named for each, and the
+         `?explain=true` pools surface is merged into `test_explain_inline.py` as a parametrised
+         row; with the guards this work added, collected 5,736 -> 5,775
+- [Fix] tests/unit/test_access_log_redaction.py: the 13 assertions that hold the access-log
+      filter to *under*-redacting nothing served -- the five live query strings, the eight served
+      parameter names one by one, and `new_password=` / `owner_key=` / `x_csrf_token=` -- were
+      overwritten rather than extended when the key-hygiene tests moved in; restored beside the
+      seven arrivals, both directions covered again (B-1)
+- [Fix] a blank ECMC attribute is an absence, not an empty string: the three Colorado GIS
+      archives stage every text column under cr_co_wells_shp_blank_is_absent_1,
+      cr_co_directional_bh_blank_is_absent_1 and cr_co_directional_lines_blank_is_absent_1,
+      which promote it as NULL; the 124,392 headers already promoted are read under the same
+      rule rather than restated, since canonical.wells is keyed on ECMC's own Stat_Date
+- [New] blank_is_absent is a registry decision: lineage.jurisdiction_rules carries it for
+      Colorado at cr_co_wells_shp_blank_is_absent_1, and the three reads that apply it —
+      the wells spine, the well card and /v1/wells/status-summary — cite it in their
+      derivations and link it, per jurisdiction, so no Texas or North Dakota response names
+      a rule about ECMC's blanks (R8)
+- [Fix] the model context reads its `area` control feature under the same rule; a blank
+      county there is a category of its own and would split one county's peers into two
+      cohorts (gate-cofix M-1)
+- [Fix] a status class the read-time resolver maps onto an empty string is the absence class
+      rather than a second bucket beside the real ones: /v1/wells/status-summary and the wells
+      spine wrap the resolved status the way facets.py already does, so two selectors can no
+      longer collide on status_null=1 (gate-cofix M-2)
+- [Fix] the rule's served evidence names both blank columns the header archive measures —
+      Well_Class (1,176) and Loc_Qual (62) — rather than only the one a gate caught
+      (gate-cofix M-3)
+- [Fix] an empty value on /v1/wells is no filter rather than a selector for the rows the
+      spine reads as absent: `?well_type=`, `?county=`, `?operator=`, `?q=`, `?status=` and
+      `?geometry_provenance=` now answer the unfiltered population, and every text predicate
+      addresses the value the response serves rather than the column beneath it (gate-cofix
+      M-4)
+- [New] a standing post-promotion sweep: every non-key attribute is planted blank in staging
+      and no text column of canonical.wells may hold an empty string afterwards, so the
+      class claim holds at the write path and not only at the selector (gate-cofix L-4)
+- [Change] ndic_file_no joins the source-reported text columns the rule is applied to, and
+           the columns no source reports are named beside them, so both sets are held to
+           canonical.wells rather than described in prose (gate-cofix L-1)
+- [New] `infra/bin/host-runner.sh`: a long host job runs as a chain of transient units with
+      one `systemd-run --wait` inside the runner and none outside it, a log at
+      `/var/log/glasswell/<job>.log` and a status document at
+      `/var/lib/glasswell/runs/<job>.json` rewritten whole and atomically after every
+      transition — the step, its unit, its exit, its `systemd_result`, its peak memory and
+      its full summary line, plus a stamp per transition; `--status <job>` prints it, a
+      failing step stops the chain and the status names it, and a job that already has a
+      status file refuses to run again without `--force`
+- [New] the step's summary reaches the status file whole: the first ad-hoc host runner cut
+      it at 600 characters, which left the figures it reported unparseable, and nothing in
+      the tracked runner cuts, heads or tails a machine-readable line
+- [New] a step is judged by the evidence it wrote, not by its exit status: every glasswell
+      ingest and mart entry point prints one JSON document when it commits, and a step that ends
+      without it — or without the line `--expect` names — is treated as not done and stops the
+      chain, whatever the exit says, with `steps[].judged_by` recording which reading answered.
+      Measured 2026-09-05: `systemctl stop` of a running promotion answers `Result=success` and
+      exit 0, and the ad-hoc runner ran the next step over a promotion that had not happened. A
+      step the host ended rather than the step itself — `signal`, `core-dump`, `oom-kill`,
+      `timeout`, `watchdog`, `start-limit-hit`, `resources`, `protocol` — stops the chain even
+      under `--keep-going`, which is for a step that failed and said so
+- [New] `--resume` continues a job whose status says `stopped` under the same job name, log
+      and status file, numbering the new steps after the ones already recorded, and
+      `--after-job` starts one job behind another by reading that job's status file rather
+      than a unit's `Result`, which answers `success` for a unit that has been collected;
+      the wait is bounded by `--after-timeout` (default 86400 s) and the deadline it is
+      waiting to is in the `waiting` state, so a follower behind a job that never finishes
+      stops and says so rather than waiting forever. `runbook-tx-load.md` Step 4 arms the
+      marts behind the Step 3 promotion this way, replacing a hand-off the operator had to
+      watch for; a promotion that stopped stops the marts too, because marts rebuilt over a
+      promotion that did not happen would publish totals for rows that are not there, and the
+      runbook states the resume that gets past that record rather than leaving the operator to
+      read `pass --force` off a refusal
+- [New] install.sh places the runner at `/usr/local/sbin/host-runner.sh` and creates
+      `/var/lib/glasswell/runs` (root:glasswell 0750, so a step cannot rewrite the verdict on
+      its own work) and `/var/log/glasswell`; verify.sh asserts both directories and holds the
+      installed runner byte-identical to the tree
+- [New] install.sh retires the five ad-hoc runners of 2026-09-05 as it places the tracked one,
+      scripts and status files together, into `/var/lib/glasswell/runs/archive/` — never
+      deleted, because a load's own record is the evidence that it happened. Without it the
+      Colorado runbook's first tracked run refuses: `co-load` is the job name the runbook
+      launches and the ad-hoc verdict already sat under it. Never a live one: a runner whose
+      unit is active, or whose job reads `running` or `waiting`, keeps its script, status and
+      stamps and is retired by the next deploy instead, because a deploy lands during a load
+      and a poll path that disappears mid-run is worse than a retirement that waits
+- [Change] every long host step an operator is told to run is a job on the runner, and no
+         fenced block in any runbook — or in `infra/README.md` — starts a unit: the loads and
+         promotions of `runbook-basin-load.md`, `runbook-mt-load.md`, `runbook-nm-promotion.md`,
+         `runbook-nm-tier2.md`, `runbook-tx-load.md` and `runbook-scheduler.md`, Colorado's
+         Steps 1-5 as one six-unit chain, the mart refresh `deploy.sh` documents, and
+         `infra/README.md`'s step 4 tile-function reinstall, which was the last `--pipe --wait`
+         — an operator reading output inline is an operator whose job dies with the session.
+         Each is launched detached and followed by the command that polls its status file; the
+         prose that discusses systemd still does
+- [Change] Texas Step 3 sizes its promotion batches by expected rows rather than by a count
+         of years: the 2011-2016 batch was OOM-killed at `MemoryMax=6G` on 2026-09-05 after
+         batches of 5.23 M, 5.72 M and 6.72 M rows had landed under the same ceiling, so the
+         budget is about 5 M rows per unit, the ceiling is not raised on an 11 GB host, and
+         the status file's `systemd_result` is what separates a kill to resume from a data
+         refusal to stop
+- [New] `scripts/deploy.sh` records every remote step into `deploy-<tag>-<commit>.json` on
+      the host and reads the verdict back out of it, so a ship whose workstation dies is
+      still readable and an ssh that returned 0 is no longer the whole answer
+- [New] The canonical well-status class domain is a registry table: twelve rows in
+      `lineage.status_classes` under `cr_status_class_domain_1`, each carrying its label,
+      colour, glyph, `min_zoom`, legend order and a jurisdiction-neutral note, with a foreign
+      key from every registered status map so the set a regulator maps onto is a domain rather
+      than a sixth copy computed at query time
+- [New] `/v1/jurisdictions` serves each registration's status vocabulary, its legend note, the
+      seven presentation facts the registry already held and the domain once in `meta`, and the
+      map builds its legend, symbology, zoom gate and filter from that one response
+- [New] No well anywhere is served a null status class: a well whose source filed no code
+      resolves to the absence class, the filed code is served beside it as what says whether the
+      source reported none or the vocabulary had no row, and `?status=` matching that class
+      returns the wells the legend counts
+- [New] Montana's production grain is a registered decision (`cr_mt_bogc_pool_rollup_1`), so the
+      389 API-10s whose series is a disclosed sum name the rule that says so, link to their pool
+      filings and carry an aggregation warning
+- [New] New Mexico's per-well series is served as a sum over its completion-pool filings from
+      `marts.well_pool_rollup` under `cr_nm_wcproduction_pool_rollup_2`, with every point
+      resolving to the refresh that produced it, a warning that says it is a sum, and a link
+      down to the filings it was summed from
+- [Change] `?as_of=` is refused rather than answered on New Mexico's summed well series, with
+           the rule, the reason and the pool surface that does answer it named in the problem
+           detail: the rollup mart holds one snapshot per key, so an older date would be
+           answered with today's sum wearing the caller's date
+- [Change] The read-time status resolver attaches its own refresh trigger to every registered
+           map through `lineage.attach_status_map_refresh()`, so a fifth read-time jurisdiction
+           is three registry rows and no migration; Colorado, which registered read-time
+           resolution in v0.78 and shipped with no trigger on its map, gets one on this deploy
+- [Change] The resolver resolves the registry at the registry's own knowledge cut rather than at
+           the host's calendar, which is the clock the API reads, and `infra/verify.sh` compares
+           the two and asserts no jurisdiction loses a serving rule row between them
+- [Change] `/v1/wells/status-summary`'s `unmapped_wells` is predicated on the class the absence
+           arm gives rather than on the filed code, so it keeps the population its three field
+           descriptions describe, and the served OpenAPI prose carries no count
+- [Fix] The disposal hover, the injection codebook and the geometry-provenance legend note name
+      the feature's own regulator and its own rule, or say that none is registered, where all
+      three said "as ND filed it" whatever the well
+- [Fix] Every wells tile mart reads the one status resolver, so a promotion-time jurisdiction's
+      tile no longer carries a null for a well the API had already given a class, which is what
+      made pressing the absence class in Wells By show `Showing 0 of N`
+- [Fix] The absence class and `expired` are repainted to clear the 3:1 non-text contrast floor
+      on all four substrates a swatch is read against, and the floor and the three classes that
+      do not clear it on the light theme are published on the domain's own rule
+- [Fix] A narrow month window no longer tells a well with a well-level series that its regulator
+      files per completion pool and glasswell performs no rollup
+- [Fix] The pool-grain disclosure is chosen from the well rather than from its jurisdiction's
+      registration: a well the sum admits no filing of keeps the panel and the link down to its
+      filings, and a well that filed nothing below it is told of no sum at all
+- [Fix] A summed month whose pool filings were all explicit zeros is served as `reported_zero`
+      and a stream with no filing in a served month as `no_report`, where both read as
+      `reported` and as a null; each point carries its own month's report vintage rather than
+      the whole well's maximum
+- [Fix] A summed month the rollup admits no filing of is served `withheld` only where the
+      filings themselves say so, and `no_report` otherwise, where the token was inferred from
+      the sum admitting none of them — a word New Mexico's pools never file
+- [Fix] `?normalization=per_lateral_ft` is refused on the summed series for the reason the
+      allocated arm gives, where it was accepted and silently ignored
+- [Fix] Unticking a status class on the map takes its strike off the canvas with it: the struck
+      overlay keeps its own set of terminal classes and the status gate now narrows that set,
+      where a press left the strike painted over the mark it had just removed for `dry` and
+      `plugged` on every registered jurisdiction
+- [Fix] Production by pool says the series above it is glasswell's sum of the filings on a well
+      the rollup serves, where it told every pool-grain well that nothing rolls up and no sum is
+      served — the opposite of the chart drawn above it, under the same rule id
+- [Fix] The well card opens Production by pool on whether the regulator filed below the well,
+      not on whether a sum is missing, so a well the rollup mart serves keeps both its summed
+      chart and the section holding the filings that chart is a sum of
+- [Fix] The web glossary-seed helper resolves `glossary_seed.yml` from its own module rather
+      than from the process CWD, so the card vocabulary gate and the R9 coverage gate read
+      the committed seed from any working directory instead of only from `web/`
+- [Fix] The changelog page is written inside the outDir the build resolved, not always into
+      `web/dist`: a build into another directory no longer writes over the tree being
+      served, and gets the page its own rail links to. A build that resolved no outDir
+      refuses rather than guessing one
+- [Fix] Caddy redacts every credential-shaped query parameter in both listeners' access
+      logs, not the four names the API happens to refuse: one `request>uri regexp` reads a
+      stem anywhere in the name -- key, pass, pwd, secret, token, session, csrf, auth,
+      credential, sig, jwt, bearer, otp -- so `?api_key=` no longer takes its 422 and leaves
+      the key in the log, and neither do `?pwd=`, `?pass=`, `?credential=`, `?sig=`,
+      `?signature=`, `?jwt=`, `?bearer=` or `?otp=`, which the first alternation logged in
+      full. The API's own access-log filter is built from the same stem list, so the two
+      redact the same names in both directions; it used to miss `session_id=` and `passwd=`
+- [New] The Caddy log filter's gate is derived, not a name list: the shipped pattern's
+      alternation must equal the origin's stem list verbatim, the probe names are generated
+      from that list, the served names come from the committed OpenAPI document with the one
+      the class eats (`source_key`) declared, and every name is checked edge against origin;
+      a field declared twice in one `fields` block is refused, because Caddy keeps the last
+      one silently
+- [Fix] Four sessions migrating four databases on one cluster no longer collide on its
+      roles: a migration that loses a cluster-global race is retried inside the runner,
+      which is one transaction, so the second attempt takes the branch the winner
+      committed. The first sharded CI run errored 843 tests on `pg_authid_rolname_index`
+- [New] docs/ci-gate.md states which assertions no workflow can make: a GitHub runner has no
+      route to the deployed instance, no owner key and no host filesystem, so `verify.sh` and
+      `smoke.sh` own every deployed-instance probe, run per deploy rather than per day
+- [New] Every `(source_id, stage)` the conformance registry declares a policy rule at has its
+      own case: the declaration is still there, it has no executor, and dropping it leaves a
+      load of implemented kinds. The parametrisation is derived from the seed and pinned to
+      the registry, so a declaration at a new pair is covered without an edit
+- [New] `/v1/conformance/<id>` serves `evidence_tag` and `evidence_commit` beside the
+      rationale and the effective date, so a rule says which release first carried it rather
+      than leaving that in `lineage.conformance_rule_publications` alone; additive on the
+      detail only, and the freeze differ reads all six schema changes as additive. The pair
+      is served as the registry holds it, in one of two whole states: a release tag beside
+      the commit it resolves to, or `UNRELEASED` beside forty zeros while the rule's branch
+      has not been through a merge train; the descriptions say so, and the gate reds on a
+      half-repointed row rather than reading the placeholder as evidence
+- [Fix] The shipped-literal gates read a literal the way the engine does: one decoder, and it
+      reads `\n` as a newline, `\x41` as A and a stylesheet's `\24d4` as the code point it
+      renders. The pass before it dropped the backslash and kept the letters, so an escaped
+      spelling reached the wire unseen by the gate and by the reviewer both
+- [Fix] `/v1/wells/facets?q=` answers rather than refusing: an empty search is no search, so
+      the handler normalises it once and no selector term is built from an empty string. The
+      grammar admits no empty value, so the handle rendered `q_b64=` and the whole response
+      came back 422 selector_ambiguous
+- [New] Every `identity_selector_term` call site in the API is declared with the check that
+      keeps its value non-empty, so a new one cannot be added without stating why it cannot
+      render an unresolvable handle
+- [Fix] the layer panel's two status-keyed line swatches — Laterals and Well paths — are drawn
+      from the served status vocabulary instead of the empty store the panel is built against:
+      every row redraws its mark in the same `/v1/jurisdictions` response its count already
+      waits on, so the rows the map paints from `statusColourExpression()` carry the domain's
+      leading and trailing class colours rather than transparent (v0.83 visual gate M1)
+
 <a id="v0.82"></a>
 ## v0.82 — 2026-09-05
 
