@@ -545,6 +545,23 @@ def test_the_seed_completes_the_repoint_where_the_migration_could_not(
     assert supersession_actors(empty_db) == ["system:seed"]
 
 
+def test_the_supersession_is_recorded_on_a_host_that_never_carried_the_defect(
+    db: psycopg.Connection,
+) -> None:
+    """The trail of the rule change itself, which no migration can write on a fresh database.
+
+    085's event insert and 087's both require the successor resident, and it is seeded from
+    Python after both have run -- so every freshly built host served the successor while the
+    rule it supersedes sat resident beside it with no conformance.rule_superseded event saying
+    which supersedes which. The seed is the only writer that can be there for it.
+    """
+    seed_all(db)
+    seed_all(db)
+    db.commit()
+
+    assert supersession_actors(db) == ["system:seed"]
+
+
 def test_the_repoint_is_written_once_however_many_deploys_run(
     empty_db: psycopg.Connection, monkeypatch: pytest.MonkeyPatch
 ) -> None:

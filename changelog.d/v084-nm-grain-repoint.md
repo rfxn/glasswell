@@ -3,6 +3,11 @@
       cr_nm_wcproduction_pool_rollup_2 as a new published instant, guarded on the successor
       being resident and on the restatement instant still naming the founding rule, and
       records the supersession 085 could not
+- [Fix] The conformance.rule_superseded event for cr_nm_wcproduction_pool_rollup_2 is now
+      recorded on every host that serves the successor, not only where the correction was
+      made: both migrations guard it on the successor being resident and it is seeded from
+      Python after both have run, so a freshly built host served the successor with nothing
+      on the trail saying which rule it supersedes
 - [Fix] seed_jurisdictions publishes the same correction where migration 087 could not,
       which is the host that migrates both files before it seeds: it appends New Mexico's
       registration at the correction instant with production_grain naming the successor,

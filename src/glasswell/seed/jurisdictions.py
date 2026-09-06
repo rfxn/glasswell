@@ -736,9 +736,11 @@ select exists (
    and exists (select 1 from lineage.conformance_rules where rule_id = %(successor)s)
 """
 
-# 085's own supersession event, which its guard prevented it from writing on the host this
-# correction exists for. The payload names the fact and the actor names who recorded it, so the
-# id is the one 085 uses and the trail carries the supersession once however it was reached.
+# 085's own supersession event, which no migration can write on a fresh database: 085's guard
+# and 087's both require the successor resident, and the successor is seeded from Python after
+# both have run. The payload names the fact and the actor names who recorded it, so the id is
+# the one 085 uses and the trail carries the supersession once however it was reached. The
+# `migration` key names the file the correction belongs to, not the writer that got there.
 _INSERT_SUPERSESSION_EVENT = """
 insert into lineage.audit_events (event_id, occurred_at, actor, event_type, subject_type,
                                   subject_id, payload)
@@ -750,7 +752,8 @@ select 'evt_migration_cr_nm_wcproduction_pool_rollup_2', now(), 'system:seed',
                           'to_spec', 'served_rollup: sum_over_pools, served_from:'
                                      ' marts.well_pool_rollup, promotes_to_canonical: false',
                           'migration', 'nm_grain_repoint')
- where not exists (select 1 from lineage.audit_events
+ where exists (select 1 from lineage.conformance_rules where rule_id = %(successor)s)
+   and not exists (select 1 from lineage.audit_events
                     where event_id = 'evt_migration_cr_nm_wcproduction_pool_rollup_2')
 """
 
@@ -876,8 +879,23 @@ def repoint_the_grain_rule(cursor: psycopg.Cursor) -> bool:
             for row in GRAIN_REPOINT_RULES
         ],
     )
-    cursor.execute(_INSERT_SUPERSESSION_EVENT, keys)
     return True
+
+
+def record_the_rule_supersession(cursor: psycopg.Cursor) -> None:
+    """Put the rule change on the audit trail wherever the successor is resident.
+
+    Not part of the correction above, and deliberately not guarded by it: a host that never
+    carried the defect has nothing to correct and still serves the successor, so the event that
+    says which rule supersedes which has to be written there too. Idempotent on the event id.
+    """
+    cursor.execute(
+        _INSERT_SUPERSESSION_EVENT,
+        {
+            "founding": GRAIN_REPOINT_FOUNDING_RULE,
+            "successor": GRAIN_REPOINT_SUCCESSOR_RULE,
+        },
+    )
 
 
 def seed_jurisdictions(connection: psycopg.Connection) -> int:
@@ -915,6 +933,7 @@ def seed_jurisdictions(connection: psycopg.Connection) -> int:
         )
         # After the rule rows and before the resolver is rebuilt: the correction moves the
         # knowledge cut the rebuild reads.
+        record_the_rule_supersession(cursor)
         repoint_the_grain_rule(cursor)
         # The refresh trigger for every registered read-time map, attached from the registry
         # rather than written by hand. The registry's own append triggers already call this, so
