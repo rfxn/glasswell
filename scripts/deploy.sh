@@ -24,7 +24,7 @@ CODE_ENV_FILE=/etc/glasswell/code-version.env
 HOST_RUNNER="$DEPLOY_SRC/infra/bin/host-runner.sh"
 # The positions one run takes. Step 6 is written twice and exactly one of them runs;
 # tests/unit/test_deploy_status.py holds this equal to the distinct step numbers.
-DEPLOY_STEP_COUNT=23
+DEPLOY_STEP_COUNT=24
 deploy_step_index=0
 deploy_step_label=""
 deploy_job=""
@@ -308,6 +308,15 @@ remote "sudo -u glasswell env $code_env $VENV/bin/python -m glasswell.marts.well
 
 # Exits 0 with a stated outcome on a host that has never fetched the 440 MB archive: nothing
 # to promote is a plan, not a failure.
+# The per-well series for every jurisdiction whose production_grain rule registers a served
+# rollup, which is New Mexico's 15.4 M summed well-month-stream rows. Registry-driven and
+# rebuilt whole, so it is idempotent for the reason 6d and 6d2 are — and it is a step because
+# the v0.83 ship seeded the registration that drives it and refreshed nothing, which serves the
+# state as no series rather than as a sum.
+step "6d3. per-well pool rollup mart"
+remote "sudo -u glasswell env $code_env $VENV/bin/python -m glasswell.marts.well_pool_rollup --dsn '$SOCKET_DSN'" \
+    || refuse "pool rollup refresh failed"
+
 step "6e. FracFocus completion-design backfill"
 remote "sudo -u glasswell env $code_env $VENV/bin/glasswell-fracfocus --promote-design --dsn '$SOCKET_DSN'" \
     || refuse "completion-design backfill failed"

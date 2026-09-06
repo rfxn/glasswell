@@ -78,8 +78,19 @@ class TestWhatTheScriptDeclares:
         # them runs. Every other number appears once, so the positions a run takes is the
         # count of distinct numbers.
         declared = declared_steps()
-        assert len(declared) == 24
+        assert len(declared) == 25
         assert f"DEPLOY_STEP_COUNT={len(set(declared))}" in script()
+
+    def test_every_mart_the_registry_schedules_is_refreshed_before_the_gates(self) -> None:
+        """A registration the deploy seeds and never builds serves nothing: New Mexico's
+        per-well series is a mart the jurisdiction registry drives, and the v0.83 ship left it
+        at 0 rows because no step refreshed it."""
+        declared = declared_steps()
+        assert declared.index("6d3") == declared.index("6d2") + 1
+        assert (
+            "sudo -u glasswell env $code_env $VENV/bin/python -m glasswell.marts.well_pool_rollup"
+            " --dsn '$SOCKET_DSN'" in script()
+        )
 
     def test_every_step_opens_a_transition_and_a_refusal_closes_one(self) -> None:
         assert re.search(r"^step\(\) \{(.|\n)*?record_state running", script(), re.MULTILINE)
@@ -170,7 +181,7 @@ class TestWhatAShipWrites:
         # lands in the second position.
         assert steps[0]["index"] == 2
         assert steps[0]["step"].startswith("1. the tree at HEAD")
-        assert [step["index"] for step in steps] == list(range(2, 24))
+        assert [step["index"] for step in steps] == list(range(2, 25))
         assert all(step["exit"] == 0 for step in steps)
 
     def test_the_local_side_reads_the_verdict_back_off_the_host(

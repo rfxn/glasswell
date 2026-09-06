@@ -8,3 +8,8 @@
       registration at the correction instant with production_grain naming the successor,
       guarded on the successor's residency and on the resolved registration still naming
       the founding rule, and records the supersession on the audit trail
+- [New] scripts/deploy.sh refreshes marts.well_pool_rollup at step 6d3, after the
+      basin-context mart and in the same shape: as the pipeline role, on the socket DSN,
+      with the deploy's code identity in the environment. The v0.83 ship seeded the
+      registration that drives the mart and refreshed nothing, so the New Mexico series
+      was served as no series rather than as a sum
