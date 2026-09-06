@@ -13,13 +13,16 @@ import psycopg
 import pytest
 from psycopg.rows import dict_row
 
-from glasswell.db.migrate import discover_migrations, migrate
+from glasswell.db.migrate import applied_migrations, discover_migrations, migrate
+from glasswell.lineage.jurisdictions import clear_jurisdiction_cache, load_jurisdictions
 from glasswell.lineage.status_classes import (
     StatusClassDomainError,
     absence_class,
     load_status_classes,
 )
-from glasswell.seed import seed_all, seed_sources
+from glasswell.marts.well_pool_rollup import rollup_registrations
+from glasswell.seed import conformance_nm_wells, seed_all, seed_sources
+from glasswell.seed.conformance_nm_wells import seed_conformance_nm_wells
 from glasswell.seed.jurisdictions import (
     GRAIN_JURISDICTION_RULES,
     GRAIN_RESTATED_CODES,
@@ -343,3 +346,244 @@ def test_a_second_apply_on_the_same_day_raises_instead_of_being_absorbed(
     leave the production-grain decision unregistered while the migration reported success."""
     with seeded.cursor() as cursor, pytest.raises(psycopg.errors.UniqueViolation):
         cursor.execute(migration(MIGRATION).sql)
+
+
+# The deployed order, which no fresh-database fixture in this suite can produce. `scripts/deploy.sh`
+# migrates at step 6 and seeds at step 6b, so 085's guarded CASE reads a registry the successor is
+# not resident in -- while the founding rule, seeded by every release before this one, is. On a
+# fresh database neither rule is resident when the migration runs, both of its production_grain
+# inserts land nothing, and the seed writes the decision unopposed.
+REPOINT = "nm_grain_repoint"
+FOUNDING_RULE = "cr_nm_wcproduction_pool_rollup_1"
+SUCCESSOR_RULE = "cr_nm_wcproduction_pool_rollup_2"
+
+
+def apply_migrations(connection: psycopg.Connection, chosen: list) -> None:
+    """The chosen migrations, in order, recorded the way the runner records them."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "create table if not exists public.schema_migrations"
+            " (version integer primary key, name text not null, sha256 text not null,"
+            "  applied_at timestamptz not null default now())"
+        )
+    connection.commit()
+    already = applied_migrations(connection)
+    for item in chosen:
+        if item.version in already:
+            continue
+        with connection.transaction(), connection.cursor() as cursor:
+            cursor.execute(item.sql)
+            cursor.execute(
+                "insert into public.schema_migrations (version, name, sha256)"
+                " values (%s, %s, %s)",
+                (item.version, item.name, item.sha256),
+            )
+    connection.commit()
+    clear_jurisdiction_cache()
+
+
+def upto(name: str, *, inclusive: bool = True) -> list:
+    last = next(item.version for item in discover_migrations() if item.name == name)
+    return [
+        item
+        for item in discover_migrations()
+        if item.version < last or (inclusive and item.version == last)
+    ]
+
+
+def everything_but(name: str) -> list:
+    """The release before this train, whichever number the integrator gives its migration."""
+    return [item for item in discover_migrations() if item.name != name]
+
+
+def deployed_before_the_successor(
+    connection: psycopg.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The host at the release before this train: the founding rollup rule resident, the
+    successor not, and the registry's own migrations writing the registrations against it.
+
+    The successor is dropped from the seeder's own tuple rather than named as a literal set,
+    and it is not a convenience: 085 is what publishes its repository evidence, so 049's
+    trigger refuses the row until that migration has applied.
+    """
+    apply_migrations(connection, upto(MIGRATION, inclusive=False))
+    seed_sources(connection)
+    with monkeypatch.context() as before:
+        before.setattr(
+            conformance_nm_wells,
+            "NM_WELLS_RULES",
+            tuple(
+                rule
+                for rule in conformance_nm_wells.NM_WELLS_RULES
+                if rule["rule_id"] != SUCCESSOR_RULE
+            ),
+        )
+        seed_conformance_nm_wells(connection)
+    connection.commit()
+    apply_migrations(connection, everything_but(REPOINT))
+
+
+def serving_grain_rule(connection: psycopg.Connection) -> str | None:
+    """New Mexico's production_grain decision, read the way the mart and the API read it."""
+    clear_jurisdiction_cache()
+    return load_jurisdictions(connection).by_code["NM"].rule("production_grain")
+
+
+def landed_the_successor_without_the_correction(connection: psycopg.Connection) -> None:
+    """The step the release before this one took: it registered the successor rule and had no
+    correction to make, which is why the registration it left behind still names the founding
+    one. Only the conformance seeder runs, so nothing in `seed_jurisdictions` can answer for
+    the migration under test."""
+    seed_conformance_nm_wells(connection)
+    connection.commit()
+    clear_jurisdiction_cache()
+
+
+def supersession_actors(connection: psycopg.Connection) -> list[str]:
+    """Who recorded the rule supersession. One row, whichever writer reached it first."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "select actor from lineage.audit_events"
+            " where event_id = 'evt_migration_cr_nm_wcproduction_pool_rollup_2'"
+        )
+        return [row[0] for row in cursor.fetchall()]
+
+
+def test_the_migration_names_the_founding_rule_where_the_successor_is_not_resident(
+    empty_db: psycopg.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The cause, reproduced: what 085 wrote on VM 111 at the v0.83 deploy.
+
+    Its CASE reads the registry the migration step sees, and seed_all has not run in that step,
+    so the successor this train registers is not resident and the founding rule is. What the
+    seed cannot then do is move the row: `lineage.jurisdiction_rules` is append-only and the row
+    it would write collides with the resident one on the serving index, so `on conflict do
+    nothing` reads as success and the mart the registry drives builds for no jurisdiction.
+    """
+    deployed_before_the_successor(empty_db, monkeypatch)
+
+    assert serving_grain_rule(empty_db) == FOUNDING_RULE
+    assert rollup_registrations(empty_db) == ()
+
+
+def test_the_repoint_migration_completes_what_the_deploy_order_left_undone(
+    empty_db: psycopg.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The path the deployed host takes, and the only one that exercises 087's own writes.
+
+    The release that registered the successor has already run here, so the next deploy's step 6
+    migrates against a registry the successor is resident in and the migration is the writer
+    that finishes the repoint -- the seed at step 6b then finds nothing left to do. The actor
+    is what holds the two writers apart: a test that let `seed_all` answer for the migration
+    passed for the wrong reason, and this file shipped one that did.
+    """
+    deployed_before_the_successor(empty_db, monkeypatch)
+    landed_the_successor_without_the_correction(empty_db)
+    assert serving_grain_rule(empty_db) == FOUNDING_RULE, "the correction has not been made yet"
+
+    applied = migrate(empty_db)
+
+    assert REPOINT in [item.name for item in applied]
+    clear_jurisdiction_cache()
+    assert serving_grain_rule(empty_db) == SUCCESSOR_RULE
+    assert [row.jurisdiction_code for row in rollup_registrations(empty_db)] == ["NM"]
+    assert supersession_actors(empty_db) == ["system:migration"]
+    with empty_db.cursor(row_factory=dict_row) as cursor:
+        cursor.execute(
+            "select rule_id, note from lineage.jurisdiction_rules"
+            " where jurisdiction_code = 'NM' and decision = 'production_grain'"
+            "   and published_at = (select max(published_at) from lineage.jurisdiction_rules"
+            "                        where jurisdiction_code = 'NM')"
+        )
+        corrected = cursor.fetchone()
+    assert corrected["rule_id"] == SUCCESSOR_RULE
+    assert "not resident" in corrected["note"]
+
+
+def test_a_second_deploy_leaves_the_migrations_correction_where_it_is(
+    empty_db: psycopg.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The seed runs at step 6b of the same deploy the migration corrected at step 6, and on
+    every deploy after it: it must find the decision already made and add nothing."""
+    deployed_before_the_successor(empty_db, monkeypatch)
+    landed_the_successor_without_the_correction(empty_db)
+    migrate(empty_db)
+    with empty_db.cursor() as cursor:
+        cursor.execute(
+            "select count(*) from lineage.jurisdictions where jurisdiction_code = 'NM'"
+        )
+        after_the_migration = cursor.fetchone()[0]
+
+    seed_all(empty_db)
+    empty_db.commit()
+
+    with empty_db.cursor() as cursor:
+        cursor.execute(
+            "select count(*) from lineage.jurisdictions where jurisdiction_code = 'NM'"
+        )
+        assert cursor.fetchone()[0] == after_the_migration
+    assert supersession_actors(empty_db) == ["system:migration"]
+    assert serving_grain_rule(empty_db) == SUCCESSOR_RULE
+
+
+def test_the_seed_completes_the_repoint_where_the_migration_could_not(
+    empty_db: psycopg.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A host that skips the release in between applies both files before it seeds, so the
+    successor is absent for the repoint migration too and the seed is the only writer left."""
+    deployed_before_the_successor(empty_db, monkeypatch)
+
+    migrate(empty_db)
+    clear_jurisdiction_cache()
+    assert serving_grain_rule(empty_db) == FOUNDING_RULE, "the successor is not resident yet"
+
+    seed_all(empty_db)
+    empty_db.commit()
+
+    assert serving_grain_rule(empty_db) == SUCCESSOR_RULE
+    assert [row.jurisdiction_code for row in rollup_registrations(empty_db)] == ["NM"]
+    assert supersession_actors(empty_db) == ["system:seed"]
+
+
+def test_the_supersession_is_recorded_on_a_host_that_never_carried_the_defect(
+    db: psycopg.Connection,
+) -> None:
+    """The trail of the rule change itself, which no migration can write on a fresh database.
+
+    085's event insert and 087's both require the successor resident, and it is seeded from
+    Python after both have run -- so every freshly built host served the successor while the
+    rule it supersedes sat resident beside it with no conformance.rule_superseded event saying
+    which supersedes which. The seed is the only writer that can be there for it.
+    """
+    seed_all(db)
+    seed_all(db)
+    db.commit()
+
+    assert supersession_actors(db) == ["system:seed"]
+
+
+def test_the_repoint_is_written_once_however_many_deploys_run(
+    empty_db: psycopg.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """seed_all runs on every deploy, and a correction that appended per run would publish a
+    registration a day apart from itself every time the host shipped."""
+    deployed_before_the_successor(empty_db, monkeypatch)
+    seed_all(empty_db)
+    migrate(empty_db)
+    seed_all(empty_db)
+    empty_db.commit()
+    with empty_db.cursor() as cursor:
+        cursor.execute(
+            "select count(*) from lineage.jurisdictions where jurisdiction_code = 'NM'"
+        )
+        after_the_repoint = cursor.fetchone()[0]
+
+    seed_all(empty_db)
+    empty_db.commit()
+
+    with empty_db.cursor() as cursor:
+        cursor.execute(
+            "select count(*) from lineage.jurisdictions where jurisdiction_code = 'NM'"
+        )
+        assert cursor.fetchone()[0] == after_the_repoint
+    assert serving_grain_rule(empty_db) == SUCCESSOR_RULE
