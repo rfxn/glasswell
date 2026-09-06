@@ -18,6 +18,8 @@ from pathlib import Path
 
 import pytest
 
+from glasswell.seed.schedules import JOBS
+
 pytestmark = pytest.mark.unit
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -81,14 +83,22 @@ class TestWhatTheScriptDeclares:
         assert len(declared) == 25
         assert f"DEPLOY_STEP_COUNT={len(set(declared))}" in script()
 
-    def test_every_mart_the_registry_schedules_is_refreshed_before_the_gates(self) -> None:
-        """A registration the deploy seeds and never builds serves nothing: New Mexico's
-        per-well series is a mart the jurisdiction registry drives, and the v0.83 ship left it
-        at 0 rows because no step refreshed it."""
+    def test_the_pool_rollup_mart_is_refreshed_after_the_seed_and_before_the_gates(self) -> None:
+        """One mart, not the class. The general rule — every registry-scheduled mart the tree
+        ships is refreshed at deploy or named as owed by the deploy's output — is routed as
+        REG-DEP-1, because a derived assertion would red on the marts this file deliberately
+        leaves to a hand-run runner. What is held here is the one the v0.83 ship left at 0 rows:
+        it runs after the seed that registers the jurisdiction driving it, and before the gates
+        that read its output. The module path is read off the schedule registry rather than
+        spelled again, so a job that moved would red here rather than deploy a stale step.
+        """
+        job = next(row for row in JOBS if row["job_id"] == "marts_well_pool_rollup")
         declared = declared_steps()
-        assert declared.index("6d3") == declared.index("6d2") + 1
+
+        assert declared.index("6d3") > declared.index("6b")
+        assert declared.index("6d3") < declared.index("8")
         assert (
-            "sudo -u glasswell env $code_env $VENV/bin/python -m glasswell.marts.well_pool_rollup"
+            f"sudo -u {job['run_as']} env $code_env $VENV/bin/python -m {job['entry_point']}"
             " --dsn '$SOCKET_DSN'" in script()
         )
 
