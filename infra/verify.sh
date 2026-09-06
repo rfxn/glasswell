@@ -564,9 +564,6 @@ select case
   end")"
 assert "no jurisdiction serves the absence class above its registered share" "" \
     "$absence_over_share"
-assert "GET /v1/conformance/cr_status_absence_share_1" 200 \
-    "$(api_curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
-        -H "X-Glasswell-Key: $owner_key" "$API/v1/conformance/cr_status_absence_share_1")"
 # V-4. Two clocks over one registry: the resolver rebuilds at the registry's own knowledge cut
 # and the API reads it at max(published_at) too, so a resolver built at the host's calendar
 # instead resolves a different rule set from the one the wire cites. Both halves, because each
@@ -694,6 +691,10 @@ else
     assert "GET /v1/status with the owner key after collection" 200 \
         "$(api_curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
             -H "X-Glasswell-Key: $owner_key" "$API/v1/status")"
+# V-3's served half, here because the key is read just above: the absence-share rule resolves.
+assert "GET /v1/conformance/cr_status_absence_share_1" 200 \
+    "$(api_curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
+        -H "X-Glasswell-Key: $owner_key" "$API/v1/conformance/cr_status_absence_share_1")"
     assert_true "GET /v1/status serves a current non-empty snapshot" \
         "API rejected or omitted the snapshot, or marked the freshly collected one stale" \
         status_api_serves_current_snapshot
