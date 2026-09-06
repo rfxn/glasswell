@@ -566,7 +566,7 @@ assert "no jurisdiction serves the absence class above its registered share" "" 
     "$absence_over_share"
 assert "GET /v1/conformance/cr_status_absence_share_1" 200 \
     "$(api_curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
-        "$API/v1/conformance/cr_status_absence_share_1")"
+        -H "X-Glasswell-Key: $owner_key" "$API/v1/conformance/cr_status_absence_share_1")"
 # V-4. Two clocks over one registry: the resolver rebuilds at the registry's own knowledge cut
 # and the API reads it at max(published_at) too, so a resolver built at the host's calendar
 # instead resolves a different rule set from the one the wire cites. Both halves, because each
