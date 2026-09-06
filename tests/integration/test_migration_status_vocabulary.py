@@ -429,6 +429,26 @@ def serving_grain_rule(connection: psycopg.Connection) -> str | None:
     return load_jurisdictions(connection).by_code["NM"].rule("production_grain")
 
 
+def landed_the_successor_without_the_correction(connection: psycopg.Connection) -> None:
+    """The step the release before this one took: it registered the successor rule and had no
+    correction to make, which is why the registration it left behind still names the founding
+    one. Only the conformance seeder runs, so nothing in `seed_jurisdictions` can answer for
+    the migration under test."""
+    seed_conformance_nm_wells(connection)
+    connection.commit()
+    clear_jurisdiction_cache()
+
+
+def supersession_actors(connection: psycopg.Connection) -> list[str]:
+    """Who recorded the rule supersession. One row, whichever writer reached it first."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "select actor from lineage.audit_events"
+            " where event_id = 'evt_migration_cr_nm_wcproduction_pool_rollup_2'"
+        )
+        return [row[0] for row in cursor.fetchall()]
+
+
 def test_the_migration_names_the_founding_rule_where_the_successor_is_not_resident(
     empty_db: psycopg.Connection, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -449,11 +469,17 @@ def test_the_migration_names_the_founding_rule_where_the_successor_is_not_reside
 def test_the_repoint_migration_completes_what_the_deploy_order_left_undone(
     empty_db: psycopg.Connection, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The next deploy migrates against a registry the successor is now resident in, so the
-    migration is the writer that finishes the repoint and the registry-driven mart builds."""
+    """The path the deployed host takes, and the only one that exercises 087's own writes.
+
+    The release that registered the successor has already run here, so the next deploy's step 6
+    migrates against a registry the successor is resident in and the migration is the writer
+    that finishes the repoint -- the seed at step 6b then finds nothing left to do. The actor
+    is what holds the two writers apart: a test that let `seed_all` answer for the migration
+    passed for the wrong reason, and this file shipped one that did.
+    """
     deployed_before_the_successor(empty_db, monkeypatch)
-    seed_all(empty_db)
-    empty_db.commit()
+    landed_the_successor_without_the_correction(empty_db)
+    assert serving_grain_rule(empty_db) == FOUNDING_RULE, "the correction has not been made yet"
 
     applied = migrate(empty_db)
 
@@ -461,12 +487,43 @@ def test_the_repoint_migration_completes_what_the_deploy_order_left_undone(
     clear_jurisdiction_cache()
     assert serving_grain_rule(empty_db) == SUCCESSOR_RULE
     assert [row.jurisdiction_code for row in rollup_registrations(empty_db)] == ["NM"]
+    assert supersession_actors(empty_db) == ["system:migration"]
+    with empty_db.cursor(row_factory=dict_row) as cursor:
+        cursor.execute(
+            "select rule_id, note from lineage.jurisdiction_rules"
+            " where jurisdiction_code = 'NM' and decision = 'production_grain'"
+            "   and published_at = (select max(published_at) from lineage.jurisdiction_rules"
+            "                        where jurisdiction_code = 'NM')"
+        )
+        corrected = cursor.fetchone()
+    assert corrected["rule_id"] == SUCCESSOR_RULE
+    assert "not resident" in corrected["note"]
+
+
+def test_a_second_deploy_leaves_the_migrations_correction_where_it_is(
+    empty_db: psycopg.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The seed runs at step 6b of the same deploy the migration corrected at step 6, and on
+    every deploy after it: it must find the decision already made and add nothing."""
+    deployed_before_the_successor(empty_db, monkeypatch)
+    landed_the_successor_without_the_correction(empty_db)
+    migrate(empty_db)
     with empty_db.cursor() as cursor:
         cursor.execute(
-            "select count(*) from lineage.audit_events"
-            " where event_id = 'evt_migration_cr_nm_wcproduction_pool_rollup_2'"
+            "select count(*) from lineage.jurisdictions where jurisdiction_code = 'NM'"
         )
-        assert cursor.fetchone()[0] == 1, "the supersession the migration completed is on the trail"
+        after_the_migration = cursor.fetchone()[0]
+
+    seed_all(empty_db)
+    empty_db.commit()
+
+    with empty_db.cursor() as cursor:
+        cursor.execute(
+            "select count(*) from lineage.jurisdictions where jurisdiction_code = 'NM'"
+        )
+        assert cursor.fetchone()[0] == after_the_migration
+    assert supersession_actors(empty_db) == ["system:migration"]
+    assert serving_grain_rule(empty_db) == SUCCESSOR_RULE
 
 
 def test_the_seed_completes_the_repoint_where_the_migration_could_not(
@@ -485,6 +542,7 @@ def test_the_seed_completes_the_repoint_where_the_migration_could_not(
 
     assert serving_grain_rule(empty_db) == SUCCESSOR_RULE
     assert [row.jurisdiction_code for row in rollup_registrations(empty_db)] == ["NM"]
+    assert supersession_actors(empty_db) == ["system:seed"]
 
 
 def test_the_repoint_is_written_once_however_many_deploys_run(
