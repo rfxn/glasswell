@@ -215,12 +215,17 @@ def test_the_resolver_reads_the_registrys_own_knowledge_cut_and_records_it(
         recorded = cursor.fetchall()
 
     # The property and not the date, which is what V-4 asserts too: a date-specific assertion
-    # goes red the day a track's clock moves and says nothing about the invariant.
+    # goes red the day a track's clock moves and says nothing about the invariant. The two cuts
+    # are recorded separately: knowledge_for is the registry's, built_for is the build's own
+    # date -- which equals the registry cut on the day it is reached and passes it after.
+    with db.cursor() as cursor:
+        cursor.execute("select current_date")
+        built_on = cursor.fetchone()[0]
     assert cut >= RESTATED_ON
     assert recorded
     for row in recorded:
         assert row["knowledge_for"] == cut
-        assert row["built_for"] < cut, "the two cuts are different dates and both are recorded"
+        assert row["built_for"] == built_on, "the build date is recorded as its own cut"
 
 
 def test_the_grain_restatement_carries_its_registrations_rule_rows(
